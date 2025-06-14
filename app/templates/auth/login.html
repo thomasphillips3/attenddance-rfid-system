@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#6366f1">
+    <title>Login - AttenDANCE</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            900: '#312e81'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        .logo-dance {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .dance-pattern {
+            background-image: 
+                radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 40% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%);
+        }
+        
+        .form-float {
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+    </style>
+</head>
+<body class="h-full dance-pattern">
+    <div class="min-h-full flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div class="sm:mx-auto sm:w-full sm:max-w-md">
+            <!-- Logo and Title -->
+            <div class="flex justify-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-12 h-12 bg-gradient-to-br from-primary-500 to-purple-600 rounded-xl flex items-center justify-center form-float">
+                        <i class="fas fa-music text-white text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-3xl font-bold logo-dance">AttenDANCE</h1>
+                        <p class="text-sm text-gray-500 mt-1">RFID Attendance System</p>
+                    </div>
+                </div>
+            </div>
+            
+            <h2 class="mt-8 text-center text-3xl font-extrabold text-gray-900">
+                Welcome back
+            </h2>
+            <p class="mt-2 text-center text-sm text-gray-600">
+                Sign in to manage your dance studio
+            </p>
+        </div>
+
+        <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+            <div class="bg-white py-8 px-4 shadow-xl sm:rounded-lg sm:px-10 form-float">
+                <!-- Flash Messages -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="mb-4 rounded-md p-4 {% if category == 'error' %}bg-red-50 border border-red-200{% else %}bg-blue-50 border border-blue-200{% endif %}">
+                                <div class="flex">
+                                    <div class="flex-shrink-0">
+                                        {% if category == 'error' %}
+                                            <i class="fas fa-exclamation-circle h-5 w-5 text-red-400"></i>
+                                        {% else %}
+                                            <i class="fas fa-info-circle h-5 w-5 text-blue-400"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="ml-3">
+                                        <p class="text-sm {% if category == 'error' %}text-red-800{% else %}text-blue-800{% endif %}">
+                                            {{ message }}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                
+                <!-- Login Form -->
+                <form class="space-y-6" method="POST" action="{{ url_for('auth.login') }}">
+                    <div>
+                        <label for="username" class="block text-sm font-medium text-gray-700">
+                            Username
+                        </label>
+                        <div class="mt-1 relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-user h-5 w-5 text-gray-400"></i>
+                            </div>
+                            <input 
+                                id="username" 
+                                name="username" 
+                                type="text" 
+                                autocomplete="username" 
+                                required 
+                                class="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
+                                placeholder="Enter your username"
+                                value="{{ request.form.username or '' }}"
+                            >
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="password" class="block text-sm font-medium text-gray-700">
+                            Password
+                        </label>
+                        <div class="mt-1 relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-lock h-5 w-5 text-gray-400"></i>
+                            </div>
+                            <input 
+                                id="password" 
+                                name="password" 
+                                type="password" 
+                                autocomplete="current-password" 
+                                required 
+                                class="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
+                                placeholder="Enter your password"
+                            >
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <input 
+                                id="remember_me" 
+                                name="remember_me" 
+                                type="checkbox" 
+                                class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                            >
+                            <label for="remember_me" class="ml-2 block text-sm text-gray-900">
+                                Remember me
+                            </label>
+                        </div>
+
+                        <div class="text-sm">
+                            <a href="#" class="font-medium text-primary-600 hover:text-primary-500">
+                                Forgot your password?
+                            </a>
+                        </div>
+                    </div>
+
+                    <div>
+                        <button 
+                            type="submit" 
+                            class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition duration-150 ease-in-out transform hover:scale-105"
+                        >
+                            <span class="absolute left-0 inset-y-0 flex items-center pl-3">
+                                <i class="fas fa-sign-in-alt h-5 w-5 text-primary-500 group-hover:text-primary-400"></i>
+                            </span>
+                            Sign in
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Demo Credentials (remove in production) -->
+                <div class="mt-6 border-t border-gray-200 pt-6">
+                    <div class="text-center">
+                        <p class="text-xs text-gray-500 mb-2">Demo Credentials:</p>
+                        <div class="bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
+                            <div class="flex justify-between items-center">
+                                <span><strong>Username:</strong> admin</span>
+                                <button 
+                                    type="button" 
+                                    onclick="document.getElementById('username').value = 'admin'"
+                                    class="text-primary-500 hover:text-primary-700 text-xs underline"
+                                >
+                                    Use
+                                </button>
+                            </div>
+                            <div class="flex justify-between items-center mt-1">
+                                <span><strong>Password:</strong> admin123</span>
+                                <button 
+                                    type="button" 
+                                    onclick="document.getElementById('password').value = 'admin123'"
+                                    class="text-primary-500 hover:text-primary-700 text-xs underline"
+                                >
+                                    Use
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <div class="mt-8 text-center">
+            <p class="text-xs text-gray-500">
+                © 2024 AttenDANCE. Built with ❤️ for dance studios.
+            </p>
+        </div>
+    </div>
+
+    <!-- Auto-focus on username field -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('username').focus();
+        });
+    </script>
+</body>
+</html> 
