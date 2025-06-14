@@ -14,79 +14,157 @@ A complete RFID-based attendance system for dance studios running on Raspberry P
 
 ## Hardware Requirements
 
-- Raspberry Pi 4 (recommended) running Ubuntu
-- MFRC522 RFID module connected via SPI
-- RFID cards/tags for students
+- **Raspberry Pi 4 or 5** (recommended) running Raspberry Pi OS Bookworm
+- **MFRC522 RFID module** connected via SPI
+- **RFID cards/tags** for students  
+- **MicroSD card** (32GB+ recommended)
+- **Power supply** (official Raspberry Pi power supply recommended)
 - Optional: Touchscreen display for kiosk mode
+
+### Raspberry Pi Compatibility
+
+| Pi Model | OS Support | Performance | Notes |
+|----------|------------|-------------|-------|
+| **Pi 5** | ✅ Bookworm | Excellent | Latest hardware, best performance |
+| **Pi 4** | ✅ Bookworm/Bullseye | Very Good | Recommended for production |
+| **Pi 3B+** | ✅ Bookworm/Bullseye | Good | Works well for small installations |
+| **Pi 3B** | ⚠️ Bullseye only | Fair | Minimum recommended |
+| **Pi Zero 2W** | ⚠️ Limited | Fair | Single user only |
 
 ## Quick Start
 
 ### 1. Hardware Setup
 Connect your MFRC522 RFID module to the Raspberry Pi:
-- SDA → Pin 24 (GPIO 8, CE0)
-- SCK → Pin 23 (GPIO 11, SCLK)
-- MOSI → Pin 19 (GPIO 10, MOSI)
-- MISO → Pin 21 (GPIO 9, MISO)
-- IRQ → Not connected
-- GND → Pin 6 (Ground)
-- RST → Pin 22 (GPIO 25)
-- 3.3V → Pin 1 (3.3V)
+
+```
+MFRC522 Pin    →  Raspberry Pi Pin
+SDA (NSS)      →  Pin 24 (GPIO 8, CE0)
+SCK            →  Pin 23 (GPIO 11, SCLK) 
+MOSI           →  Pin 19 (GPIO 10, MOSI)
+MISO           →  Pin 21 (GPIO 9, MISO)
+IRQ            →  Not connected
+GND            →  Pin 6 (Ground)
+RST            →  Pin 22 (GPIO 25)
+3.3V           →  Pin 1 (3.3V)
+```
 
 ### 2. Software Installation
+
+#### For Raspberry Pi 4/5 with Bookworm OS (Recommended)
+
 ```bash
 # Clone the repository
 git clone https://github.com/thomasphillips3/attenddance-rfid-system.git
 cd attenddance-rfid-system
 
-# Create virtual environment (recommended)
+# Create virtual environment (strongly recommended)
 python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
 
-# Install dependencies
+# Update pip and install dependencies
+pip install --upgrade pip
 pip install -r requirements.txt
 
-# Enable SPI on Raspberry Pi (if not already enabled)
+# Enable SPI interface
 sudo raspi-config
-# Navigate to: Interface Options → SPI → Enable
+# Navigate to: Interface Options → SPI → Enable → Reboot
+```
+
+#### For Older Pi Models (Pi 3B/3B+) or Bullseye OS
+
+If you encounter issues with the latest versions, use the legacy requirements:
+
+```bash
+# Create a legacy requirements file
+cat > requirements-legacy.txt << 'EOF'
+# Legacy versions for older Pi models
+Flask==2.3.3
+Flask-SQLAlchemy==3.0.5
+Flask-Login==0.6.3
+Flask-WTF==1.1.1
+WTForms==3.0.1
+Werkzeug==2.3.7
+mfrc522==0.0.7
+RPi.GPIO==0.7.1
+spidev==3.6
+bcrypt==4.0.1
+python-dotenv==1.0.0
+PyJWT==2.8.0
+requests==2.31.0
+python-dateutil==2.8.2
+gunicorn==21.2.0
+EOF
+
+# Install legacy versions
+pip install -r requirements-legacy.txt
+```
+
+#### Installation Troubleshooting
+
+**If pip installation fails:**
+```bash
+# Install system dependencies first
+sudo apt update
+sudo apt install -y python3-dev python3-pip python3-venv
+sudo apt install -y build-essential libffi-dev libssl-dev
+
+# For Pi 5 with new GPIO handling
+sudo apt install -y python3-lgpio
+
+# Retry installation
+pip install -r requirements.txt
+```
+
+**For compilation errors on older Pi models:**
+```bash
+# Install pre-compiled wheels from piwheels
+pip install --index-url https://www.piwheels.org/simple/ -r requirements.txt
 ```
 
 ### 3. Running the Application
 
 #### Development Mode
 ```bash
+# Ensure virtual environment is activated
+source venv/bin/activate
+
+# Run the application
 python run.py
 ```
-Access the web interface at `http://localhost:5000`
+
+Access the web interface at `http://localhost:5000` or `http://your-pi-ip:5000`
 
 **Default Login:**
 - Username: `admin`
 - Password: `admin123`
 
-*⚠️ Change the default password immediately after first login!*
+*⚠️ **Important**: Change the default password immediately after first login!*
 
 #### Production Mode
+
+**Method 1: Using Gunicorn**
 ```bash
 # Set production environment
 export FLASK_ENV=production
 export SECRET_KEY=your-secret-key-here
 
-# Run with Gunicorn
-gunicorn -w 4 -b 0.0.0.0:5000 run:app
+# Run with Gunicorn (recommended for production)
+gunicorn -w 2 -b 0.0.0.0:5000 --timeout 120 run:app
+```
 
-# Or run as background process
+**Method 2: Background Process**
+```bash
+# Run as background service
 nohup python run.py > attendance.log 2>&1 &
 ```
 
-#### Optional: System Service Setup
+#### System Service Setup (Production)
+
 Create a systemd service for automatic startup:
 
 ```bash
 # Create service file
-sudo nano /etc/systemd/system/attenddance.service
-```
-
-Add the following content:
-```ini
+sudo tee /etc/systemd/system/attenddance.service << 'EOF'
 [Unit]
 Description=AttenDANCE RFID Attendance System
 After=network.target
@@ -96,15 +174,16 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/attenddance-rfid-system
 Environment=FLASK_ENV=production
+Environment=SECRET_KEY=change-this-secret-key
 ExecStart=/home/pi/attenddance-rfid-system/venv/bin/python run.py
 Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-```
+EOF
 
-Enable and start the service:
-```bash
+# Enable and start the service
 sudo systemctl daemon-reload
 sudo systemctl enable attenddance
 sudo systemctl start attenddance
@@ -129,7 +208,9 @@ attenddance-rfid-system/
 ├── config/                # Configuration files
 │   └── config.py          # Application configuration
 ├── data/                  # Database files (auto-created)
-├── requirements.txt       # Python dependencies
+├── venv/                  # Virtual environment (after setup)
+├── requirements.txt       # Python dependencies (latest)
+├── requirements-legacy.txt # Legacy versions for older Pi
 ├── run.py                # Application entry point
 └── README.md
 ```
@@ -143,25 +224,41 @@ The application automatically:
 - Creates necessary directories
 
 ### Environment Variables
-You can customize the application using environment variables:
+Customize the application using environment variables:
 
 ```bash
 # Database
-DATABASE_URL=sqlite:///data/attendance.db
+export DATABASE_URL=sqlite:///data/attendance.db
 
-# Security
-SECRET_KEY=your-secret-key
-JWT_SECRET_KEY=your-jwt-secret
+# Security (IMPORTANT: Change these!)
+export SECRET_KEY=your-very-secure-secret-key-here
+export JWT_SECRET_KEY=your-jwt-secret-key-here
 
 # RFID Settings
-RFID_ENABLED=true
-RFID_SPI_DEV=0
-RFID_RST_PIN=25
+export RFID_ENABLED=true
+export RFID_SPI_DEV=0
+export RFID_RST_PIN=25
 
 # Server Settings
-FLASK_HOST=0.0.0.0
-FLASK_PORT=5000
-FLASK_ENV=production
+export FLASK_HOST=0.0.0.0
+export FLASK_PORT=5000
+export FLASK_ENV=production
+```
+
+### Performance Optimization for Raspberry Pi
+
+**For Pi 4/5:**
+```bash
+# In config/config.py or environment variables
+export STUDENTS_PER_PAGE=100
+export ATTENDANCE_PER_PAGE=200
+```
+
+**For Pi 3B/3B+:**
+```bash
+# Reduced settings for older hardware
+export STUDENTS_PER_PAGE=50
+export ATTENDANCE_PER_PAGE=100
 ```
 
 ## API Endpoints
@@ -193,11 +290,16 @@ FLASK_ENV=production
 ### RFID Not Working
 1. **Check SPI is enabled:** `sudo raspi-config` → Interface Options → SPI → Enable
 2. **Verify wiring connections** match the hardware setup above
-3. **Check permissions:** Ensure your user is in the `spi` and `gpio` groups:
+3. **Check permissions:** Ensure your user is in the required groups:
    ```bash
-   sudo usermod -a -G spi,gpio $USER
+   sudo usermod -a -G spi,gpio,i2c $USER
+   sudo reboot
    ```
-4. **Test RFID module:** The application will show RFID status in console output
+4. **Test RFID module:** Check console output when starting the application
+5. **For Pi 5:** Additional GPIO setup may be required:
+   ```bash
+   sudo apt install python3-lgpio
+   ```
 
 ### Database Issues
 - **Reset database:** Delete `data/attendance.db` and restart the application
@@ -209,11 +311,47 @@ FLASK_ENV=production
 - **View logs:** `sudo journalctl -u attenddance -f`
 - **Restart service:** `sudo systemctl restart attenddance`
 
-### Permission Issues
-If you encounter permission errors with GPIO/SPI:
+### Installation Issues
+
+**ImportError for RPi.GPIO:**
+```bash
+# For Pi 5 or newer Bookworm installations
+sudo apt install python3-rpi.gpio
+
+# Or use lgpio for Pi 5
+sudo apt install python3-lgpio
+```
+
+**SPI Permission Errors:**
 ```bash
 sudo usermod -a -G spi,gpio,i2c $USER
+sudo chmod 666 /dev/spidev0.0
 sudo reboot
+```
+
+**Memory Issues on Older Pi Models:**
+```bash
+# Increase swap space
+sudo dphys-swapfile swapoff
+sudo nano /etc/dphys-swapfile
+# Change CONF_SWAPSIZE=100 to CONF_SWAPSIZE=1024
+sudo dphys-swapfile setup
+sudo dphys-swapfile swapon
+```
+
+### Network Access Issues
+
+**Firewall (if enabled):**
+```bash
+sudo ufw allow 5000
+```
+
+**Access from other devices:**
+```bash
+# Find your Pi's IP address
+hostname -I
+
+# Access from other devices: http://PI_IP_ADDRESS:5000
 ```
 
 ## Development
@@ -221,11 +359,30 @@ sudo reboot
 ### Running in Development Mode
 ```bash
 export FLASK_ENV=development
+export FLASK_DEBUG=true
 python run.py
 ```
 
 ### Testing Without RFID Hardware
-The application gracefully handles missing RFID hardware and will run without it for development purposes.
+The application gracefully handles missing RFID hardware and will run without it for development purposes. Manual check-in options are available in the web interface.
+
+### Adding New Features
+The modular structure makes it easy to extend:
+- Add new routes in `app/main/routes.py` or `app/api/routes.py`
+- Create new database models in `app/models.py`
+- Add templates in `app/templates/`
+- Extend RFID functionality in `rfid/`
+
+## Security Considerations
+
+🔒 **Important Security Notes:**
+
+1. **Change default passwords** immediately
+2. **Use strong SECRET_KEY** in production
+3. **Enable HTTPS** for production deployments
+4. **Restrict network access** to trusted devices
+5. **Regular backups** of the database
+6. **Keep system updated**: `sudo apt update && sudo apt upgrade`
 
 ## License
 
@@ -236,13 +393,19 @@ MIT License - See LICENSE file for details.
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
-4. Commit your changes (`git commit -m 'Add amazing feature'`)
-5. Push to the branch (`git push origin feature/amazing-feature`)
-6. Open a Pull Request
+4. Test on a Raspberry Pi
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
 
 ## Support
 
 For issues and questions:
 - **GitHub Issues**: https://github.com/thomasphillips3/attenddance-rfid-system/issues
 - **Documentation**: Check this README and code comments
-- **Hardware Issues**: Verify connections and Raspberry Pi configuration 
+- **Hardware Issues**: Verify connections and Raspberry Pi configuration
+- **Pi 5 Specific**: Check for latest GPIO library updates
+
+---
+
+**Built with ❤️ for dance studios using Raspberry Pi** 

@@ -1,15 +1,28 @@
-Flask==2.3.3
-Flask-SQLAlchemy==3.0.5
+# Flask Web Framework - Latest stable version optimized for Raspberry Pi
+Flask==3.0.3
+Flask-SQLAlchemy==3.1.1
 Flask-Login==0.6.3
-Flask-WTF==1.1.1
-WTForms==3.0.1
-Werkzeug==2.3.7
+Flask-WTF==1.2.1
+WTForms==3.1.2
+Werkzeug==3.0.3
+
+# RFID Hardware Support - Latest versions for Raspberry Pi
 mfrc522==0.0.7
 RPi.GPIO==0.7.1
 spidev==3.6
-bcrypt==4.0.1
-python-dotenv==1.0.0
-gunicorn==21.2.0
+
+# Security and Authentication - ARM-optimized versions
+bcrypt==4.1.3
 PyJWT==2.8.0
-requests==2.31.0
-python-dateutil==2.8.2 
+
+# Utilities and Configuration
+python-dotenv==1.0.1
+python-dateutil==2.9.0
+requests==2.32.3
+
+# Production Server - Latest stable for Pi deployment
+gunicorn==22.0.0
+
+# Development and Testing (optional)
+pytest==8.2.2
+pytest-flask==1.3.0 
