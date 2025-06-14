@@ -26,9 +26,9 @@ A complete RFID-based attendance system for dance studios running on Raspberry P
 | Pi Model | OS Support | Performance | Notes |
 |----------|------------|-------------|-------|
 | **Pi 5** | ✅ Bookworm | Excellent | Latest hardware, best performance |
-| **Pi 4** | ✅ Bookworm/Bullseye | Very Good | Recommended for production |
-| **Pi 3B+** | ✅ Bookworm/Bullseye | Good | Works well for small installations |
-| **Pi 3B** | ⚠️ Bullseye only | Fair | Minimum recommended |
+| **Pi 4** | ✅ Bookworm/Bullseye/Buster | Very Good | Recommended for production |
+| **Pi 3B+** | ✅ Bookworm/Bullseye/Buster | Good | Works well for small installations |
+| **Pi 3B** | ⚠️ Bullseye/Buster only | Fair | Minimum recommended |
 | **Pi Zero 2W** | ⚠️ Limited | Fair | Single user only |
 
 ## Quick Start
@@ -97,6 +97,39 @@ EOF
 
 # Install legacy versions
 pip install -r requirements-legacy.txt
+```
+
+#### For Raspbian Buster (RPi 4/3B+)
+
+If you're running **Raspbian Buster**, use the Buster-specific requirements:
+
+```bash
+# Check your OS version
+cat /etc/os-release
+
+# Install Buster-compatible versions
+pip install -r requirements-buster.txt
+
+# Alternative: Install directly from pre-built wheels
+pip install --index-url https://www.piwheels.org/simple/ -r requirements-buster.txt
+```
+
+**Buster-Specific Setup:**
+```bash
+# Update system packages first
+sudo apt update && sudo apt upgrade -y
+
+# Install required system dependencies
+sudo apt install -y python3-dev python3-pip python3-venv
+sudo apt install -y build-essential libffi-dev libssl-dev
+sudo apt install -y git
+
+# Check Python version (should be 3.7 or 3.8)
+python3 --version
+
+# Enable SPI and GPIO
+sudo raspi-config
+# Navigate to: Interface Options → SPI → Enable → Finish → Reboot
 ```
 
 #### Installation Troubleshooting
@@ -211,6 +244,7 @@ attenddance-rfid-system/
 ├── venv/                  # Virtual environment (after setup)
 ├── requirements.txt       # Python dependencies (latest)
 ├── requirements-legacy.txt # Legacy versions for older Pi
+├── requirements-buster.txt # Buster OS specific versions
 ├── run.py                # Application entry point
 └── README.md
 ```
@@ -337,6 +371,25 @@ sudo nano /etc/dphys-swapfile
 # Change CONF_SWAPSIZE=100 to CONF_SWAPSIZE=1024
 sudo dphys-swapfile setup
 sudo dphys-swapfile swapon
+```
+
+**Buster-Specific Issues:**
+```bash
+# If you get SSL/TLS errors during pip install
+pip install --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org -r requirements-buster.txt
+
+# If pip is outdated on Buster
+python3 -m pip install --upgrade pip setuptools wheel
+
+# Check and fix locale issues
+sudo dpkg-reconfigure locales
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
+
+# For GPIO permission issues on Buster
+sudo usermod -a -G gpio,spi,i2c $USER
+sudo chmod 666 /dev/gpiomem
+sudo reboot
 ```
 
 ### Network Access Issues
