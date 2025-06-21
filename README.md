@@ -1,4 +1,4 @@
-# AttenDANCE - RFID Attendance System
+# AttendDANCE - RFID Attendance System
 
 A complete RFID-based attendance system for dance studios running on Raspberry Pi.
 
