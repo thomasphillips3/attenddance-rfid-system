@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="min-h-full flex items-center justify-center py-12">
+    <div class="text-center">
+        <h1 class="text-6xl font-bold text-red-500">500</h1>
+        <p class="mt-4 text-xl text-gray-600">Something went wrong</p>
+        <a href="{{ url_for('main.index') }}" class="mt-6 inline-block px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">Go Home</a>
+    </div>
+</div>
+{% endblock %}

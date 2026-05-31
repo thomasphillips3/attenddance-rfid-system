@@ -352,11 +352,11 @@ def create_class():
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     
-    required_fields = ['name', 'day_of_week', 'start_time', 'end_time', 'instructor_id']
+    required_fields = ['name', 'day_of_week', 'start_time', 'end_time']
     for field in required_fields:
         if field not in data:
             return jsonify({'error': f'{field} is required'}), 400
-    
+
     try:
         dance_class = DanceClass(
             name=data['name'].strip(),
@@ -364,7 +364,7 @@ def create_class():
             day_of_week=int(data['day_of_week']),
             start_time=datetime.strptime(data['start_time'], '%H:%M').time(),
             end_time=datetime.strptime(data['end_time'], '%H:%M').time(),
-            instructor_id=int(data['instructor_id']),
+            instructor_id=int(data.get('instructor_id', current_user.id)),
             max_students=data.get('max_students', 20),
             level=data.get('level', '').strip() or None,
             age_group=data.get('age_group', '').strip() or None

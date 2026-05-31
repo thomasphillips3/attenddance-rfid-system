@@ -5,14 +5,18 @@ Configuration settings for AttenDANCE system
 import os
 from datetime import timedelta
 
+# Project root directory
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
 class Config:
     """Base configuration class"""
-    
+
     # Basic Flask settings
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production-12345'
-    
-    # Database settings  
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///data/attendance.db'
+
+    # Database settings
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
+        f'sqlite:///{os.path.join(BASE_DIR, "data", "attendance.db")}'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,

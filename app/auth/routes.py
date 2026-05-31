@@ -5,7 +5,7 @@ Authentication routes for AttenDANCE system
 from datetime import datetime
 from flask import render_template, flash, redirect, url_for, request, jsonify, session
 from flask_login import login_user, logout_user, current_user, login_required
-from werkzeug.urls import url_parse
+from urllib.parse import urlparse
 
 from app.auth import bp
 from app.models import User
@@ -63,7 +63,7 @@ def login():
         
         # Handle next page redirect
         next_page = request.args.get('next')
-        if not next_page or url_parse(next_page).netloc != '':
+        if not next_page or urlparse(next_page).netloc != '':
             next_page = url_for('main.dashboard')
         
         if request.is_json:

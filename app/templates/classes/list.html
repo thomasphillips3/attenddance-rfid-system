@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900">Classes</h1>
+                    <p class="mt-1 text-sm text-gray-600">Manage your dance class schedule</p>
+                </div>
+                <button onclick="openAddModal()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
+                    <i class="fas fa-calendar-plus mr-2"></i>Add Class
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div id="classes-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <p class="text-gray-500 col-span-full text-center py-8">Loading classes...</p>
+        </div>
+    </div>
+</div>
+
+<div id="class-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75" onclick="closeModal()"></div>
+        <div class="relative bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
+            <h3 id="modal-title" class="text-lg font-medium text-gray-900 mb-4">Add Class</h3>
+            <form id="class-form" onsubmit="saveClass(event)">
+                <input type="hidden" id="class-id">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Class Name *</label>
+                        <input type="text" id="class-name" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Day *</label>
+                            <select id="day-of-week" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                                <option value="0">Monday</option><option value="1">Tuesday</option><option value="2">Wednesday</option><option value="3">Thursday</option><option value="4">Friday</option><option value="5">Saturday</option><option value="6">Sunday</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Level</label>
+                            <select id="level" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                                <option value="">Any</option><option value="Beginner">Beginner</option><option value="Intermediate">Intermediate</option><option value="Advanced">Advanced</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Start Time *</label>
+                            <input type="time" id="start-time" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">End Time *</label>
+                            <input type="time" id="end-time" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Max Students</label>
+                        <input type="number" id="max-students" value="20" min="1" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                    <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function esc(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+async function loadClasses() {
+    try {
+        const res = await fetch('/api/classes');
+        const data = await res.json();
+        renderClasses(data.classes);
+    } catch (err) {
+        document.getElementById('classes-container').innerHTML = '<p class="text-red-500 col-span-full text-center py-8">Failed to load classes</p>';
+    }
+}
+
+function renderClasses(classes) {
+    const c = document.getElementById('classes-container');
+    if (!classes.length) { c.innerHTML = '<p class="text-gray-500 col-span-full text-center py-8">No classes yet. Click "Add Class" to create one.</p>'; return; }
+    c.innerHTML = classes.map(cls => `
+        <div class="bg-white shadow-lg rounded-lg overflow-hidden card-hover">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-lg font-medium text-gray-900">${esc(cls.name)}</h3>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">${esc(cls.level || 'All Levels')}</span>
+                </div>
+                <div class="space-y-2 text-sm text-gray-600">
+                    <p><i class="fas fa-calendar-day mr-2 text-gray-400"></i>${esc(cls.day_name)}</p>
+                    <p><i class="fas fa-clock mr-2 text-gray-400"></i>${esc(cls.start_time)} - ${esc(cls.end_time)}</p>
+                    <p><i class="fas fa-user mr-2 text-gray-400"></i>${esc(cls.instructor_name)}</p>
+                    <p><i class="fas fa-users mr-2 text-gray-400"></i>${cls.enrolled_count}/${cls.max_students} students</p>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function openAddModal() {
+    document.getElementById('modal-title').textContent = 'Add Class';
+    document.getElementById('class-form').reset();
+    document.getElementById('class-id').value = '';
+    document.getElementById('class-modal').classList.remove('hidden');
+}
+
+function closeModal() { document.getElementById('class-modal').classList.add('hidden'); }
+
+async function saveClass(e) {
+    e.preventDefault();
+    const body = { name: document.getElementById('class-name').value, day_of_week: parseInt(document.getElementById('day-of-week').value), start_time: document.getElementById('start-time').value, end_time: document.getElementById('end-time').value, level: document.getElementById('level').value, max_students: parseInt(document.getElementById('max-students').value) || 20 };
+    try {
+        const res = await fetch('/api/classes', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        if (res.ok) { closeModal(); loadClasses(); } else { const d = await res.json(); alert(d.error || 'Error saving class'); }
+    } catch (err) { alert('Network error'); }
+}
+
+loadClasses();
+</script>
+{% endblock %}

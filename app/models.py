@@ -186,7 +186,7 @@ class ClassEnrollment(db.Model):
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     
     # Payment/billing (for future use)
-    monthly_fee = db.Column(db.Decimal(10, 2))
+    monthly_fee = db.Column(db.Numeric(10, 2))
     
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
