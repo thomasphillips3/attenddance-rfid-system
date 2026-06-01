@@ -858,6 +858,18 @@ def get_student_ledger(student_id):
         })
     total_charges = sum(float(t.amount) for t in txns if (t.type or 'payment') == 'charge')
     total_payments = sum(float(t.amount) for t in txns if (t.type or 'payment') == 'payment')
+
+    categories = set(t.category for t in txns)
+    by_category = {}
+    for cat in sorted(categories):
+        cat_charges = sum(float(t.amount) for t in txns if (t.type or 'payment') == 'charge' and t.category == cat)
+        cat_payments = sum(float(t.amount) for t in txns if (t.type or 'payment') == 'payment' and t.category == cat)
+        by_category[cat] = {
+            'charges': f'{cat_charges:.2f}',
+            'payments': f'{cat_payments:.2f}',
+            'balance': f'{cat_charges - cat_payments:.2f}',
+        }
+
     return jsonify({
         'student_id': student.id,
         'student_name': student.full_name,
@@ -865,6 +877,7 @@ def get_student_ledger(student_id):
         'total_charges': f'{total_charges:.2f}',
         'total_payments': f'{total_payments:.2f}',
         'balance': f'{total_charges - total_payments:.2f}',
+        'by_category': by_category,
     })
 
 @bp.route('/transactions/bulk-charge', methods=['POST'])

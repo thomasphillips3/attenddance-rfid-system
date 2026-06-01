@@ -36,6 +36,12 @@
             </div>
         </div>
 
+        <!-- Per-Category Balances -->
+        <div id="category-breakdown" class="hidden mb-6">
+            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Balance by Category</h3>
+            <div id="category-cards" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+        </div>
+
         <!-- Ledger Table -->
         <div class="bg-white shadow-lg rounded-lg overflow-hidden">
             <table class="min-w-full divide-y divide-gray-200">
@@ -82,6 +88,7 @@ async function loadLedger() {
             : `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-green-100 text-green-800">Paid up</span>`;
 
         renderLedger(data.ledger);
+        renderCategoryBreakdown(data.by_category || {});
     } catch (err) {
         document.getElementById('ledger-table').innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-red-500">Failed to load ledger</td></tr>';
     }
@@ -107,6 +114,24 @@ function renderLedger(rows) {
             <td class="px-6 py-3 whitespace-nowrap text-sm text-right ${!isCharge ? 'text-green-600' : ''}">${!isCharge ? '$' + parseFloat(r.amount).toFixed(2) : ''}</td>
             <td class="px-6 py-3 whitespace-nowrap text-sm text-right ${balClass}">$${runBal.toFixed(2)}</td>
         </tr>`;
+    }).join('');
+}
+
+function renderCategoryBreakdown(cats) {
+    const keys = Object.keys(cats);
+    if (keys.length < 2) { document.getElementById('category-breakdown').classList.add('hidden'); return; }
+    document.getElementById('category-breakdown').classList.remove('hidden');
+    const colors = { tuition: 'border-blue-400', costumes: 'border-pink-400', shoes: 'border-yellow-400', other: 'border-gray-400' };
+    document.getElementById('category-cards').innerHTML = keys.map(cat => {
+        const c = cats[cat];
+        const bal = parseFloat(c.balance);
+        const balClass = bal > 0 ? 'text-red-600' : bal < 0 ? 'text-green-600' : 'text-gray-900';
+        const balText = bal > 0 ? '$' + bal.toFixed(2) + ' due' : bal < 0 ? '$' + Math.abs(bal).toFixed(2) + ' credit' : 'Paid';
+        return `<div class="bg-white rounded-lg shadow p-3 border-l-4 ${colors[cat] || colors.other}">
+            <p class="text-xs font-medium text-gray-500 uppercase">${esc(cat)}</p>
+            <p class="text-lg font-bold ${balClass}">${balText}</p>
+            <p class="text-xs text-gray-400">$${parseFloat(c.charges).toFixed(2)} charged &middot; $${parseFloat(c.payments).toFixed(2)} paid</p>
+        </div>`;
     }).join('');
 }
 
