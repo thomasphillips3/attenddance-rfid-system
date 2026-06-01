@@ -82,12 +82,20 @@
                 <h3 id="enroll-modal-title" class="text-lg font-medium text-gray-900">Manage Students</h3>
                 <button onclick="closeEnrollModal()" class="text-gray-400 hover:text-gray-500"><i class="fas fa-times"></i></button>
             </div>
-            <!-- Add student -->
-            <div class="flex space-x-2 mb-4">
-                <select id="enroll-student-select" class="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm">
-                    <option value="">Select student to enroll...</option>
-                </select>
-                <button onclick="enrollStudent()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700">Enroll</button>
+            <!-- Add students (batch) -->
+            <div id="add-students-section" class="mb-4 hidden">
+                <div class="border border-gray-200 rounded-md max-h-48 overflow-y-auto p-2" id="student-checklist">
+                    <p class="text-gray-500 text-sm">Loading...</p>
+                </div>
+                <div class="flex justify-end mt-2 space-x-2">
+                    <button onclick="toggleAddSection(false)" class="px-3 py-1.5 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+                    <button onclick="enrollSelected()" class="px-3 py-1.5 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700">Enroll Selected</button>
+                </div>
+            </div>
+            <div id="add-btn-row" class="mb-4">
+                <button onclick="toggleAddSection(true)" class="w-full inline-flex justify-center items-center px-3 py-2 border border-dashed border-gray-300 rounded-md text-sm text-gray-600 hover:border-primary-400 hover:text-primary-600">
+                    <i class="fas fa-plus mr-2"></i>Add Students
+                </button>
             </div>
             <!-- Enrolled students list -->
             <div id="enrolled-students" class="space-y-2">
@@ -163,12 +171,7 @@ async function openEnrollModal(classId, className) {
     currentClassId = classId;
     document.getElementById('enroll-modal-title').textContent = `Students in ${className}`;
     document.getElementById('enroll-modal').classList.remove('hidden');
-    // Load students for dropdown
-    const res = await fetch('/api/students?per_page=100');
-    const data = await res.json();
-    const select = document.getElementById('enroll-student-select');
-    select.innerHTML = '<option value="">Select student to enroll...</option>' +
-        data.students.map(s => `<option value="${s.id}">${esc(s.full_name)}</option>`).join('');
+    toggleAddSection(false);
     loadEnrollments();
 }
 
@@ -176,6 +179,32 @@ function closeEnrollModal() {
     document.getElementById('enroll-modal').classList.add('hidden');
     currentClassId = null;
     loadClasses();
+}
+
+async function toggleAddSection(show) {
+    document.getElementById('add-students-section').classList.toggle('hidden', !show);
+    document.getElementById('add-btn-row').classList.toggle('hidden', show);
+    if (show) {
+        const [studentsRes, enrollRes] = await Promise.all([
+            fetch('/api/students?per_page=100'),
+            fetch(`/api/classes/${currentClassId}/enrollments`)
+        ]);
+        const studentsData = await studentsRes.json();
+        const enrollData = await enrollRes.json();
+        const enrolledIds = new Set(enrollData.enrollments.map(e => e.student_id));
+        const available = studentsData.students.filter(s => !enrolledIds.has(s.id));
+        const cl = document.getElementById('student-checklist');
+        if (!available.length) {
+            cl.innerHTML = '<p class="text-gray-500 text-sm py-2 text-center">All students are already enrolled.</p>';
+            return;
+        }
+        cl.innerHTML = available.map(s => `
+            <label class="flex items-center px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer">
+                <input type="checkbox" value="${s.id}" class="student-cb h-4 w-4 text-primary-600 border-gray-300 rounded mr-3">
+                <span class="text-sm text-gray-900">${esc(s.full_name)}</span>
+            </label>
+        `).join('');
+    }
 }
 
 async function loadEnrollments() {
@@ -207,16 +236,16 @@ async function loadEnrollments() {
     } catch (err) { el.innerHTML = '<p class="text-red-500 text-sm">Failed to load</p>'; }
 }
 
-async function enrollStudent() {
-    const studentId = document.getElementById('enroll-student-select').value;
-    if (!studentId) { alert('Select a student first'); return; }
+async function enrollSelected() {
+    const checked = [...document.querySelectorAll('.student-cb:checked')].map(cb => parseInt(cb.value));
+    if (!checked.length) { alert('Select at least one student'); return; }
     try {
         const res = await fetch(`/api/classes/${currentClassId}/enroll`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ student_id: parseInt(studentId) })
+            body: JSON.stringify({ student_ids: checked })
         });
         const data = await res.json();
-        if (res.ok) { loadEnrollments(); document.getElementById('enroll-student-select').value = ''; }
+        if (res.ok) { toggleAddSection(false); loadEnrollments(); }
         else { alert(data.error || 'Enrollment failed'); }
     } catch (err) { alert('Network error'); }
 }

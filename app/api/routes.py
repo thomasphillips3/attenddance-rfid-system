@@ -405,28 +405,39 @@ def get_class_enrollments(class_id):
 @bp.route('/classes/<int:class_id>/enroll', methods=['POST'])
 @login_required
 def enroll_student(class_id):
-    """Enroll a student in a class"""
+    """Enroll one or more students in a class"""
     dance_class = DanceClass.query.get_or_404(class_id)
     data = request.get_json()
-    if not data or not data.get('student_id'):
-        return jsonify({'error': 'student_id is required'}), 400
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
 
-    student_id = int(data['student_id'])
-    student = Student.query.get_or_404(student_id)
+    # Accept single student_id or batch student_ids
+    student_ids = data.get('student_ids', [])
+    if not student_ids and data.get('student_id'):
+        student_ids = [int(data['student_id'])]
+    if not student_ids:
+        return jsonify({'error': 'student_id or student_ids is required'}), 400
 
-    existing = ClassEnrollment.query.filter_by(
-        student_id=student_id, class_id=class_id, is_active=True
-    ).first()
-    if existing:
-        return jsonify({'error': f'{student.full_name} is already enrolled'}), 400
+    enrolled = []
+    skipped = []
+    for sid in student_ids:
+        student = Student.query.get(int(sid))
+        if not student:
+            continue
+        existing = ClassEnrollment.query.filter_by(
+            student_id=student.id, class_id=class_id, is_active=True
+        ).first()
+        if existing:
+            skipped.append(student.full_name)
+            continue
+        db.session.add(ClassEnrollment(student_id=student.id, class_id=class_id))
+        enrolled.append(student.full_name)
 
-    enrollment = ClassEnrollment(
-        student_id=student_id,
-        class_id=class_id,
-    )
-    db.session.add(enrollment)
     db.session.commit()
-    return jsonify({'message': f'{student.full_name} enrolled in {dance_class.name}'}), 201
+    msg = f'{len(enrolled)} student(s) enrolled in {dance_class.name}'
+    if skipped:
+        msg += f' ({len(skipped)} already enrolled)'
+    return jsonify({'message': msg, 'enrolled': enrolled, 'skipped': skipped}), 201
 
 @bp.route('/enrollments/<int:enrollment_id>', methods=['DELETE'])
 @login_required
