@@ -23,8 +23,10 @@ class User(UserMixin, db.Model):
     phone = db.Column(db.String(20))
     
     # Permissions
+    role = db.Column(db.String(20), default='teacher', nullable=False)  # admin, teacher, parent
     is_admin = db.Column(db.Boolean, default=False, nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    invite_code = db.Column(db.String(20), unique=True)
     
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -43,8 +45,39 @@ class User(UserMixin, db.Model):
         """Get user's full name"""
         return f"{self.first_name} {self.last_name}"
     
+    @property
+    def is_parent(self):
+        return self.role == 'parent'
+
+    @property
+    def is_staff(self):
+        return self.role in ('admin', 'teacher')
+
+    def get_children(self):
+        """Get students linked to this parent user."""
+        if not self.is_parent:
+            return []
+        links = ParentStudent.query.filter_by(parent_id=self.id).all()
+        return [Student.query.get(l.student_id) for l in links if Student.query.get(l.student_id)]
+
     def __repr__(self):
         return f'<User {self.username}>'
+
+class ParentStudent(db.Model):
+    """Links parent users to their children (students)"""
+    __tablename__ = 'parent_students'
+
+    id = db.Column(db.Integer, primary_key=True)
+    parent_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('parent_id', 'student_id', name='unique_parent_student'),
+    )
+
+    parent = db.relationship('User', backref='parent_links')
+    student = db.relationship('Student', backref='parent_links')
 
 class Student(db.Model):
     """Student model"""

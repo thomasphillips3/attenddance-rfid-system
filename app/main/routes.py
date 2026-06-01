@@ -3,12 +3,23 @@ Main web interface routes for AttenDANCE system
 """
 
 from datetime import date, datetime, timedelta
-from flask import render_template, redirect, url_for
+from functools import wraps
+from flask import render_template, redirect, url_for, abort
 from flask_login import login_required, current_user
 from sqlalchemy import func, desc
 from app.main import bp
 from app import db
-from app.models import Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction
+from app.models import Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction, ParentStudent
+
+def staff_required(f):
+    """Decorator: only admin/teacher can access."""
+    @wraps(f)
+    @login_required
+    def decorated(*args, **kwargs):
+        if (current_user.role or 'teacher') == 'parent':
+            return redirect(url_for('main.parent_dashboard'))
+        return f(*args, **kwargs)
+    return decorated
 
 @bp.route('/')
 def index():
@@ -18,7 +29,7 @@ def index():
     return redirect(url_for('auth.login'))
 
 @bp.route('/dashboard')
-@login_required
+@staff_required
 def dashboard():
     """Main dashboard"""
     today = date.today()
@@ -57,25 +68,48 @@ def dashboard():
     )
 
 @bp.route('/students')
-@login_required
+@staff_required
 def students():
     """Students list page"""
     return render_template('students/list.html')
 
 @bp.route('/classes')
-@login_required
+@staff_required
 def classes():
     """Classes list page"""
     return render_template('classes/list.html')
 
 @bp.route('/attendance')
-@login_required
+@staff_required
 def attendance():
     """Attendance list page"""
     return render_template('attendance/list.html')
 
-@bp.route('/transactions')
+@bp.route('/parent')
 @login_required
+def parent_dashboard():
+    """Parent dashboard — read-only view of their children"""
+    if (current_user.role or 'teacher') != 'parent':
+        return redirect(url_for('main.dashboard'))
+    children = current_user.get_children()
+    child_data = []
+    for child in children:
+        txns = Transaction.query.filter_by(student_id=child.id).all()
+        total_charges = sum(float(t.amount) for t in txns if (t.type or 'payment') == 'charge')
+        total_payments = sum(float(t.amount) for t in txns if (t.type or 'payment') == 'payment')
+        recent_att = Attendance.query.filter_by(student_id=child.id).order_by(
+            desc(Attendance.check_in_time)).limit(10).all()
+        child_data.append({
+            'student': child,
+            'balance': total_charges - total_payments,
+            'total_charges': total_charges,
+            'total_payments': total_payments,
+            'recent_attendance': recent_att,
+        })
+    return render_template('parent/dashboard.html', children=child_data)
+
+@bp.route('/transactions')
+@staff_required
 def transactions():
     """Transactions page"""
     students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()

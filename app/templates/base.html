@@ -99,6 +99,12 @@
                     
                     <!-- Desktop Navigation -->
                     <div class="hidden md:ml-8 md:flex md:space-x-8">
+                    {% if current_user.role is defined and current_user.role == 'parent' %}
+                        <a href="{{ url_for('main.parent_dashboard') }}"
+                           class="nav-item border-primary-500 text-primary-600 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                            <i class="fas fa-home mr-2"></i>My Dashboard
+                        </a>
+                    {% else %}
                         <a href="{{ url_for('main.dashboard') }}" 
                            class="nav-item {% if request.endpoint == 'main.dashboard' %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                             <i class="fas fa-tachometer-alt mr-2"></i>Dashboard
@@ -123,6 +129,7 @@
                            class="nav-item {% if request.endpoint and 'transaction' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                             <i class="fas fa-dollar-sign mr-2"></i>Payments
                         </a>
+                    {% endif %}
                     </div>
                 </div>
                 
@@ -188,15 +195,21 @@
         <!-- Mobile menu -->
         <div x-show="mobileMenuOpen" class="md:hidden">
             <div class="pt-2 pb-3 space-y-1">
-                <a href="{{ url_for('main.dashboard') }}" 
+            {% if current_user.role is defined and current_user.role == 'parent' %}
+                <a href="{{ url_for('main.parent_dashboard') }}"
+                   class="bg-primary-50 border-primary-500 text-primary-700 block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
+                    <i class="fas fa-home mr-2"></i>My Dashboard
+                </a>
+            {% else %}
+                <a href="{{ url_for('main.dashboard') }}"
                    class="{% if request.endpoint == 'main.dashboard' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-tachometer-alt mr-2"></i>Dashboard
                 </a>
-                <a href="{{ url_for('main.students') }}" 
+                <a href="{{ url_for('main.students') }}"
                    class="{% if request.endpoint and 'students' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-users mr-2"></i>Students
                 </a>
-                <a href="{{ url_for('main.classes') }}" 
+                <a href="{{ url_for('main.classes') }}"
                    class="{% if request.endpoint and 'classes' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-calendar-alt mr-2"></i>Classes
                 </a>
@@ -212,6 +225,7 @@
                    class="{% if request.endpoint and 'transaction' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-dollar-sign mr-2"></i>Payments
                 </a>
+            {% endif %}
             </div>
         </div>
     </nav>

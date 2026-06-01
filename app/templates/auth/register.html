@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parent Registration - AttenDANCE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { theme: { extend: { colors: { primary: { 50: '#f0f9ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 900: '#312e81' } } } } }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .logo-dance { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    </style>
+</head>
+<body class="h-full">
+    <div class="min-h-full flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div class="sm:mx-auto sm:w-full sm:max-w-md">
+            <div class="flex justify-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-12 h-12 bg-gradient-to-br from-primary-500 to-purple-600 rounded-xl flex items-center justify-center">
+                        <i class="fas fa-music text-white text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-3xl font-bold logo-dance">AttenDANCE</h1>
+                        <p class="text-sm text-gray-500 mt-1">LaShelle's School of Dance</p>
+                    </div>
+                </div>
+            </div>
+            <h2 class="mt-8 text-center text-2xl font-bold text-gray-900">Parent Registration</h2>
+            <p class="mt-2 text-center text-sm text-gray-600">Enter your invite code to create your account</p>
+        </div>
+
+        <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+            <div class="bg-white py-8 px-4 shadow-xl sm:rounded-lg sm:px-10">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                        <div class="mb-4 rounded-md p-4 {% if category == 'error' %}bg-red-50 border border-red-200{% else %}bg-green-50 border border-green-200{% endif %}">
+                            <p class="text-sm {% if category == 'error' %}text-red-800{% else %}text-green-800{% endif %}">{{ message }}</p>
+                        </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                <form class="space-y-5" method="POST" action="{{ url_for('auth.register_parent') }}">
+                    <div>
+                        <label for="invite_code" class="block text-sm font-medium text-gray-700">Invite Code *</label>
+                        <div class="mt-1 relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-ticket-alt text-gray-400"></i>
+                            </div>
+                            <input id="invite_code" name="invite_code" type="text" required
+                                   class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 uppercase"
+                                   placeholder="Enter your 8-character code"
+                                   value="{{ request.args.get('code', '') or request.form.get('invite_code', '') }}">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label for="first_name" class="block text-sm font-medium text-gray-700">First Name *</label>
+                            <input id="first_name" name="first_name" type="text" required
+                                   class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                        </div>
+                        <div>
+                            <label for="last_name" class="block text-sm font-medium text-gray-700">Last Name *</label>
+                            <input id="last_name" name="last_name" type="text" required
+                                   class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="email" class="block text-sm font-medium text-gray-700">Email *</label>
+                        <input id="email" name="email" type="email" required
+                               class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                               placeholder="your@email.com">
+                    </div>
+                    <div>
+                        <label for="password" class="block text-sm font-medium text-gray-700">Password *</label>
+                        <input id="password" name="password" type="password" required minlength="6"
+                               class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                               placeholder="At least 6 characters">
+                    </div>
+                    <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                        Create Account
+                    </button>
+                </form>
+
+                <div class="mt-4 text-center">
+                    <p class="text-sm text-gray-600">Already have an account? <a href="{{ url_for('auth.login') }}" class="font-medium text-primary-600 hover:text-primary-500">Sign in</a></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

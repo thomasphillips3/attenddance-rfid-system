@@ -8,7 +8,7 @@ from flask_login import login_user, logout_user, current_user, login_required
 from urllib.parse import urlparse
 
 from app.auth import bp
-from app.models import User
+from app.models import User, ParentStudent, Student
 from app import db
 
 @bp.route('/login', methods=['GET', 'POST'])
@@ -64,7 +64,10 @@ def login():
         # Handle next page redirect
         next_page = request.args.get('next')
         if not next_page or urlparse(next_page).netloc != '':
-            next_page = url_for('main.dashboard')
+            if (user.role or 'teacher') == 'parent':
+                next_page = url_for('main.parent_dashboard')
+            else:
+                next_page = url_for('main.dashboard')
         
         if request.is_json:
             return jsonify({
@@ -159,4 +162,46 @@ def check_session():
             'is_admin': current_user.is_admin
         })
     else:
-        return jsonify({'authenticated': False}), 401 
+        return jsonify({'authenticated': False}), 401
+
+@bp.route('/register', methods=['GET', 'POST'])
+def register_parent():
+    """Parent self-registration with invite code"""
+    if current_user.is_authenticated:
+        return redirect(url_for('main.dashboard'))
+
+    if request.method == 'POST':
+        invite_code = request.form.get('invite_code', '').strip()
+        first_name = request.form.get('first_name', '').strip()
+        last_name = request.form.get('last_name', '').strip()
+        email = request.form.get('email', '').strip()
+        password = request.form.get('password', '')
+
+        if not all([invite_code, first_name, last_name, email, password]):
+            flash('All fields are required', 'error')
+            return render_template('auth/register.html')
+
+        # Validate invite code — must match a student's record
+        student = Student.query.filter(
+            (Student.parent_email == email) | (Student.email == email)
+        ).first()
+        # Check code matches any active invite
+        invite_user = User.query.filter_by(invite_code=invite_code, role='parent', is_active=False).first()
+        if not invite_user:
+            flash('Invalid invite code', 'error')
+            return render_template('auth/register.html')
+
+        # Activate the pre-created parent account
+        invite_user.first_name = first_name
+        invite_user.last_name = last_name
+        invite_user.email = email
+        invite_user.set_password(password)
+        invite_user.is_active = True
+        invite_user.invite_code = None
+        db.session.commit()
+
+        login_user(invite_user)
+        flash(f'Welcome, {first_name}!', 'success')
+        return redirect(url_for('main.parent_dashboard'))
+
+    return render_template('auth/register.html') 

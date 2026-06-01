@@ -98,6 +98,11 @@ def create_app(config_name=None):
                                  ('allergies', 'TEXT'), ('special_needs', 'TEXT')]:
                 if col not in student_cols:
                     conn.execute(sqlalchemy.text(f'ALTER TABLE students ADD COLUMN {col} {coltype}'))
+            user_cols = [c['name'] for c in inspector.get_columns('users')]
+            if 'role' not in user_cols:
+                conn.execute(sqlalchemy.text("ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'teacher'"))
+            if 'invite_code' not in user_cols:
+                conn.execute(sqlalchemy.text("ALTER TABLE users ADD COLUMN invite_code VARCHAR(20)"))
             if 'transactions' in inspector.get_table_names():
                 txn_cols = [c['name'] for c in inspector.get_columns('transactions')]
                 if 'type' not in txn_cols:

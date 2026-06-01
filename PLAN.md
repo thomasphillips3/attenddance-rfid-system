@@ -1,29 +1,19 @@
 # AttenDANCE — Feature Roadmap
 
 Client: LaShelle's School of Dance
-Status: Attendance + basic payments shipped. Client wants billing, parent access, waivers.
+Status: Phase 1 shipped + Square integration + recurring billing. Building Phase 2.
 
 ---
 
-## Phase 1: Billing & Balance Ledger
+## Phase 1: Billing & Balance Ledger  ✅ DONE
 > "Can it show charges/balances like a spreadsheet format that keeps a tally?"
 
-She needs to see what each family OWES vs what they've PAID — not just payment records.
-
-- [ ] **1a.** Add transaction `type` field: `charge` vs `payment`
-  - Charges = tuition due, costume fee, shoe fee, recital fee, etc.
-  - Payments = what they actually paid (cash, zelle, venmo, etc.)
-- [ ] **1b.** Student ledger page (`/students/<id>/ledger`)
-  - Spreadsheet-style table: Date | Description | Charge | Payment | Balance
-  - Running balance column (charges add, payments subtract)
-  - Summary at top: Total Charges, Total Paid, Balance Due
-- [ ] **1c.** Update Payments page with balance overview
-  - Show each student's current balance (what they owe)
-  - Color code: green = paid up, red = balance due
-  - Quick "Add Charge" and "Add Payment" buttons
-- [ ] **1d.** Bulk charge tool
-  - "Charge all students in [class] $X for [tuition/costumes/etc.]"
-  - So she doesn't have to add tuition one student at a time
+- [x] **1a.** Transaction type field: charge vs payment
+- [x] **1b.** Student ledger page with running balance
+- [x] **1c.** Payments page with balance overview + Add Charge / Add Payment
+- [x] **1d.** Bulk charge tool — charge entire class at once
+- [x] **1e.** Recurring auto-billing — set monthly charge rules per class
+- [x] **1f.** Square invoice integration — send Pay Now links to parents
 
 ## Phase 2: Parent Login
 > "Parent login?"
@@ -41,25 +31,40 @@ Parents need to see their own kid's info — attendance, balance, profile. NOT e
   - Parent signs up, gets linked to their kid(s)
 - [ ] **2e.** Lock down existing routes — parents can't see other students or admin pages
 
-## Phase 3: Waiver Signing
-> "Waiver signing?"
+## Phase 3: Rules & Regulations Acknowledgment
+> "Before people register for class, they have to read our rules and regulations and initial each one"
 
-Digital waiver that parents sign — liability release, photo consent, medical authorization.
+Not a single waiver signature — each rule gets individually initialed.
 
-- [ ] **3a.** Waiver template model — admin creates waiver text
-- [ ] **3b.** Signing flow — parent views waiver, types name, checks box, timestamp recorded
-- [ ] **3c.** Waiver status on student profile — signed / not signed / expired
-- [ ] **3d.** Admin view — who hasn't signed yet, send reminders
+- [ ] **3a.** Rule model — admin creates individual rules (text + order)
+- [ ] **3b.** Acknowledgment flow — parent sees each rule, initials each one (type initials + checkbox)
+- [ ] **3c.** Acknowledgment status on student profile — complete / incomplete / expired
+- [ ] **3d.** Admin view — manage rules, see who hasn't acknowledged, block enrollment until complete
+- [ ] **3e.** Tie to parent login — parents complete this during registration or on first login
+
+## Phase 4: Square Online Payments (enhance)
+> "What about if people want to pay with a credit card?"
+
+Square integration is built (Phase 1f). This phase enhances it.
+
+- [ ] **4a.** Auto-record payments — webhook from Square updates ledger when invoice is paid
+- [ ] **4b.** Payment status on ledger — show "Invoice Sent" / "Paid via Square" tags
+- [ ] **4c.** Batch invoicing — send invoices to all students with balances at once
+
+## Phase 5: Email & Text Blasts
+> "There's also an option that lets us email or text blast everyone or whomever we choose"
+
+Send messages to all parents or a filtered group.
+
+- [ ] **5a.** Message composer — write subject + body, pick recipients (all / by class / individual)
+- [ ] **5b.** Email delivery via SendGrid or SES
+- [ ] **5c.** SMS delivery via Twilio
+- [ ] **5d.** Message history — what was sent, to whom, when
 
 ---
 
 ## Priority Order
 
-**Phase 1 first.** She's already in the payments page and this is the immediate ask.
-Phase 2 next — unlocks parent self-service.
-Phase 3 last — nice to have, less urgent.
-
-## Out of Scope (for now)
-- Actual payment processing (Stripe, Square) — she's using Cash App/Zelle/Venmo directly
-- Automated recurring billing — manual charge entry for now
-- Email/SMS notifications — future
+**Phase 2 next** — parent login is the most-requested feature and unlocks Phase 3.
+Phase 3 after — rules acknowledgment ties into parent registration.
+Phase 4-5 are enhancements — build when core features are solid.

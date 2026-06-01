@@ -8,7 +8,8 @@ from flask_login import login_required, current_user
 from sqlalchemy import and_, or_, desc, func
 
 from app.api import bp
-from app.models import User, Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction, RecurringCharge
+from app.models import User, Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction, RecurringCharge, ParentStudent
+import secrets
 from app import square_service
 from app import db
 try:
@@ -1020,3 +1021,49 @@ def send_student_invoice(student_id):
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# Parent invite endpoints
+@bp.route('/students/<int:student_id>/invite-parent', methods=['POST'])
+@login_required
+def invite_parent(student_id):
+    """Generate an invite code for a student's parent"""
+    if (current_user.role or 'teacher') == 'parent':
+        return jsonify({'error': 'Only staff can generate invites'}), 403
+
+    student = Student.query.get_or_404(student_id)
+
+    # Check if there's already a pending invite for this student
+    existing_links = ParentStudent.query.filter_by(student_id=student_id).all()
+    for link in existing_links:
+        parent = User.query.get(link.parent_id)
+        if parent and parent.is_active:
+            return jsonify({'error': f'Parent already linked: {parent.full_name} ({parent.email})'}), 400
+
+    # Generate invite code
+    code = secrets.token_hex(4).upper()  # 8-char hex code
+
+    # Create inactive parent user placeholder
+    placeholder_email = f'invite-{code}@pending.local'
+    parent_user = User(
+        username=f'parent-{code}',
+        email=placeholder_email,
+        first_name='Pending',
+        last_name='Parent',
+        password_hash='not-set',
+        role='parent',
+        is_active=False,
+        invite_code=code,
+    )
+    db.session.add(parent_user)
+    db.session.flush()
+
+    # Link to student
+    link = ParentStudent(parent_id=parent_user.id, student_id=student_id)
+    db.session.add(link)
+    db.session.commit()
+
+    return jsonify({
+        'invite_code': code,
+        'message': f'Invite code generated for {student.full_name}. Share this with the parent: {code}',
+        'register_url': f'/auth/register?code={code}',
+    }), 201

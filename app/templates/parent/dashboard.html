@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <h1 class="text-3xl font-bold text-gray-900">Parent Portal</h1>
+            <p class="mt-1 text-sm text-gray-600">Welcome, {{ current_user.first_name }}. View your child's attendance and account.</p>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        {% if not children %}
+        <div class="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+            <i class="fas fa-user-friends text-4xl mb-4"></i>
+            <p>No students linked to your account yet. Contact the studio if you need help.</p>
+        </div>
+        {% endif %}
+
+        {% for child in children %}
+        <div class="bg-white rounded-lg shadow-lg mb-8 overflow-hidden">
+            <div class="bg-primary-500 px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <div class="h-12 w-12 rounded-full bg-white bg-opacity-20 flex items-center justify-center">
+                            <span class="text-lg font-bold text-white">{{ child.student.first_name[0] }}{{ child.student.last_name[0] }}</span>
+                        </div>
+                        <div class="ml-4">
+                            <h2 class="text-xl font-bold text-white">{{ child.student.full_name }}</h2>
+                            <p class="text-primary-100 text-sm">
+                                {% if child.student.school %}{{ child.student.school }}{% endif %}
+                                {% if child.student.grade %} &middot; {{ child.student.grade }}{% endif %}
+                            </p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        {% if child.balance > 0 %}
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-red-100 text-red-800">${{ '%.2f' % child.balance }} due</span>
+                        {% else %}
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-green-100 text-green-800">Paid up</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-6">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    {% if child.student.date_of_birth %}
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 uppercase">Age</p>
+                        <p class="text-sm text-gray-900">{{ child.student.age }}</p>
+                    </div>
+                    {% endif %}
+                    {% if child.student.allergies %}
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 uppercase">Allergies</p>
+                        <p class="text-sm text-red-600 font-medium">{{ child.student.allergies }}</p>
+                    </div>
+                    {% endif %}
+                    {% if child.student.special_needs %}
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 uppercase">Special Needs</p>
+                        <p class="text-sm text-gray-900">{{ child.student.special_needs }}</p>
+                    </div>
+                    {% endif %}
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 uppercase">Account</p>
+                        <p class="text-sm text-gray-900">${{ '%.2f' % child.total_charges }} charged &middot; ${{ '%.2f' % child.total_payments }} paid</p>
+                    </div>
+                </div>
+
+                <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Recent Attendance</h3>
+                {% if child.recent_attendance %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Class</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            {% for att in child.recent_attendance %}
+                            <tr>
+                                <td class="px-4 py-2 text-sm text-gray-900">{{ att.check_in_time.strftime('%b %d, %Y') }}</td>
+                                <td class="px-4 py-2 text-sm text-gray-900">{{ att.dance_class.name }}</td>
+                                <td class="px-4 py-2">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Present</span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-sm text-gray-500">No attendance records yet.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
