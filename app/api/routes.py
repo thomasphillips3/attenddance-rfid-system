@@ -425,12 +425,16 @@ def enroll_student(class_id):
         if not student:
             continue
         existing = ClassEnrollment.query.filter_by(
-            student_id=student.id, class_id=class_id, is_active=True
+            student_id=student.id, class_id=class_id
         ).first()
         if existing:
-            skipped.append(student.full_name)
-            continue
-        db.session.add(ClassEnrollment(student_id=student.id, class_id=class_id))
+            if existing.is_active:
+                skipped.append(student.full_name)
+                continue
+            existing.is_active = True
+            existing.enrolled_date = date.today()
+        else:
+            db.session.add(ClassEnrollment(student_id=student.id, class_id=class_id))
         enrolled.append(student.full_name)
 
     db.session.commit()
