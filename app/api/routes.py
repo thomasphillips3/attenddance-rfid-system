@@ -9,6 +9,7 @@ from sqlalchemy import and_, or_, desc, func
 
 from app.api import bp
 from app.models import User, Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction, RecurringCharge
+from app import square_service
 from app import db
 try:
     from rfid.service import get_rfid_service
@@ -969,3 +970,53 @@ def process_recurring_charges():
     from app import _process_recurring_charges
     _process_recurring_charges()
     return jsonify({'message': 'Recurring charges processed'})
+
+# Square payment endpoints
+@bp.route('/square/status', methods=['GET'])
+@login_required
+def square_status():
+    """Check if Square is configured"""
+    return jsonify({'configured': square_service.is_configured()})
+
+@bp.route('/students/<int:student_id>/send-invoice', methods=['POST'])
+@login_required
+def send_student_invoice(student_id):
+    """Send a Square invoice for a student's outstanding balance"""
+    if not square_service.is_configured():
+        return jsonify({'error': 'Square is not configured. Set SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID in environment.'}), 400
+
+    student = Student.query.get_or_404(student_id)
+    txns = Transaction.query.filter_by(student_id=student_id).all()
+    total_charges = sum(float(t.amount) for t in txns if (t.type or 'payment') == 'charge')
+    total_payments = sum(float(t.amount) for t in txns if (t.type or 'payment') == 'payment')
+    balance = total_charges - total_payments
+
+    if balance <= 0:
+        return jsonify({'error': 'No outstanding balance to invoice'}), 400
+
+    # Build line items from unpaid charges
+    unpaid_charges = [t for t in txns if (t.type or 'payment') == 'charge']
+    line_items = []
+    for t in unpaid_charges:
+        line_items.append({
+            'name': t.description or t.category,
+            'amount_cents': int(float(t.amount) * 100),
+        })
+
+    # Due in 14 days
+    due = date.today() + timedelta(days=14)
+
+    try:
+        result = square_service.send_invoice(
+            student=student,
+            amount_cents=int(balance * 100),
+            line_items=line_items,
+            due_date=due,
+        )
+        return jsonify({
+            'message': f'Invoice sent to {student.parent_email or student.email}',
+            'invoice_url': result['invoice_url'],
+            'invoice_id': result['invoice_id'],
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

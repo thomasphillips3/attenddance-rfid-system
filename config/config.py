@@ -52,6 +52,11 @@ class Config:
     STUDENTS_PER_PAGE = 50
     ATTENDANCE_PER_PAGE = 100
     
+    # Square payments
+    SQUARE_ACCESS_TOKEN = os.environ.get('SQUARE_ACCESS_TOKEN')
+    SQUARE_LOCATION_ID = os.environ.get('SQUARE_LOCATION_ID')
+    SQUARE_ENVIRONMENT = os.environ.get('SQUARE_ENVIRONMENT', 'sandbox')  # sandbox or production
+
     # Email settings (for future notifications)
     MAIL_SERVER = os.environ.get('MAIL_SERVER')
     MAIL_PORT = int(os.environ.get('MAIL_PORT') or 587)
