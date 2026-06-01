@@ -740,6 +740,7 @@ def transaction_to_dict(t):
         'id': t.id,
         'student_id': t.student_id,
         'student_name': t.student.full_name,
+        'type': t.type or 'payment',
         'amount': str(t.amount),
         'category': t.category,
         'payment_method': t.payment_method,
@@ -784,9 +785,12 @@ def create_transaction():
     if not data:
         return jsonify({'error': 'No data provided'}), 400
 
-    for field in ['student_id', 'amount', 'category', 'payment_method']:
+    txn_type = data.get('type', 'payment')
+    for field in ['student_id', 'amount', 'category']:
         if not data.get(field):
             return jsonify({'error': f'{field} is required'}), 400
+    if txn_type == 'payment' and not data.get('payment_method'):
+        return jsonify({'error': 'payment_method is required for payments'}), 400
 
     student = Student.query.get(data['student_id'])
     if not student:
@@ -795,9 +799,10 @@ def create_transaction():
     try:
         t = Transaction(
             student_id=student.id,
+            type=txn_type,
             amount=data['amount'],
             category=data['category'],
-            payment_method=data['payment_method'],
+            payment_method=data.get('payment_method') or None,
             description=data.get('description', '').strip() or None,
             transaction_date=datetime.strptime(data['transaction_date'], '%Y-%m-%d').date() if data.get('transaction_date') else date.today(),
             created_by=current_user.id,
@@ -808,3 +813,89 @@ def create_transaction():
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
+@bp.route('/balances', methods=['GET'])
+@login_required
+def get_balances():
+    """Get balance summary for all active students"""
+    students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
+    balances = []
+    for s in students:
+        txns = Transaction.query.filter_by(student_id=s.id).all()
+        total_charges = sum(float(t.amount) for t in txns if (t.type or 'payment') == 'charge')
+        total_payments = sum(float(t.amount) for t in txns if (t.type or 'payment') == 'payment')
+        balance = total_charges - total_payments
+        balances.append({
+            'student_id': s.id,
+            'student_name': s.full_name,
+            'total_charges': f'{total_charges:.2f}',
+            'total_payments': f'{total_payments:.2f}',
+            'balance': f'{balance:.2f}',
+        })
+    return jsonify({'balances': balances})
+
+@bp.route('/students/<int:student_id>/ledger', methods=['GET'])
+@login_required
+def get_student_ledger(student_id):
+    """Get full ledger for a student with running balance"""
+    student = Student.query.get_or_404(student_id)
+    txns = Transaction.query.filter_by(student_id=student_id).order_by(
+        Transaction.transaction_date, Transaction.created_at
+    ).all()
+    running = 0.0
+    ledger = []
+    for t in txns:
+        amt = float(t.amount)
+        if (t.type or 'payment') == 'charge':
+            running += amt
+        else:
+            running -= amt
+        ledger.append({
+            **transaction_to_dict(t),
+            'running_balance': f'{running:.2f}',
+        })
+    total_charges = sum(float(t.amount) for t in txns if (t.type or 'payment') == 'charge')
+    total_payments = sum(float(t.amount) for t in txns if (t.type or 'payment') == 'payment')
+    return jsonify({
+        'student_id': student.id,
+        'student_name': student.full_name,
+        'ledger': ledger,
+        'total_charges': f'{total_charges:.2f}',
+        'total_payments': f'{total_payments:.2f}',
+        'balance': f'{total_charges - total_payments:.2f}',
+    })
+
+@bp.route('/transactions/bulk-charge', methods=['POST'])
+@login_required
+def bulk_charge():
+    """Charge all enrolled students in a class"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    for field in ['class_id', 'amount', 'category']:
+        if not data.get(field):
+            return jsonify({'error': f'{field} is required'}), 400
+
+    dance_class = DanceClass.query.get(data['class_id'])
+    if not dance_class:
+        return jsonify({'error': 'Class not found'}), 404
+
+    enrollments = ClassEnrollment.query.filter_by(class_id=dance_class.id, is_active=True).all()
+    if not enrollments:
+        return jsonify({'error': 'No students enrolled in this class'}), 400
+
+    charged = []
+    for e in enrollments:
+        t = Transaction(
+            student_id=e.student_id,
+            type='charge',
+            amount=data['amount'],
+            category=data['category'],
+            description=data.get('description', '').strip() or f'{dance_class.name} - {data["category"]}',
+            transaction_date=datetime.strptime(data['transaction_date'], '%Y-%m-%d').date() if data.get('transaction_date') else date.today(),
+            created_by=current_user.id,
+        )
+        db.session.add(t)
+        charged.append(e.student_id)
+    db.session.commit()
+    return jsonify({'message': f'Charged {len(charged)} students', 'count': len(charged)}), 201

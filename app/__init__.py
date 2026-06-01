@@ -63,6 +63,10 @@ def create_app(config_name=None):
                                  ('allergies', 'TEXT'), ('special_needs', 'TEXT')]:
                 if col not in student_cols:
                     conn.execute(sqlalchemy.text(f'ALTER TABLE students ADD COLUMN {col} {coltype}'))
+            if 'transactions' in inspector.get_table_names():
+                txn_cols = [c['name'] for c in inspector.get_columns('transactions')]
+                if 'type' not in txn_cols:
+                    conn.execute(sqlalchemy.text("ALTER TABLE transactions ADD COLUMN type VARCHAR(10) DEFAULT 'payment'"))
             conn.commit()
         
         # Create default admin user if none exists

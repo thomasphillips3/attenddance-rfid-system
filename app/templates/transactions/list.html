@@ -4,21 +4,49 @@
 <div class="min-h-full">
     <div class="bg-white shadow">
         <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                    <h1 class="text-3xl font-bold text-gray-900">Payments</h1>
-                    <p class="mt-1 text-sm text-gray-600">Track tuition, costumes, shoes, and other payments</p>
+                    <h1 class="text-3xl font-bold text-gray-900">Billing &amp; Payments</h1>
+                    <p class="mt-1 text-sm text-gray-600">Track charges, payments, and balances</p>
                 </div>
-                <button onclick="openAddModal()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
-                    <i class="fas fa-plus mr-2"></i>Add Payment
-                </button>
+                <div class="flex gap-2">
+                    <button onclick="openChargeModal()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700">
+                        <i class="fas fa-file-invoice-dollar mr-2"></i>Add Charge
+                    </button>
+                    <button onclick="openPaymentModal()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700">
+                        <i class="fas fa-money-bill-wave mr-2"></i>Add Payment
+                    </button>
+                    <button onclick="openBulkModal()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
+                        <i class="fas fa-users mr-2"></i>Bulk Charge
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
     <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <!-- Filters -->
-        <div class="mb-6 flex flex-wrap gap-4">
+        <!-- Balance Summary -->
+        <h2 class="text-lg font-semibold text-gray-900 mb-3">Student Balances</h2>
+        <div class="bg-white shadow-lg rounded-lg overflow-hidden mb-8">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Charges</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Payments</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
+                    </tr>
+                </thead>
+                <tbody id="balances-table" class="bg-white divide-y divide-gray-200">
+                    <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Recent Transactions -->
+        <h2 class="text-lg font-semibold text-gray-900 mb-3">Recent Transactions</h2>
+        <div class="mb-4 flex flex-wrap gap-4">
             <select id="filter-category" onchange="loadTransactions()" class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
                 <option value="">All Categories</option>
                 <option value="tuition">Tuition</option>
@@ -33,13 +61,13 @@
                 {% endfor %}
             </select>
         </div>
-
         <div class="bg-white shadow-lg rounded-lg overflow-hidden">
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Method</th>
@@ -47,20 +75,21 @@
                     </tr>
                 </thead>
                 <tbody id="transactions-table" class="bg-white divide-y divide-gray-200">
-                    <tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Loading payments...</td></tr>
+                    <tr><td colspan="7" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
     </div>
 </div>
 
-<!-- Add Payment Modal -->
+<!-- Charge / Payment Modal -->
 <div id="txn-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
     <div class="flex items-center justify-center min-h-screen px-4">
         <div class="fixed inset-0 bg-gray-500 bg-opacity-75" onclick="closeTxnModal()"></div>
         <div class="relative bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
-            <h3 class="text-lg font-medium text-gray-900 mb-4">Add Payment</h3>
+            <h3 id="txn-modal-title" class="text-lg font-medium text-gray-900 mb-4">Add Payment</h3>
             <form id="txn-form" onsubmit="saveTransaction(event)">
+                <input type="hidden" id="txn-type" value="payment">
                 <div class="grid grid-cols-2 gap-4">
                     <div class="col-span-2">
                         <label class="block text-sm font-medium text-gray-700">Student *</label>
@@ -92,9 +121,9 @@
                             <option value="other">Other</option>
                         </select>
                     </div>
-                    <div>
+                    <div id="method-field">
                         <label class="block text-sm font-medium text-gray-700">Payment Method *</label>
-                        <select id="txn-method" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                        <select id="txn-method" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
                             <option value="">Select...</option>
                             <option value="cash">Cash</option>
                             <option value="zelle">Zelle</option>
@@ -111,7 +140,59 @@
                 </div>
                 <div class="mt-6 flex justify-end space-x-3">
                     <button type="button" onclick="closeTxnModal()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-                    <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">Save</button>
+                    <button type="submit" id="txn-submit-btn" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Charge Modal -->
+<div id="bulk-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75" onclick="closeBulkModal()"></div>
+        <div class="relative bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Bulk Charge — Charge All Students in a Class</h3>
+            <form id="bulk-form" onsubmit="saveBulkCharge(event)">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="col-span-2">
+                        <label class="block text-sm font-medium text-gray-700">Class *</label>
+                        <select id="bulk-class" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                            <option value="">Select class...</option>
+                            {% for c in classes %}
+                            <option value="{{ c.id }}">{{ c.name }} ({{ c.day_name }} {{ c.start_time.strftime('%I:%M %p') }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Amount per student *</label>
+                        <div class="mt-1 relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span class="text-gray-500 text-sm">$</span></div>
+                            <input type="number" id="bulk-amount" step="0.01" min="0" required class="block w-full pl-7 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Date *</label>
+                        <input type="date" id="bulk-date" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Category *</label>
+                        <select id="bulk-category" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                            <option value="">Select...</option>
+                            <option value="tuition" selected>Tuition</option>
+                            <option value="costumes">Costumes</option>
+                            <option value="shoes">Shoes</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Description</label>
+                        <input type="text" id="bulk-description" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. June tuition">
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" onclick="closeBulkModal()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                    <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700">Charge All</button>
                 </div>
             </form>
         </div>
@@ -121,14 +202,39 @@
 
 {% block extra_js %}
 <script>
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
-}
-
+function esc(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
 const methodLabels = { cash: 'Cash', zelle: 'Zelle', venmo: 'Venmo', cashapp: 'Cash App', card: 'Card', tap: 'Tap' };
 const categoryColors = { tuition: 'bg-blue-100 text-blue-800', costumes: 'bg-pink-100 text-pink-800', shoes: 'bg-yellow-100 text-yellow-800', other: 'bg-gray-100 text-gray-800' };
+
+async function loadBalances() {
+    try {
+        const res = await fetch('/api/balances');
+        const data = await res.json();
+        renderBalances(data.balances);
+    } catch (err) {
+        document.getElementById('balances-table').innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-red-500">Failed to load</td></tr>';
+    }
+}
+function renderBalances(balances) {
+    const tbody = document.getElementById('balances-table');
+    const withActivity = balances.filter(b => parseFloat(b.total_charges) > 0 || parseFloat(b.total_payments) > 0);
+    if (!withActivity.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No billing activity yet. Use "Add Charge" or "Bulk Charge" to get started.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = withActivity.map(b => {
+        const bal = parseFloat(b.balance);
+        const balClass = bal > 0 ? 'text-red-600 font-bold' : bal < 0 ? 'text-green-600' : 'text-gray-900';
+        const balText = bal > 0 ? `$${bal.toFixed(2)} due` : bal < 0 ? `$${Math.abs(bal).toFixed(2)} credit` : 'Paid up';
+        return `<tr>
+            <td class="px-6 py-3 text-sm font-medium text-gray-900">${esc(b.student_name)}</td>
+            <td class="px-6 py-3 text-sm text-gray-500 text-right">$${parseFloat(b.total_charges).toFixed(2)}</td>
+            <td class="px-6 py-3 text-sm text-gray-500 text-right">$${parseFloat(b.total_payments).toFixed(2)}</td>
+            <td class="px-6 py-3 text-sm text-right ${balClass}">${balText}</td>
+            <td class="px-6 py-3 text-sm text-right"><a href="/students/${b.student_id}/ledger" class="text-primary-600 hover:text-primary-900">View Ledger</a></td>
+        </tr>`;
+    }).join('');
+}
 
 async function loadTransactions() {
     const category = document.getElementById('filter-category').value;
@@ -141,33 +247,52 @@ async function loadTransactions() {
         const data = await res.json();
         renderTransactions(data.transactions);
     } catch (err) {
-        document.getElementById('transactions-table').innerHTML =
-            '<tr><td colspan="6" class="px-6 py-8 text-center text-red-500">Failed to load payments</td></tr>';
+        document.getElementById('transactions-table').innerHTML = '<tr><td colspan="7" class="px-6 py-4 text-center text-red-500">Failed to load</td></tr>';
     }
 }
-
 function renderTransactions(txns) {
     const tbody = document.getElementById('transactions-table');
     if (!txns.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">No payments found. Click "Add Payment" to get started.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-4 text-center text-gray-500">No transactions found.</td></tr>';
         return;
     }
-    tbody.innerHTML = txns.map(t => `
-        <tr>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${esc(t.transaction_date)}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${esc(t.student_name)}</td>
-            <td class="px-6 py-4 whitespace-nowrap">
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${categoryColors[t.category] || categoryColors.other}">${esc(t.category)}</span>
-            </td>
-            <td class="px-6 py-4 text-sm text-gray-500">${esc(t.description || '-')}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${esc(methodLabels[t.payment_method] || t.payment_method)}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 text-right">$${parseFloat(t.amount).toFixed(2)}</td>
-        </tr>
-    `).join('');
+    tbody.innerHTML = txns.map(t => {
+        const isCharge = t.type === 'charge';
+        const typeTag = isCharge
+            ? '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Charge</span>'
+            : '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Payment</span>';
+        const amtClass = isCharge ? 'text-red-600' : 'text-green-600';
+        return `<tr>
+            <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900">${esc(t.transaction_date)}</td>
+            <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900">${esc(t.student_name)}</td>
+            <td class="px-6 py-3 whitespace-nowrap">${typeTag}</td>
+            <td class="px-6 py-3 whitespace-nowrap"><span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${categoryColors[t.category] || categoryColors.other}">${esc(t.category)}</span></td>
+            <td class="px-6 py-3 text-sm text-gray-500">${esc(t.description || '-')}</td>
+            <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">${t.payment_method ? esc(methodLabels[t.payment_method] || t.payment_method) : '-'}</td>
+            <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-right ${amtClass}">$${parseFloat(t.amount).toFixed(2)}</td>
+        </tr>`;
+    }).join('');
 }
 
-function openAddModal() {
+function openChargeModal() {
     document.getElementById('txn-form').reset();
+    document.getElementById('txn-type').value = 'charge';
+    document.getElementById('txn-modal-title').textContent = 'Add Charge';
+    document.getElementById('txn-submit-btn').textContent = 'Add Charge';
+    document.getElementById('txn-submit-btn').className = 'px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700';
+    document.getElementById('method-field').style.display = 'none';
+    document.getElementById('txn-method').removeAttribute('required');
+    document.getElementById('txn-date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('txn-modal').classList.remove('hidden');
+}
+function openPaymentModal() {
+    document.getElementById('txn-form').reset();
+    document.getElementById('txn-type').value = 'payment';
+    document.getElementById('txn-modal-title').textContent = 'Add Payment';
+    document.getElementById('txn-submit-btn').textContent = 'Add Payment';
+    document.getElementById('txn-submit-btn').className = 'px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700';
+    document.getElementById('method-field').style.display = '';
+    document.getElementById('txn-method').setAttribute('required', '');
     document.getElementById('txn-date').value = new Date().toISOString().split('T')[0];
     document.getElementById('txn-modal').classList.remove('hidden');
 }
@@ -175,20 +300,46 @@ function closeTxnModal() { document.getElementById('txn-modal').classList.add('h
 
 async function saveTransaction(e) {
     e.preventDefault();
+    const txnType = document.getElementById('txn-type').value;
     const body = {
+        type: txnType,
         student_id: parseInt(document.getElementById('txn-student').value),
         amount: document.getElementById('txn-amount').value,
         transaction_date: document.getElementById('txn-date').value,
         category: document.getElementById('txn-category').value,
-        payment_method: document.getElementById('txn-method').value,
+        payment_method: txnType === 'payment' ? document.getElementById('txn-method').value : null,
         description: document.getElementById('txn-description').value,
     };
     try {
         const res = await fetch('/api/transactions', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-        if (res.ok) { closeTxnModal(); loadTransactions(); } else { const d = await res.json(); alert(d.error || 'Error saving payment'); }
+        if (res.ok) { closeTxnModal(); loadBalances(); loadTransactions(); } else { const d = await res.json(); alert(d.error || 'Error'); }
     } catch (err) { alert('Network error'); }
 }
 
+function openBulkModal() {
+    document.getElementById('bulk-form').reset();
+    document.getElementById('bulk-date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('bulk-modal').classList.remove('hidden');
+}
+function closeBulkModal() { document.getElementById('bulk-modal').classList.add('hidden'); }
+
+async function saveBulkCharge(e) {
+    e.preventDefault();
+    const body = {
+        class_id: parseInt(document.getElementById('bulk-class').value),
+        amount: document.getElementById('bulk-amount').value,
+        transaction_date: document.getElementById('bulk-date').value,
+        category: document.getElementById('bulk-category').value,
+        description: document.getElementById('bulk-description').value,
+    };
+    try {
+        const res = await fetch('/api/transactions/bulk-charge', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        const d = await res.json();
+        if (res.ok) { closeBulkModal(); loadBalances(); loadTransactions(); alert(d.message); } else { alert(d.error || 'Error'); }
+    } catch (err) { alert('Network error'); }
+}
+
+loadBalances();
 loadTransactions();
 </script>
 {% endblock %}

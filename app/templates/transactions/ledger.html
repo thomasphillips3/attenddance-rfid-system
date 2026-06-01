@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <a href="{{ url_for('main.transactions') }}" class="text-sm text-primary-600 hover:text-primary-900"><i class="fas fa-arrow-left mr-1"></i>Back to Billing</a>
+                    <h1 class="text-3xl font-bold text-gray-900 mt-1">{{ student.full_name }}</h1>
+                    <p class="mt-1 text-sm text-gray-600">Account ledger — all charges and payments</p>
+                </div>
+                <div id="balance-badge" class="text-right"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-3 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-4 text-center">
+                <p class="text-xs font-medium text-gray-500 uppercase">Total Charges</p>
+                <p id="sum-charges" class="text-2xl font-bold text-red-600">-</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 text-center">
+                <p class="text-xs font-medium text-gray-500 uppercase">Total Payments</p>
+                <p id="sum-payments" class="text-2xl font-bold text-green-600">-</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 text-center">
+                <p class="text-xs font-medium text-gray-500 uppercase">Balance</p>
+                <p id="sum-balance" class="text-2xl font-bold">-</p>
+            </div>
+        </div>
+
+        <!-- Ledger Table -->
+        <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Charge</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Payment</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                    </tr>
+                </thead>
+                <tbody id="ledger-table" class="bg-white divide-y divide-gray-200">
+                    <tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function esc(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+const categoryColors = { tuition: 'bg-blue-100 text-blue-800', costumes: 'bg-pink-100 text-pink-800', shoes: 'bg-yellow-100 text-yellow-800', other: 'bg-gray-100 text-gray-800' };
+const methodLabels = { cash: 'Cash', zelle: 'Zelle', venmo: 'Venmo', cashapp: 'Cash App', card: 'Card', tap: 'Tap' };
+
+async function loadLedger() {
+    try {
+        const res = await fetch('/api/students/{{ student.id }}/ledger');
+        const data = await res.json();
+
+        document.getElementById('sum-charges').textContent = '$' + parseFloat(data.total_charges).toFixed(2);
+        document.getElementById('sum-payments').textContent = '$' + parseFloat(data.total_payments).toFixed(2);
+        const bal = parseFloat(data.balance);
+        const balEl = document.getElementById('sum-balance');
+        balEl.textContent = bal > 0 ? '$' + bal.toFixed(2) + ' due' : bal < 0 ? '$' + Math.abs(bal).toFixed(2) + ' credit' : 'Paid up';
+        balEl.className = 'text-2xl font-bold ' + (bal > 0 ? 'text-red-600' : bal < 0 ? 'text-green-600' : 'text-gray-900');
+
+        const badge = document.getElementById('balance-badge');
+        badge.innerHTML = bal > 0
+            ? `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-red-100 text-red-800">$${bal.toFixed(2)} due</span>`
+            : `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-green-100 text-green-800">Paid up</span>`;
+
+        renderLedger(data.ledger);
+    } catch (err) {
+        document.getElementById('ledger-table').innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-red-500">Failed to load ledger</td></tr>';
+    }
+}
+
+function renderLedger(rows) {
+    const tbody = document.getElementById('ledger-table');
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">No transactions yet.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = rows.map(r => {
+        const isCharge = r.type === 'charge';
+        const runBal = parseFloat(r.running_balance);
+        const balClass = runBal > 0 ? 'text-red-600 font-semibold' : runBal < 0 ? 'text-green-600' : 'text-gray-900';
+        const desc = r.description || r.category;
+        const method = r.payment_method ? ' (' + (methodLabels[r.payment_method] || r.payment_method) + ')' : '';
+        return `<tr>
+            <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900">${esc(r.transaction_date)}</td>
+            <td class="px-6 py-3 text-sm text-gray-700">${esc(desc)}${isCharge ? '' : '<span class="text-gray-400 text-xs">' + esc(method) + '</span>'}</td>
+            <td class="px-6 py-3 whitespace-nowrap"><span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${categoryColors[r.category] || categoryColors.other}">${esc(r.category)}</span></td>
+            <td class="px-6 py-3 whitespace-nowrap text-sm text-right ${isCharge ? 'text-red-600' : ''}">${isCharge ? '$' + parseFloat(r.amount).toFixed(2) : ''}</td>
+            <td class="px-6 py-3 whitespace-nowrap text-sm text-right ${!isCharge ? 'text-green-600' : ''}">${!isCharge ? '$' + parseFloat(r.amount).toFixed(2) : ''}</td>
+            <td class="px-6 py-3 whitespace-nowrap text-sm text-right ${balClass}">$${runBal.toFixed(2)}</td>
+        </tr>`;
+    }).join('');
+}
+
+loadLedger();
+</script>
+{% endblock %}

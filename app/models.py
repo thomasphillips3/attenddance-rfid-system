@@ -280,9 +280,10 @@ class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
 
+    type = db.Column(db.String(10), nullable=False, default='payment')  # charge or payment
     amount = db.Column(db.Numeric(10, 2), nullable=False)
     category = db.Column(db.String(50), nullable=False)  # tuition, costumes, shoes, other
-    payment_method = db.Column(db.String(50), nullable=False)  # cash, zelle, venmo, cashapp, card, tap
+    payment_method = db.Column(db.String(50))  # cash, zelle, venmo, cashapp, card, tap (null for charges)
     description = db.Column(db.Text)
     transaction_date = db.Column(db.Date, default=date.today, nullable=False)
 

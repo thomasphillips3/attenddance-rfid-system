@@ -79,7 +79,15 @@ def attendance():
 def transactions():
     """Transactions page"""
     students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
-    return render_template('transactions/list.html', students=students)
+    classes = DanceClass.query.filter_by(is_active=True).order_by(DanceClass.name).all()
+    return render_template('transactions/list.html', students=students, classes=classes)
+
+@bp.route('/students/<int:student_id>/ledger')
+@login_required
+def student_ledger(student_id):
+    """Per-student ledger page"""
+    student = Student.query.get_or_404(student_id)
+    return render_template('transactions/ledger.html', student=student)
 
 @bp.route('/take-attendance')
 @login_required
