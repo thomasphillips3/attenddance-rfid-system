@@ -10,7 +10,10 @@ from sqlalchemy import and_, or_, desc, func
 from app.api import bp
 from app.models import User, Student, DanceClass, ClassEnrollment, Attendance, RFIDLog
 from app import db
-from rfid.service import get_rfid_service
+try:
+    from rfid.service import get_rfid_service
+except ImportError:
+    get_rfid_service = None
 
 # Helper functions
 def get_paginated_response(query, page, per_page, endpoint, **kwargs):
@@ -607,6 +610,8 @@ def manual_checkin():
 @login_required
 def rfid_status():
     """Get RFID service status"""
+    if not get_rfid_service:
+        return jsonify({'service_running': False, 'message': 'RFID not available'}), 200
     service = get_rfid_service()
     stats = service.get_stats()
     
@@ -632,6 +637,8 @@ def simulate_rfid_scan():
     if not uid:
         return jsonify({'error': 'UID is required'}), 400
     
+    if not get_rfid_service:
+        return jsonify({'error': 'RFID not available'}), 400
     service = get_rfid_service()
     success = service.simulate_scan(uid)
     

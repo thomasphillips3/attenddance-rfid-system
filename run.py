@@ -9,7 +9,9 @@ import sys
 import threading
 from app import create_app
 from config.config import Config
-from rfid.service import RFIDService
+
+# Module-level app for gunicorn (gunicorn run:app)
+app = create_app()
 
 def main():
     """Main application entry point"""
@@ -19,6 +21,7 @@ def main():
     # Start RFID service in background thread if not in testing mode
     if not app.config.get('TESTING', False):
         try:
+            from rfid.service import RFIDService
             rfid_service = RFIDService()
             rfid_thread = threading.Thread(
                 target=rfid_service.start_listening,
@@ -26,9 +29,9 @@ def main():
                 name="RFID-Service"
             )
             rfid_thread.start()
-            print("✅ RFID service started successfully")
+            print("RFID service started successfully")
         except Exception as e:
-            print(f"⚠️  Warning: Could not start RFID service: {e}")
+            print(f"Warning: Could not start RFID service: {e}")
             print("   This is normal if running on non-Raspberry Pi hardware")
     
     # Get configuration
