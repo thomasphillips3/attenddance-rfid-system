@@ -1062,6 +1062,27 @@ def invite_parent(student_id):
     db.session.add(link)
     db.session.commit()
 
+@bp.route('/seed-demo-parent', methods=['POST'])
+@login_required
+def seed_demo_parent():
+    """Create a demo parent account for testing"""
+    student = Student.query.first()
+    if not student:
+        return jsonify({'error': 'No students found'}), 400
+    existing = User.query.filter_by(username='parent-demo').first()
+    if existing:
+        ParentStudent.query.filter_by(parent_id=existing.id).delete()
+        db.session.delete(existing)
+        db.session.commit()
+    p = User(username='parent-demo', email='parent@demo.local',
+             first_name='Demo', last_name='Parent', role='parent', is_active=True)
+    p.set_password('parent123')
+    db.session.add(p)
+    db.session.flush()
+    db.session.add(ParentStudent(parent_id=p.id, student_id=student.id))
+    db.session.commit()
+    return jsonify({'message': f'Parent account created: parent-demo / parent123, linked to {student.full_name}'})
+
     return jsonify({
         'invite_code': code,
         'message': f'Invite code generated for {student.full_name}. Share this with the parent: {code}',
