@@ -87,7 +87,7 @@
 <body class="h-full flex flex-col">
     <!-- Navigation -->
     {% if current_user.is_authenticated %}
-    <nav class="bg-white shadow-lg border-b border-gray-200">
+    <nav class="bg-white shadow-lg border-b border-gray-200" x-data="{ mobileMenuOpen: false }">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-16">
                 <!-- Logo and Brand -->
@@ -178,7 +178,7 @@
         </div>
         
         <!-- Mobile menu -->
-        <div x-show="mobileMenuOpen" x-data="{ mobileMenuOpen: false }" class="md:hidden">
+        <div x-show="mobileMenuOpen" class="md:hidden">
             <div class="pt-2 pb-3 space-y-1">
                 <a href="{{ url_for('main.dashboard') }}" 
                    class="{% if request.endpoint == 'main.dashboard' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
@@ -256,7 +256,7 @@
         <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center">
                 <div class="text-sm text-gray-500">
-                    © 2024 AttenDANCE v{{ config.APP_VERSION }}. Built with ❤️ for dance studios.
+                    &copy; 2026 AttenDANCE v{{ config.APP_VERSION }}. Built for LaShelle's School of Dance.
                 </div>
                 <div class="text-sm text-gray-500">
                     <span id="current-time"></span>
