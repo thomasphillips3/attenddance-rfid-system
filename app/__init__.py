@@ -53,6 +53,17 @@ def create_app(config_name=None):
         
         # Create all database tables
         db.create_all()
+
+        # Add new columns to existing tables (SQLite ALTER TABLE)
+        import sqlalchemy
+        with db.engine.connect() as conn:
+            inspector = sqlalchemy.inspect(db.engine)
+            student_cols = [c['name'] for c in inspector.get_columns('students')]
+            for col, coltype in [('school', 'VARCHAR(150)'), ('grade', 'VARCHAR(30)'),
+                                 ('allergies', 'TEXT'), ('special_needs', 'TEXT')]:
+                if col not in student_cols:
+                    conn.execute(sqlalchemy.text(f'ALTER TABLE students ADD COLUMN {col} {coltype}'))
+            conn.commit()
         
         # Create default admin user if none exists
         from app.models import User

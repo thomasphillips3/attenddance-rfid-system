@@ -51,10 +51,12 @@
 <div id="student-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
     <div class="flex items-center justify-center min-h-screen px-4">
         <div class="fixed inset-0 bg-gray-500 bg-opacity-75" onclick="closeModal()"></div>
-        <div class="relative bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
+        <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
             <h3 id="modal-title" class="text-lg font-medium text-gray-900 mb-4">Add Student</h3>
             <form id="student-form" onsubmit="saveStudent(event)">
                 <input type="hidden" id="student-id">
+
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Basic Info</p>
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700">First Name *</label>
@@ -65,6 +67,10 @@
                         <input type="text" id="last_name" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
                     </div>
                     <div>
+                        <label class="block text-sm font-medium text-gray-700">Date of Birth</label>
+                        <input type="date" id="date_of_birth" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium text-gray-700">Email</label>
                         <input type="email" id="email" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
                     </div>
@@ -73,6 +79,51 @@
                         <input type="tel" id="phone" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
                     </div>
                 </div>
+
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-5 mb-2">School</p>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">School</label>
+                        <input type="text" id="school" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Grade</label>
+                        <input type="text" id="grade" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. 3rd, 7th, Pre-K">
+                    </div>
+                </div>
+
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-5 mb-2">Parent / Emergency Contact</p>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Emergency Contact Name</label>
+                        <input type="text" id="emergency_contact_name" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Emergency Contact Phone</label>
+                        <input type="tel" id="emergency_contact_phone" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-sm font-medium text-gray-700">Parent Email</label>
+                        <input type="email" id="parent_email" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                </div>
+
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-5 mb-2">Health &amp; Special Needs</p>
+                <div class="grid grid-cols-1 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Allergies</label>
+                        <textarea id="allergies" rows="2" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Special Needs</label>
+                        <textarea id="special_needs" rows="2" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Medical Notes</label>
+                        <textarea id="medical_notes" rows="2" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"></textarea>
+                    </div>
+                </div>
+
                 <div class="mt-6 flex justify-end space-x-3">
                     <button type="button" onclick="closeModal()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
                     <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">Save</button>
@@ -167,8 +218,17 @@ function editStudent(s) {
     document.getElementById('student-id').value = s.id;
     document.getElementById('first_name').value = s.first_name;
     document.getElementById('last_name').value = s.last_name;
+    document.getElementById('date_of_birth').value = s.date_of_birth || '';
     document.getElementById('email').value = s.email || '';
     document.getElementById('phone').value = s.phone || '';
+    document.getElementById('school').value = s.school || '';
+    document.getElementById('grade').value = s.grade || '';
+    document.getElementById('emergency_contact_name').value = s.emergency_contact_name || '';
+    document.getElementById('emergency_contact_phone').value = s.emergency_contact_phone || '';
+    document.getElementById('parent_email').value = s.parent_email || '';
+    document.getElementById('allergies').value = s.allergies || '';
+    document.getElementById('special_needs').value = s.special_needs || '';
+    document.getElementById('medical_notes').value = s.medical_notes || '';
     document.getElementById('student-modal').classList.remove('hidden');
 }
 
@@ -177,7 +237,21 @@ function closeModal() { document.getElementById('student-modal').classList.add('
 async function saveStudent(e) {
     e.preventDefault();
     const id = document.getElementById('student-id').value;
-    const body = { first_name: document.getElementById('first_name').value, last_name: document.getElementById('last_name').value, email: document.getElementById('email').value, phone: document.getElementById('phone').value };
+    const body = {
+        first_name: document.getElementById('first_name').value,
+        last_name: document.getElementById('last_name').value,
+        date_of_birth: document.getElementById('date_of_birth').value,
+        email: document.getElementById('email').value,
+        phone: document.getElementById('phone').value,
+        school: document.getElementById('school').value,
+        grade: document.getElementById('grade').value,
+        emergency_contact_name: document.getElementById('emergency_contact_name').value,
+        emergency_contact_phone: document.getElementById('emergency_contact_phone').value,
+        parent_email: document.getElementById('parent_email').value,
+        allergies: document.getElementById('allergies').value,
+        special_needs: document.getElementById('special_needs').value,
+        medical_notes: document.getElementById('medical_notes').value,
+    };
     const url = id ? `/api/students/${id}` : '/api/students';
     try {
         const res = await fetch(url, { method: id ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });

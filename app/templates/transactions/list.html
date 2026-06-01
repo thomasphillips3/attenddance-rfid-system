@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900">Payments</h1>
+                    <p class="mt-1 text-sm text-gray-600">Track tuition, costumes, shoes, and other payments</p>
+                </div>
+                <button onclick="openAddModal()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
+                    <i class="fas fa-plus mr-2"></i>Add Payment
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <!-- Filters -->
+        <div class="mb-6 flex flex-wrap gap-4">
+            <select id="filter-category" onchange="loadTransactions()" class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                <option value="">All Categories</option>
+                <option value="tuition">Tuition</option>
+                <option value="costumes">Costumes</option>
+                <option value="shoes">Shoes</option>
+                <option value="other">Other</option>
+            </select>
+            <select id="filter-student" onchange="loadTransactions()" class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                <option value="">All Students</option>
+                {% for s in students %}
+                <option value="{{ s.id }}">{{ s.full_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Method</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                    </tr>
+                </thead>
+                <tbody id="transactions-table" class="bg-white divide-y divide-gray-200">
+                    <tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Loading payments...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Payment Modal -->
+<div id="txn-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75" onclick="closeTxnModal()"></div>
+        <div class="relative bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Add Payment</h3>
+            <form id="txn-form" onsubmit="saveTransaction(event)">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="col-span-2">
+                        <label class="block text-sm font-medium text-gray-700">Student *</label>
+                        <select id="txn-student" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                            <option value="">Select student...</option>
+                            {% for s in students %}
+                            <option value="{{ s.id }}">{{ s.full_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Amount *</label>
+                        <div class="mt-1 relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span class="text-gray-500 text-sm">$</span></div>
+                            <input type="number" id="txn-amount" step="0.01" min="0" required class="block w-full pl-7 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Date *</label>
+                        <input type="date" id="txn-date" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Category *</label>
+                        <select id="txn-category" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                            <option value="">Select...</option>
+                            <option value="tuition">Tuition</option>
+                            <option value="costumes">Costumes</option>
+                            <option value="shoes">Shoes</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Payment Method *</label>
+                        <select id="txn-method" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                            <option value="">Select...</option>
+                            <option value="cash">Cash</option>
+                            <option value="zelle">Zelle</option>
+                            <option value="venmo">Venmo</option>
+                            <option value="cashapp">Cash App</option>
+                            <option value="card">Credit/Debit Card</option>
+                            <option value="tap">Tap at Desk</option>
+                        </select>
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-sm font-medium text-gray-700">Description</label>
+                        <input type="text" id="txn-description" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. June tuition, recital costume deposit">
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" onclick="closeTxnModal()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                    <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
+
+const methodLabels = { cash: 'Cash', zelle: 'Zelle', venmo: 'Venmo', cashapp: 'Cash App', card: 'Card', tap: 'Tap' };
+const categoryColors = { tuition: 'bg-blue-100 text-blue-800', costumes: 'bg-pink-100 text-pink-800', shoes: 'bg-yellow-100 text-yellow-800', other: 'bg-gray-100 text-gray-800' };
+
+async function loadTransactions() {
+    const category = document.getElementById('filter-category').value;
+    const studentId = document.getElementById('filter-student').value;
+    let url = '/api/transactions?per_page=100';
+    if (category) url += '&category=' + encodeURIComponent(category);
+    if (studentId) url += '&student_id=' + encodeURIComponent(studentId);
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+        renderTransactions(data.transactions);
+    } catch (err) {
+        document.getElementById('transactions-table').innerHTML =
+            '<tr><td colspan="6" class="px-6 py-8 text-center text-red-500">Failed to load payments</td></tr>';
+    }
+}
+
+function renderTransactions(txns) {
+    const tbody = document.getElementById('transactions-table');
+    if (!txns.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">No payments found. Click "Add Payment" to get started.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = txns.map(t => `
+        <tr>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${esc(t.transaction_date)}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${esc(t.student_name)}</td>
+            <td class="px-6 py-4 whitespace-nowrap">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${categoryColors[t.category] || categoryColors.other}">${esc(t.category)}</span>
+            </td>
+            <td class="px-6 py-4 text-sm text-gray-500">${esc(t.description || '-')}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${esc(methodLabels[t.payment_method] || t.payment_method)}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 text-right">$${parseFloat(t.amount).toFixed(2)}</td>
+        </tr>
+    `).join('');
+}
+
+function openAddModal() {
+    document.getElementById('txn-form').reset();
+    document.getElementById('txn-date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('txn-modal').classList.remove('hidden');
+}
+function closeTxnModal() { document.getElementById('txn-modal').classList.add('hidden'); }
+
+async function saveTransaction(e) {
+    e.preventDefault();
+    const body = {
+        student_id: parseInt(document.getElementById('txn-student').value),
+        amount: document.getElementById('txn-amount').value,
+        transaction_date: document.getElementById('txn-date').value,
+        category: document.getElementById('txn-category').value,
+        payment_method: document.getElementById('txn-method').value,
+        description: document.getElementById('txn-description').value,
+    };
+    try {
+        const res = await fetch('/api/transactions', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        if (res.ok) { closeTxnModal(); loadTransactions(); } else { const d = await res.json(); alert(d.error || 'Error saving payment'); }
+    } catch (err) { alert('Network error'); }
+}
+
+loadTransactions();
+</script>
+{% endblock %}

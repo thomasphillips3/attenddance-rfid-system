@@ -73,6 +73,14 @@ class Student(db.Model):
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     enrollment_date = db.Column(db.Date, default=date.today, nullable=False)
     
+    # School information
+    school = db.Column(db.String(150))
+    grade = db.Column(db.String(30))
+
+    # Health / special needs
+    allergies = db.Column(db.Text)
+    special_needs = db.Column(db.Text)
+
     # Notes
     notes = db.Column(db.Text)
     medical_notes = db.Column(db.Text)
@@ -85,6 +93,7 @@ class Student(db.Model):
     assigned_by_user = db.relationship('User', backref='assigned_students')
     attendances = db.relationship('Attendance', backref='student', lazy='dynamic')
     class_enrollments = db.relationship('ClassEnrollment', backref='student', lazy='dynamic')
+    transactions = db.relationship('Transaction', backref='student', lazy='dynamic')
     
     @property
     def full_name(self):
@@ -262,4 +271,25 @@ class RFIDLog(db.Model):
     student = db.relationship('Student', backref='rfid_logs')
     
     def __repr__(self):
-        return f'<RFIDLog {self.rfid_uid} at {self.scan_time}>' 
+        return f'<RFIDLog {self.rfid_uid} at {self.scan_time}>'
+
+class Transaction(db.Model):
+    """Payment / transaction record"""
+    __tablename__ = 'transactions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    category = db.Column(db.String(50), nullable=False)  # tuition, costumes, shoes, other
+    payment_method = db.Column(db.String(50), nullable=False)  # cash, zelle, venmo, cashapp, card, tap
+    description = db.Column(db.Text)
+    transaction_date = db.Column(db.Date, default=date.today, nullable=False)
+
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    creator = db.relationship('User', backref='created_transactions')
+
+    def __repr__(self):
+        return f'<Transaction ${self.amount} {self.category} for student {self.student_id}>' 

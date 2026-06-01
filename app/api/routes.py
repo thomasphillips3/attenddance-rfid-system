@@ -8,7 +8,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import and_, or_, desc, func
 
 from app.api import bp
-from app.models import User, Student, DanceClass, ClassEnrollment, Attendance, RFIDLog
+from app.models import User, Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction
 from app import db
 try:
     from rfid.service import get_rfid_service
@@ -50,6 +50,10 @@ def student_to_dict(student):
         'emergency_contact_name': student.emergency_contact_name,
         'emergency_contact_phone': student.emergency_contact_phone,
         'parent_email': student.parent_email,
+        'school': student.school,
+        'grade': student.grade,
+        'allergies': student.allergies,
+        'special_needs': student.special_needs,
         'rfid_uid': student.rfid_uid,
         'has_rfid': student.has_rfid(),
         'rfid_assigned_at': student.rfid_assigned_at.isoformat() if student.rfid_assigned_at else None,
@@ -205,6 +209,10 @@ def create_student():
             emergency_contact_name=data.get('emergency_contact_name', '').strip() or None,
             emergency_contact_phone=data.get('emergency_contact_phone', '').strip() or None,
             parent_email=data.get('parent_email', '').strip() or None,
+            school=data.get('school', '').strip() or None,
+            grade=data.get('grade', '').strip() or None,
+            allergies=data.get('allergies', '').strip() or None,
+            special_needs=data.get('special_needs', '').strip() or None,
             notes=data.get('notes', '').strip() or None,
             medical_notes=data.get('medical_notes', '').strip() or None
         )
@@ -251,6 +259,14 @@ def update_student(student_id):
             student.emergency_contact_phone = data['emergency_contact_phone'].strip() or None
         if 'parent_email' in data:
             student.parent_email = data['parent_email'].strip() or None
+        if 'school' in data:
+            student.school = data['school'].strip() or None
+        if 'grade' in data:
+            student.grade = data['grade'].strip() or None
+        if 'allergies' in data:
+            student.allergies = data['allergies'].strip() or None
+        if 'special_needs' in data:
+            student.special_needs = data['special_needs'].strip() or None
         if 'notes' in data:
             student.notes = data['notes'].strip() or None
         if 'medical_notes' in data:
@@ -716,4 +732,79 @@ def dashboard_stats():
         'week_attendance': week_attendance,
         'recent_rfid_activity': recent_rfid_logs,
         'date': today.isoformat()
-    }) 
+    })
+
+# Transaction endpoints
+def transaction_to_dict(t):
+    return {
+        'id': t.id,
+        'student_id': t.student_id,
+        'student_name': t.student.full_name,
+        'amount': str(t.amount),
+        'category': t.category,
+        'payment_method': t.payment_method,
+        'description': t.description,
+        'transaction_date': t.transaction_date.isoformat(),
+        'created_by': t.creator.full_name if t.creator else None,
+        'created_at': t.created_at.isoformat(),
+    }
+
+@bp.route('/transactions', methods=['GET'])
+@login_required
+def get_transactions():
+    """Get transactions with optional filtering"""
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 50, type=int), 100)
+    student_id = request.args.get('student_id', type=int)
+    category = request.args.get('category', '').strip()
+
+    query = Transaction.query
+    if student_id:
+        query = query.filter_by(student_id=student_id)
+    if category:
+        query = query.filter_by(category=category)
+    query = query.order_by(desc(Transaction.transaction_date), desc(Transaction.created_at))
+
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    return jsonify({
+        'transactions': [transaction_to_dict(t) for t in pagination.items],
+        'pagination': {
+            'page': page,
+            'pages': pagination.pages,
+            'per_page': per_page,
+            'total': pagination.total,
+        }
+    })
+
+@bp.route('/transactions', methods=['POST'])
+@login_required
+def create_transaction():
+    """Create a new transaction"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    for field in ['student_id', 'amount', 'category', 'payment_method']:
+        if not data.get(field):
+            return jsonify({'error': f'{field} is required'}), 400
+
+    student = Student.query.get(data['student_id'])
+    if not student:
+        return jsonify({'error': 'Student not found'}), 404
+
+    try:
+        t = Transaction(
+            student_id=student.id,
+            amount=data['amount'],
+            category=data['category'],
+            payment_method=data['payment_method'],
+            description=data.get('description', '').strip() or None,
+            transaction_date=datetime.strptime(data['transaction_date'], '%Y-%m-%d').date() if data.get('transaction_date') else date.today(),
+            created_by=current_user.id,
+        )
+        db.session.add(t)
+        db.session.commit()
+        return jsonify(transaction_to_dict(t)), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500

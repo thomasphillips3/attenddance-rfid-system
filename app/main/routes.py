@@ -8,7 +8,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import func, desc
 from app.main import bp
 from app import db
-from app.models import Student, DanceClass, ClassEnrollment, Attendance, RFIDLog
+from app.models import Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction
 
 @bp.route('/')
 def index():
@@ -73,6 +73,13 @@ def classes():
 def attendance():
     """Attendance list page"""
     return render_template('attendance/list.html')
+
+@bp.route('/transactions')
+@login_required
+def transactions():
+    """Transactions page"""
+    students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
+    return render_template('transactions/list.html', students=students)
 
 @bp.route('/take-attendance')
 @login_required
