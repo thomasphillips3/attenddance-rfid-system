@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <h1 class="text-3xl font-bold text-gray-900">Messages</h1>
+            <p class="mt-1 text-sm text-gray-600">Email parents — all at once, by class, or individually</p>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <!-- Compose -->
+        <div class="bg-white shadow-lg rounded-lg p-6 mb-8">
+            <h2 class="text-lg font-semibold text-gray-900 mb-4">Compose Message</h2>
+            <form id="compose-form" onsubmit="sendMessage(event)">
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Send To *</label>
+                        <select id="msg-type" required onchange="updateRecipientFilter()" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                            <option value="all">All Parents</option>
+                            <option value="class">Parents in a Class</option>
+                            <option value="individual">Individual Student's Parent</option>
+                        </select>
+                    </div>
+                    <div id="filter-field" class="hidden">
+                        <label id="filter-label" class="block text-sm font-medium text-gray-700">Class</label>
+                        <select id="msg-filter" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"></select>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700">Subject *</label>
+                    <input type="text" id="msg-subject" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. Recital schedule update">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700">Message *</label>
+                    <textarea id="msg-body" rows="5" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500" placeholder="Write your message here..."></textarea>
+                </div>
+                <div class="flex justify-end">
+                    <button type="submit" id="send-btn" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
+                        <i class="fas fa-paper-plane mr-2"></i>Send
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Email list modal -->
+        <div id="email-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+            <div class="flex items-center justify-center min-h-screen px-4">
+                <div class="fixed inset-0 bg-gray-500 bg-opacity-75" onclick="closeEmailModal()"></div>
+                <div class="relative bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">Message Saved</h3>
+                    <p class="text-sm text-gray-500 mb-4">SMTP is not configured, so the message wasn't emailed automatically. Copy the email addresses below to send manually:</p>
+                    <textarea id="email-list-box" rows="4" readonly class="block w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-gray-50 mb-3"></textarea>
+                    <button onclick="copyEmails()" class="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 mb-3">
+                        <i class="fas fa-copy mr-2"></i>Copy Emails
+                    </button>
+                    <div class="flex justify-end">
+                        <button onclick="closeEmailModal()" class="px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">Done</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- History -->
+        <h2 class="text-lg font-semibold text-gray-900 mb-3">Message History</h2>
+        <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">To</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recipients</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="history-table" class="bg-white divide-y divide-gray-200">
+                    <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function esc(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+const classes = [{% for c in classes %}{ id: {{ c.id }}, name: '{{ c.name }}' },{% endfor %}];
+const students = [{% for s in students %}{ id: {{ s.id }}, name: '{{ s.full_name }}' },{% endfor %}];
+
+function updateRecipientFilter() {
+    const type = document.getElementById('msg-type').value;
+    const field = document.getElementById('filter-field');
+    const select = document.getElementById('msg-filter');
+    const label = document.getElementById('filter-label');
+    if (type === 'all') { field.classList.add('hidden'); return; }
+    field.classList.remove('hidden');
+    if (type === 'class') {
+        label.textContent = 'Class';
+        select.innerHTML = classes.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    } else {
+        label.textContent = 'Student';
+        select.innerHTML = students.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+    }
+}
+
+async function sendMessage(e) {
+    e.preventDefault();
+    const btn = document.getElementById('send-btn');
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Sending...';
+    const type = document.getElementById('msg-type').value;
+    const body = {
+        subject: document.getElementById('msg-subject').value,
+        body: document.getElementById('msg-body').value,
+        recipient_type: type,
+    };
+    if (type !== 'all') body.recipient_filter = document.getElementById('msg-filter').value;
+    try {
+        const res = await fetch('/api/messages', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        const data = await res.json();
+        if (res.ok || res.status === 201) {
+            if (data.recipient_emails) {
+                document.getElementById('email-list-box').value = data.recipient_emails.join(', ');
+                document.getElementById('email-modal').classList.remove('hidden');
+            } else {
+                alert(data.message);
+            }
+            document.getElementById('compose-form').reset();
+            loadHistory();
+        } else { alert(data.error || 'Error sending message'); }
+    } catch (err) { alert('Network error'); }
+    btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane mr-2"></i>Send';
+}
+
+function closeEmailModal() { document.getElementById('email-modal').classList.add('hidden'); }
+function copyEmails() {
+    const box = document.getElementById('email-list-box');
+    box.select(); document.execCommand('copy');
+    alert('Emails copied!');
+}
+
+async function loadHistory() {
+    try {
+        const res = await fetch('/api/messages');
+        const data = await res.json();
+        renderHistory(data.messages);
+    } catch (err) {
+        document.getElementById('history-table').innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-red-500">Failed to load</td></tr>';
+    }
+}
+function renderHistory(msgs) {
+    const tbody = document.getElementById('history-table');
+    if (!msgs.length) { tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No messages sent yet.</td></tr>'; return; }
+    const typeLabels = { all: 'All Parents', class: 'Class', individual: 'Individual' };
+    tbody.innerHTML = msgs.map(m => {
+        const status = m.sent
+            ? '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Sent</span>'
+            : '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Saved</span>';
+        return `<tr>
+            <td class="px-6 py-3 text-sm text-gray-900">${esc(m.created_at.split('T')[0])}</td>
+            <td class="px-6 py-3 text-sm font-medium text-gray-900">${esc(m.subject)}</td>
+            <td class="px-6 py-3 text-sm text-gray-500">${esc(typeLabels[m.recipient_type] || m.recipient_type)}</td>
+            <td class="px-6 py-3 text-sm text-gray-500">${m.recipient_count} recipient(s)</td>
+            <td class="px-6 py-3">${status}</td>
+        </tr>`;
+    }).join('');
+}
+
+loadHistory();
+</script>
+{% endblock %}

@@ -8,7 +8,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import and_, or_, desc, func
 
 from app.api import bp
-from app.models import User, Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction, RecurringCharge, ParentStudent, Rule, RuleAcknowledgment
+from app.models import User, Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction, RecurringCharge, ParentStudent, Rule, RuleAcknowledgment, Message
 import secrets
 from app import square_service
 from app import db
@@ -1199,3 +1199,119 @@ def acknowledge_rule(rule_id):
     db.session.add(ack)
     db.session.commit()
     return jsonify({'message': 'Rule acknowledged', 'initials': ack.initials}), 201
+
+# Message / Email blast endpoints
+@bp.route('/messages', methods=['GET'])
+@login_required
+def get_messages():
+    """Get message history"""
+    msgs = Message.query.order_by(desc(Message.created_at)).limit(50).all()
+    return jsonify({'messages': [{
+        'id': m.id, 'subject': m.subject, 'body': m.body,
+        'recipient_type': m.recipient_type, 'recipient_filter': m.recipient_filter,
+        'recipient_count': m.recipient_count, 'recipient_emails': m.recipient_emails,
+        'sent': m.sent, 'sent_at': m.sent_at.isoformat() if m.sent_at else None,
+        'created_by': m.creator.full_name if m.creator else None,
+        'created_at': m.created_at.isoformat(),
+    } for m in msgs]})
+
+@bp.route('/messages', methods=['POST'])
+@login_required
+def send_message():
+    """Compose and send an email blast"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    for field in ['subject', 'body', 'recipient_type']:
+        if not data.get(field):
+            return jsonify({'error': f'{field} is required'}), 400
+
+    # Resolve recipient emails
+    rtype = data['recipient_type']
+    emails = set()
+    if rtype == 'all':
+        for s in Student.query.filter_by(is_active=True).all():
+            if s.parent_email:
+                emails.add(s.parent_email)
+            elif s.email:
+                emails.add(s.email)
+    elif rtype == 'class':
+        class_id = data.get('recipient_filter')
+        if not class_id:
+            return jsonify({'error': 'recipient_filter (class_id) required for class type'}), 400
+        enrollments = ClassEnrollment.query.filter_by(class_id=int(class_id), is_active=True).all()
+        for e in enrollments:
+            s = Student.query.get(e.student_id)
+            if s and (s.parent_email or s.email):
+                emails.add(s.parent_email or s.email)
+    elif rtype == 'individual':
+        student_id = data.get('recipient_filter')
+        if not student_id:
+            return jsonify({'error': 'recipient_filter (student_id) required for individual type'}), 400
+        s = Student.query.get(int(student_id))
+        if s and (s.parent_email or s.email):
+            emails.add(s.parent_email or s.email)
+
+    if not emails:
+        return jsonify({'error': 'No email addresses found for selected recipients'}), 400
+
+    # Save message
+    msg = Message(
+        subject=data['subject'].strip(),
+        body=data['body'].strip(),
+        recipient_type=rtype,
+        recipient_filter=str(data.get('recipient_filter', '')),
+        recipient_count=len(emails),
+        recipient_emails=', '.join(sorted(emails)),
+        created_by=current_user.id,
+    )
+
+    # Try to send via SMTP
+    mail_server = current_app.config.get('MAIL_SERVER')
+    if mail_server:
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        try:
+            smtp = smtplib.SMTP(mail_server, current_app.config.get('MAIL_PORT', 587))
+            if current_app.config.get('MAIL_USE_TLS', True):
+                smtp.starttls()
+            username = current_app.config.get('MAIL_USERNAME')
+            password = current_app.config.get('MAIL_PASSWORD')
+            if username and password:
+                smtp.login(username, password)
+            for email in emails:
+                m = MIMEMultipart()
+                m['From'] = username or 'noreply@attenddance.local'
+                m['To'] = email
+                m['Subject'] = data['subject'].strip()
+                m.attach(MIMEText(data['body'].strip(), 'plain'))
+                smtp.sendmail(m['From'], email, m.as_string())
+            smtp.quit()
+            msg.sent = True
+            msg.sent_at = datetime.utcnow()
+        except Exception as e:
+            msg.sent = False
+            db.session.add(msg)
+            db.session.commit()
+            return jsonify({
+                'error': f'SMTP send failed: {e}',
+                'message_id': msg.id,
+                'recipient_emails': sorted(emails),
+                'saved': True,
+            }), 500
+    else:
+        msg.sent = False
+
+    db.session.add(msg)
+    db.session.commit()
+
+    if msg.sent:
+        return jsonify({'message': f'Email sent to {len(emails)} recipient(s)', 'message_id': msg.id}), 201
+    else:
+        return jsonify({
+            'message': f'Message saved (SMTP not configured — copy emails below to send manually)',
+            'message_id': msg.id,
+            'recipient_emails': sorted(emails),
+            'recipient_count': len(emails),
+        }), 201

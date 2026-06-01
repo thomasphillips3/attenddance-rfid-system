@@ -386,4 +386,25 @@ class RuleAcknowledgment(db.Model):
     parent = db.relationship('User', backref='rule_acknowledgments')
 
     def __repr__(self):
-        return f'<RuleAck rule={self.rule_id} student={self.student_id}>' 
+        return f'<RuleAck rule={self.rule_id} student={self.student_id}>'
+
+class Message(db.Model):
+    """Email blast record"""
+    __tablename__ = 'messages'
+
+    id = db.Column(db.Integer, primary_key=True)
+    subject = db.Column(db.String(200), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    recipient_type = db.Column(db.String(20), nullable=False)  # all, class, individual
+    recipient_filter = db.Column(db.String(100))  # class_id or student_id
+    recipient_count = db.Column(db.Integer, default=0)
+    recipient_emails = db.Column(db.Text)  # comma-separated
+    sent = db.Column(db.Boolean, default=False, nullable=False)
+    sent_at = db.Column(db.DateTime)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    creator = db.relationship('User', backref='sent_messages')
+
+    def __repr__(self):
+        return f'<Message "{self.subject}" to {self.recipient_count}>' 

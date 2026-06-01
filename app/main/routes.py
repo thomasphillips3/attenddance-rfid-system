@@ -123,6 +123,14 @@ def student_ledger(student_id):
     student = Student.query.get_or_404(student_id)
     return render_template('transactions/ledger.html', student=student)
 
+@bp.route('/messages')
+@staff_required
+def messages_page():
+    """Email blast page"""
+    students = Student.query.filter_by(is_active=True).order_by(Student.last_name).all()
+    classes = DanceClass.query.filter_by(is_active=True).order_by(DanceClass.name).all()
+    return render_template('messages/list.html', students=students, classes=classes)
+
 @bp.route('/rules')
 @staff_required
 def rules_admin():
