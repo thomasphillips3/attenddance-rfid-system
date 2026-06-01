@@ -9,7 +9,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import func, desc
 from app.main import bp
 from app import db
-from app.models import Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction, ParentStudent
+from app.models import Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction, ParentStudent, Rule
 
 def staff_required(f):
     """Decorator: only admin/teacher can access."""
@@ -122,6 +122,20 @@ def student_ledger(student_id):
     """Per-student ledger page"""
     student = Student.query.get_or_404(student_id)
     return render_template('transactions/ledger.html', student=student)
+
+@bp.route('/rules')
+@staff_required
+def rules_admin():
+    """Admin: manage studio rules"""
+    students = Student.query.filter_by(is_active=True).order_by(Student.last_name).all()
+    return render_template('rules/admin.html', students=students)
+
+@bp.route('/rules/acknowledge/<int:student_id>')
+@login_required
+def acknowledge_rules(student_id):
+    """Parent: acknowledge rules for a student"""
+    student = Student.query.get_or_404(student_id)
+    return render_template('rules/acknowledge.html', student=student)
 
 @bp.route('/take-attendance')
 @login_required

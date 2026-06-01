@@ -350,4 +350,40 @@ class RecurringCharge(db.Model):
     creator = db.relationship('User', backref='created_recurring_charges')
 
     def __repr__(self):
-        return f'<RecurringCharge ${self.amount} {self.category} for class {self.class_id}>' 
+        return f'<RecurringCharge ${self.amount} {self.category} for class {self.class_id}>'
+
+class Rule(db.Model):
+    """Studio rule that parents must acknowledge"""
+    __tablename__ = 'rules'
+
+    id = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.Text, nullable=False)
+    display_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    acknowledgments = db.relationship('RuleAcknowledgment', backref='rule', lazy='dynamic')
+
+    def __repr__(self):
+        return f'<Rule #{self.display_order}>'
+
+class RuleAcknowledgment(db.Model):
+    """Record of a parent initialing a specific rule for a student"""
+    __tablename__ = 'rule_acknowledgments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    rule_id = db.Column(db.Integer, db.ForeignKey('rules.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    initials = db.Column(db.String(10), nullable=False)
+    acknowledged_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('rule_id', 'student_id', 'parent_id', name='unique_rule_ack'),
+    )
+
+    student = db.relationship('Student', backref='rule_acknowledgments')
+    parent = db.relationship('User', backref='rule_acknowledgments')
+
+    def __repr__(self):
+        return f'<RuleAck rule={self.rule_id} student={self.student_id}>' 

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <a href="{{ url_for('main.parent_dashboard') }}" class="text-sm text-primary-600 hover:text-primary-900"><i class="fas fa-arrow-left mr-1"></i>Back</a>
+            <h1 class="text-3xl font-bold text-gray-900 mt-1">Rules &amp; Regulations</h1>
+            <p class="mt-1 text-sm text-gray-600">Please read each rule and type your initials to acknowledge — {{ student.full_name }}</p>
+        </div>
+    </div>
+
+    <div class="max-w-3xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div id="status-bar" class="mb-6 bg-white rounded-lg shadow p-4 flex items-center justify-between hidden">
+            <span id="status-text" class="text-sm font-medium"></span>
+            <div id="status-badge"></div>
+        </div>
+        <div id="rules-container" class="space-y-4">
+            <p class="text-gray-500">Loading rules...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function esc(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+const studentId = {{ student.id }};
+
+async function loadRulesStatus() {
+    try {
+        const res = await fetch('/api/students/' + studentId + '/rules-status');
+        const data = await res.json();
+        renderRules(data.rules, data.acknowledged, data.total, data.complete);
+    } catch (err) {
+        document.getElementById('rules-container').innerHTML = '<p class="text-red-500">Failed to load rules</p>';
+    }
+}
+
+function renderRules(rules, acked, total, complete) {
+    if (!rules.length) {
+        document.getElementById('rules-container').innerHTML = '<p class="text-gray-500">No rules to acknowledge at this time.</p>';
+        document.getElementById('status-bar').classList.add('hidden');
+        return;
+    }
+    const bar = document.getElementById('status-bar');
+    bar.classList.remove('hidden');
+    document.getElementById('status-text').textContent = acked + ' of ' + total + ' rules acknowledged';
+    document.getElementById('status-badge').innerHTML = complete
+        ? '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-green-100 text-green-800"><i class="fas fa-check mr-1"></i>All Complete</span>'
+        : '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-yellow-100 text-yellow-800">' + (total - acked) + ' remaining</span>';
+
+    document.getElementById('rules-container').innerHTML = rules.map((r, i) => {
+        if (r.acknowledged) {
+            return `<div class="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start">
+                <span class="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-sm font-bold mr-3">${i + 1}</span>
+                <div class="flex-1">
+                    <p class="text-sm text-gray-900">${esc(r.text)}</p>
+                    <p class="text-xs text-green-600 mt-1"><i class="fas fa-check mr-1"></i>Initialed: <strong>${esc(r.initials)}</strong></p>
+                </div>
+            </div>`;
+        } else {
+            return `<div class="bg-white border border-gray-200 rounded-lg p-4 flex items-start" id="rule-${r.rule_id}">
+                <span class="flex-shrink-0 w-8 h-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-sm font-bold mr-3">${i + 1}</span>
+                <div class="flex-1">
+                    <p class="text-sm text-gray-900 mb-3">${esc(r.text)}</p>
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="initials-${r.rule_id}" maxlength="5" placeholder="Your initials"
+                               class="w-24 border border-gray-300 rounded-md px-3 py-1.5 text-sm text-center uppercase focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                        <button onclick="acknowledge(${r.rule_id})" class="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
+                            Initial
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+        }
+    }).join('');
+}
+
+async function acknowledge(ruleId) {
+    const input = document.getElementById('initials-' + ruleId);
+    const initials = input.value.trim();
+    if (!initials) { input.focus(); return; }
+    try {
+        const res = await fetch('/api/rules/' + ruleId + '/acknowledge', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ student_id: studentId, initials: initials }),
+        });
+        if (res.ok) { loadRulesStatus(); } else { const d = await res.json(); alert(d.error || 'Error'); }
+    } catch (err) { alert('Network error'); }
+}
+
+loadRulesStatus();
+</script>
+{% endblock %}

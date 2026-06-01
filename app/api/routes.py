@@ -8,7 +8,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import and_, or_, desc, func
 
 from app.api import bp
-from app.models import User, Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction, RecurringCharge, ParentStudent
+from app.models import User, Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction, RecurringCharge, ParentStudent, Rule, RuleAcknowledgment
 import secrets
 from app import square_service
 from app import db
@@ -1101,3 +1101,101 @@ def seed_demo_parent():
         'message': f'Invite code generated for {student.full_name}. Share this with the parent: {code}',
         'register_url': f'/auth/register?code={code}',
     }), 201
+
+# Rules & Regulations endpoints
+@bp.route('/rules', methods=['GET'])
+@login_required
+def get_rules():
+    """Get all active rules"""
+    rules = Rule.query.filter_by(is_active=True).order_by(Rule.display_order).all()
+    return jsonify({'rules': [{
+        'id': r.id, 'text': r.text, 'display_order': r.display_order,
+    } for r in rules]})
+
+@bp.route('/rules', methods=['POST'])
+@login_required
+def create_rule():
+    """Create a new rule (admin only)"""
+    data = request.get_json()
+    if not data or not data.get('text'):
+        return jsonify({'error': 'text is required'}), 400
+    max_order = db.session.query(func.max(Rule.display_order)).scalar() or 0
+    r = Rule(text=data['text'].strip(), display_order=max_order + 1)
+    db.session.add(r)
+    db.session.commit()
+    return jsonify({'id': r.id, 'text': r.text, 'display_order': r.display_order}), 201
+
+@bp.route('/rules/<int:rule_id>', methods=['PUT'])
+@login_required
+def update_rule(rule_id):
+    """Update a rule's text"""
+    r = Rule.query.get_or_404(rule_id)
+    data = request.get_json()
+    if data.get('text'):
+        r.text = data['text'].strip()
+    if 'display_order' in data:
+        r.display_order = int(data['display_order'])
+    db.session.commit()
+    return jsonify({'id': r.id, 'text': r.text, 'display_order': r.display_order})
+
+@bp.route('/rules/<int:rule_id>', methods=['DELETE'])
+@login_required
+def delete_rule(rule_id):
+    """Deactivate a rule"""
+    r = Rule.query.get_or_404(rule_id)
+    r.is_active = False
+    db.session.commit()
+    return jsonify({'message': 'Rule removed'})
+
+@bp.route('/students/<int:student_id>/rules-status', methods=['GET'])
+@login_required
+def get_student_rules_status(student_id):
+    """Get which rules a student's parent has acknowledged"""
+    student = Student.query.get_or_404(student_id)
+    rules = Rule.query.filter_by(is_active=True).order_by(Rule.display_order).all()
+    acks = RuleAcknowledgment.query.filter_by(student_id=student_id).all()
+    acked_rule_ids = {a.rule_id for a in acks}
+    ack_map = {a.rule_id: a for a in acks}
+    result = []
+    for r in rules:
+        ack = ack_map.get(r.id)
+        result.append({
+            'rule_id': r.id, 'text': r.text, 'display_order': r.display_order,
+            'acknowledged': r.id in acked_rule_ids,
+            'initials': ack.initials if ack else None,
+            'acknowledged_at': ack.acknowledged_at.isoformat() if ack else None,
+        })
+    total = len(rules)
+    done = len(acked_rule_ids & {r.id for r in rules})
+    return jsonify({
+        'student_name': student.full_name,
+        'rules': result,
+        'total': total, 'acknowledged': done,
+        'complete': done == total and total > 0,
+    })
+
+@bp.route('/rules/<int:rule_id>/acknowledge', methods=['POST'])
+@login_required
+def acknowledge_rule(rule_id):
+    """Parent initials a specific rule for a student"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    student_id = data.get('student_id')
+    initials = data.get('initials', '').strip()
+    if not student_id or not initials:
+        return jsonify({'error': 'student_id and initials are required'}), 400
+    rule = Rule.query.get_or_404(rule_id)
+    student = Student.query.get_or_404(student_id)
+    existing = RuleAcknowledgment.query.filter_by(
+        rule_id=rule_id, student_id=student_id, parent_id=current_user.id
+    ).first()
+    if existing:
+        return jsonify({'message': 'Already acknowledged'}), 200
+    ack = RuleAcknowledgment(
+        rule_id=rule_id, student_id=student_id,
+        parent_id=current_user.id, initials=initials.upper(),
+    )
+    db.session.add(ack)
+    db.session.commit()
+    return jsonify({'message': 'Rule acknowledged', 'initials': ack.initials}), 201
