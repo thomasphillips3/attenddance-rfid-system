@@ -111,9 +111,13 @@
                            class="nav-item {% if request.endpoint and 'classes' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                             <i class="fas fa-calendar-alt mr-2"></i>Classes
                         </a>
-                        <a href="{{ url_for('main.attendance') }}" 
-                           class="nav-item {% if request.endpoint and 'attendance' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                        <a href="{{ url_for('main.attendance') }}"
+                           class="nav-item {% if request.endpoint and 'attendance' in request.endpoint and 'take' not in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                             <i class="fas fa-check-circle mr-2"></i>Attendance
+                        </a>
+                        <a href="{{ url_for('main.take_attendance') }}"
+                           class="nav-item {% if request.endpoint and 'take' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                            <i class="fas fa-clipboard-check mr-2"></i>Take Attendance
                         </a>
                     </div>
                 </div>
@@ -192,9 +196,13 @@
                    class="{% if request.endpoint and 'classes' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-calendar-alt mr-2"></i>Classes
                 </a>
-                <a href="{{ url_for('main.attendance') }}" 
-                   class="{% if request.endpoint and 'attendance' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
+                <a href="{{ url_for('main.attendance') }}"
+                   class="{% if request.endpoint and 'attendance' in request.endpoint and 'take' not in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-check-circle mr-2"></i>Attendance
+                </a>
+                <a href="{{ url_for('main.take_attendance') }}"
+                   class="{% if request.endpoint and 'take' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
+                    <i class="fas fa-clipboard-check mr-2"></i>Take Attendance
                 </a>
             </div>
         </div>

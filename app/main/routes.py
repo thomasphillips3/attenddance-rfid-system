@@ -8,7 +8,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import func, desc
 from app.main import bp
 from app import db
-from app.models import Student, DanceClass, Attendance, RFIDLog
+from app.models import Student, DanceClass, ClassEnrollment, Attendance, RFIDLog
 
 @bp.route('/')
 def index():
@@ -72,4 +72,71 @@ def classes():
 @login_required
 def attendance():
     """Attendance list page"""
-    return render_template('attendance/list.html') 
+    return render_template('attendance/list.html')
+
+@bp.route('/take-attendance')
+@login_required
+def take_attendance():
+    """Pick a class to take attendance for"""
+    today = date.today()
+    current_weekday = today.weekday()
+    todays_classes = DanceClass.query.filter_by(
+        is_active=True, day_of_week=current_weekday
+    ).order_by(DanceClass.start_time).all()
+    all_classes = DanceClass.query.filter_by(is_active=True).order_by(
+        DanceClass.day_of_week, DanceClass.start_time
+    ).all()
+    return render_template('attendance/take_pick.html',
+        today=today, todays_classes=todays_classes, all_classes=all_classes)
+
+@bp.route('/take-attendance/<int:class_id>')
+@login_required
+def take_attendance_class(class_id):
+    """Card-based attendance for a class"""
+    dance_class = DanceClass.query.get_or_404(class_id)
+    enrollments = ClassEnrollment.query.filter_by(
+        class_id=class_id, is_active=True
+    ).all()
+    students = []
+    today = date.today()
+    # Get 8 weeks of dates (current week + 7 prior)
+    current_monday = today - timedelta(days=today.weekday())
+    weeks = [(current_monday - timedelta(weeks=i)) for i in range(7, -1, -1)]
+
+    for e in enrollments:
+        s = Student.query.get(e.student_id)
+        if not s:
+            continue
+        # Get attendance for these 8 weeks
+        week_marks = {}
+        for week_start in weeks:
+            week_end = week_start + timedelta(days=6)
+            att = Attendance.query.filter(
+                Attendance.student_id == s.id,
+                Attendance.class_id == class_id,
+                func.date(Attendance.check_in_time) >= week_start,
+                func.date(Attendance.check_in_time) <= week_end,
+            ).first()
+            week_marks[week_start.isoformat()] = att is not None
+        students.append({
+            'id': s.id,
+            'full_name': s.full_name,
+            'first_name': s.first_name,
+            'weeks': week_marks,
+        })
+    students.sort(key=lambda x: x['full_name'])
+
+    # Check if today is already marked
+    today_checked = {}
+    for s in students:
+        att = Attendance.query.filter(
+            Attendance.student_id == s['id'],
+            Attendance.class_id == class_id,
+            func.date(Attendance.check_in_time) == today,
+        ).first()
+        today_checked[s['id']] = att is not None
+
+    return render_template('attendance/take.html',
+        dance_class=dance_class, students=students,
+        weeks=weeks, today=today, current_monday=current_monday,
+        today_checked=today_checked) 

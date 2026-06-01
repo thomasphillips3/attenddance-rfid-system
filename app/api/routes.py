@@ -452,6 +452,43 @@ def unenroll_student(enrollment_id):
     db.session.commit()
     return jsonify({'message': 'Student unenrolled successfully'})
 
+@bp.route('/attendance/toggle', methods=['POST'])
+@login_required
+def toggle_attendance():
+    """Toggle attendance for a student in a class on a given date"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    student_id = data.get('student_id')
+    class_id = data.get('class_id')
+    att_date = data.get('date')  # ISO format YYYY-MM-DD
+    if not all([student_id, class_id]):
+        return jsonify({'error': 'student_id and class_id required'}), 400
+
+    target_date = datetime.strptime(att_date, '%Y-%m-%d').date() if att_date else date.today()
+
+    existing = Attendance.query.filter(
+        Attendance.student_id == student_id,
+        Attendance.class_id == class_id,
+        func.date(Attendance.check_in_time) == target_date,
+    ).first()
+
+    if existing:
+        db.session.delete(existing)
+        db.session.commit()
+        return jsonify({'present': False, 'message': 'Attendance removed'})
+    else:
+        att = Attendance(
+            student_id=student_id,
+            class_id=class_id,
+            check_in_time=datetime.combine(target_date, datetime.now().time()),
+            check_in_method='manual',
+            is_present=True,
+        )
+        db.session.add(att)
+        db.session.commit()
+        return jsonify({'present': True, 'message': 'Marked present'}), 201
+
 # Attendance endpoints
 @bp.route('/attendance', methods=['GET'])
 @login_required
