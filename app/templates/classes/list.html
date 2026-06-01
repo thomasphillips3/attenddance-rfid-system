@@ -72,6 +72,30 @@
         </div>
     </div>
 </div>
+
+<!-- Enrollment Modal -->
+<div id="enroll-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75" onclick="closeEnrollModal()"></div>
+        <div class="relative bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 id="enroll-modal-title" class="text-lg font-medium text-gray-900">Manage Students</h3>
+                <button onclick="closeEnrollModal()" class="text-gray-400 hover:text-gray-500"><i class="fas fa-times"></i></button>
+            </div>
+            <!-- Add student -->
+            <div class="flex space-x-2 mb-4">
+                <select id="enroll-student-select" class="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm">
+                    <option value="">Select student to enroll...</option>
+                </select>
+                <button onclick="enrollStudent()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700">Enroll</button>
+            </div>
+            <!-- Enrolled students list -->
+            <div id="enrolled-students" class="space-y-2">
+                <p class="text-gray-500 text-sm">Loading...</p>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -104,9 +128,15 @@ function renderClasses(classes) {
                     <p><i class="fas fa-user mr-2 text-gray-400"></i>${esc(cls.instructor_name)}</p>
                     <p><i class="fas fa-users mr-2 text-gray-400"></i>${cls.enrolled_count}/${cls.max_students} students</p>
                 </div>
+                <button data-class-id="${cls.id}" data-class-name="${esc(cls.name)}" class="enroll-btn mt-4 w-full inline-flex justify-center items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                    <i class="fas fa-user-plus mr-2"></i>Manage Students
+                </button>
             </div>
         </div>
     `).join('');
+    document.querySelectorAll('.enroll-btn').forEach(btn => {
+        btn.addEventListener('click', () => openEnrollModal(parseInt(btn.dataset.classId), btn.dataset.className));
+    });
 }
 
 function openAddModal() {
@@ -125,6 +155,76 @@ async function saveClass(e) {
         const res = await fetch('/api/classes', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
         if (res.ok) { closeModal(); loadClasses(); } else { const d = await res.json(); alert(d.error || 'Error saving class'); }
     } catch (err) { alert('Network error'); }
+}
+
+let currentClassId = null;
+
+async function openEnrollModal(classId, className) {
+    currentClassId = classId;
+    document.getElementById('enroll-modal-title').textContent = `Students in ${className}`;
+    document.getElementById('enroll-modal').classList.remove('hidden');
+    // Load students for dropdown
+    const res = await fetch('/api/students?per_page=100');
+    const data = await res.json();
+    const select = document.getElementById('enroll-student-select');
+    select.innerHTML = '<option value="">Select student to enroll...</option>' +
+        data.students.map(s => `<option value="${s.id}">${esc(s.full_name)}</option>`).join('');
+    loadEnrollments();
+}
+
+function closeEnrollModal() {
+    document.getElementById('enroll-modal').classList.add('hidden');
+    currentClassId = null;
+    loadClasses();
+}
+
+async function loadEnrollments() {
+    const el = document.getElementById('enrolled-students');
+    try {
+        const res = await fetch(`/api/classes/${currentClassId}/enrollments`);
+        const data = await res.json();
+        if (!data.enrollments.length) {
+            el.innerHTML = '<p class="text-gray-500 text-sm py-4 text-center">No students enrolled yet.</p>';
+            return;
+        }
+        el.innerHTML = data.enrollments.map(e => `
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div class="flex items-center">
+                    <div class="h-8 w-8 rounded-full bg-primary-100 flex items-center justify-center">
+                        <span class="text-xs font-medium text-primary-700">${esc(e.full_name[0])}</span>
+                    </div>
+                    <div class="ml-3">
+                        <p class="text-sm font-medium text-gray-900">${esc(e.full_name)}</p>
+                        <p class="text-xs text-gray-500">Enrolled ${e.enrolled_date}</p>
+                    </div>
+                </div>
+                <button data-enrollment-id="${e.enrollment_id}" class="unenroll-btn text-red-500 hover:text-red-700 text-sm"><i class="fas fa-times"></i></button>
+            </div>
+        `).join('');
+        el.querySelectorAll('.unenroll-btn').forEach(btn => {
+            btn.addEventListener('click', () => unenrollStudent(parseInt(btn.dataset.enrollmentId)));
+        });
+    } catch (err) { el.innerHTML = '<p class="text-red-500 text-sm">Failed to load</p>'; }
+}
+
+async function enrollStudent() {
+    const studentId = document.getElementById('enroll-student-select').value;
+    if (!studentId) { alert('Select a student first'); return; }
+    try {
+        const res = await fetch(`/api/classes/${currentClassId}/enroll`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ student_id: parseInt(studentId) })
+        });
+        const data = await res.json();
+        if (res.ok) { loadEnrollments(); document.getElementById('enroll-student-select').value = ''; }
+        else { alert(data.error || 'Enrollment failed'); }
+    } catch (err) { alert('Network error'); }
+}
+
+async function unenrollStudent(enrollmentId) {
+    if (!confirm('Remove this student from the class?')) return;
+    await fetch(`/api/enrollments/${enrollmentId}`, { method: 'DELETE' });
+    loadEnrollments();
 }
 
 loadClasses();

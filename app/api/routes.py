@@ -379,6 +379,64 @@ def create_class():
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+# Enrollment endpoints
+@bp.route('/classes/<int:class_id>/enrollments', methods=['GET'])
+@login_required
+def get_class_enrollments(class_id):
+    """Get students enrolled in a class"""
+    dance_class = DanceClass.query.get_or_404(class_id)
+    enrollments = ClassEnrollment.query.filter_by(
+        class_id=class_id, is_active=True
+    ).all()
+    students = []
+    for e in enrollments:
+        s = Student.query.get(e.student_id)
+        if s:
+            students.append({
+                'enrollment_id': e.id,
+                'student_id': s.id,
+                'full_name': s.full_name,
+                'email': s.email,
+                'has_rfid': s.has_rfid(),
+                'enrolled_date': e.enrolled_date.isoformat(),
+            })
+    return jsonify({'enrollments': students, 'class_name': dance_class.name})
+
+@bp.route('/classes/<int:class_id>/enroll', methods=['POST'])
+@login_required
+def enroll_student(class_id):
+    """Enroll a student in a class"""
+    dance_class = DanceClass.query.get_or_404(class_id)
+    data = request.get_json()
+    if not data or not data.get('student_id'):
+        return jsonify({'error': 'student_id is required'}), 400
+
+    student_id = int(data['student_id'])
+    student = Student.query.get_or_404(student_id)
+
+    existing = ClassEnrollment.query.filter_by(
+        student_id=student_id, class_id=class_id, is_active=True
+    ).first()
+    if existing:
+        return jsonify({'error': f'{student.full_name} is already enrolled'}), 400
+
+    enrollment = ClassEnrollment(
+        student_id=student_id,
+        class_id=class_id,
+    )
+    db.session.add(enrollment)
+    db.session.commit()
+    return jsonify({'message': f'{student.full_name} enrolled in {dance_class.name}'}), 201
+
+@bp.route('/enrollments/<int:enrollment_id>', methods=['DELETE'])
+@login_required
+def unenroll_student(enrollment_id):
+    """Unenroll a student from a class"""
+    enrollment = ClassEnrollment.query.get_or_404(enrollment_id)
+    enrollment.is_active = False
+    db.session.commit()
+    return jsonify({'message': 'Student unenrolled successfully'})
+
 # Attendance endpoints
 @bp.route('/attendance', methods=['GET'])
 @login_required
