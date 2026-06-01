@@ -286,11 +286,35 @@ class Transaction(db.Model):
     payment_method = db.Column(db.String(50))  # cash, zelle, venmo, cashapp, card, tap (null for charges)
     description = db.Column(db.Text)
     transaction_date = db.Column(db.Date, default=date.today, nullable=False)
+    recurring_charge_id = db.Column(db.Integer, db.ForeignKey('recurring_charges.id'))
 
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     creator = db.relationship('User', backref='created_transactions')
 
+    recurring_charge = db.relationship('RecurringCharge', backref='transactions')
+
     def __repr__(self):
-        return f'<Transaction ${self.amount} {self.category} for student {self.student_id}>' 
+        return f'<Transaction ${self.amount} {self.category} for student {self.student_id}>'
+
+class RecurringCharge(db.Model):
+    """Automatic monthly charge rule"""
+    __tablename__ = 'recurring_charges'
+
+    id = db.Column(db.Integer, primary_key=True)
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    category = db.Column(db.String(50), nullable=False, default='tuition')
+    description = db.Column(db.Text)
+    day_of_month = db.Column(db.Integer, nullable=False, default=1)  # 1-28
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    dance_class = db.relationship('DanceClass', backref='recurring_charges')
+    creator = db.relationship('User', backref='created_recurring_charges')
+
+    def __repr__(self):
+        return f'<RecurringCharge ${self.amount} {self.category} for class {self.class_id}>' 

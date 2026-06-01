@@ -1,6 +1,6 @@
 # AttenDANCE — Feature Roadmap
 
-Client: Carollette Phillips (LaShelle's School of Dance)
+Client: LaShelle's School of Dance
 Status: Attendance + basic payments shipped. Client wants billing, parent access, waivers.
 
 ---

@@ -12,6 +12,41 @@ from config.config import config
 db = SQLAlchemy()
 login_manager = LoginManager()
 
+def _process_recurring_charges():
+    """Create charge transactions for any recurring charges due this month."""
+    from datetime import date
+    from app.models import RecurringCharge, Transaction, ClassEnrollment
+    today = date.today()
+    actives = RecurringCharge.query.filter_by(is_active=True).all()
+    for rc in actives:
+        if today.day < rc.day_of_month:
+            continue
+        # Check if already processed this month
+        month_start = today.replace(day=1)
+        already = Transaction.query.filter_by(
+            recurring_charge_id=rc.id,
+        ).filter(Transaction.transaction_date >= month_start).first()
+        if already:
+            continue
+        # Create charges for all enrolled students
+        enrollments = ClassEnrollment.query.filter_by(class_id=rc.class_id, is_active=True).all()
+        charge_date = today.replace(day=rc.day_of_month) if today.day >= rc.day_of_month else today
+        for e in enrollments:
+            t = Transaction(
+                student_id=e.student_id,
+                type='charge',
+                amount=rc.amount,
+                category=rc.category,
+                payment_method='n/a',
+                description=rc.description or f'{rc.dance_class.name} - {rc.category}',
+                transaction_date=charge_date,
+                recurring_charge_id=rc.id,
+                created_by=rc.created_by,
+            )
+            db.session.add(t)
+        db.session.commit()
+        print(f"✅ Recurring charge #{rc.id}: charged {len(enrollments)} students ${rc.amount} for {rc.dance_class.name}")
+
 def create_app(config_name=None):
     """Application factory function"""
     
@@ -67,6 +102,8 @@ def create_app(config_name=None):
                 txn_cols = [c['name'] for c in inspector.get_columns('transactions')]
                 if 'type' not in txn_cols:
                     conn.execute(sqlalchemy.text("ALTER TABLE transactions ADD COLUMN type VARCHAR(10) DEFAULT 'payment'"))
+                if 'recurring_charge_id' not in txn_cols:
+                    conn.execute(sqlalchemy.text("ALTER TABLE transactions ADD COLUMN recurring_charge_id INTEGER"))
             conn.commit()
         
         # Create default admin user if none exists
@@ -83,7 +120,10 @@ def create_app(config_name=None):
             db.session.add(admin)
             db.session.commit()
             print("✅ Default admin user created (username: admin, password: admin123)")
-    
+
+        # Process any due recurring charges
+        _process_recurring_charges()
+
     # Error handlers
     @app.errorhandler(404)
     def not_found_error(error):

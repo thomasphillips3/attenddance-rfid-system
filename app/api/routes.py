@@ -8,7 +8,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import and_, or_, desc, func
 
 from app.api import bp
-from app.models import User, Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction
+from app.models import User, Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction, RecurringCharge
 from app import db
 try:
     from rfid.service import get_rfid_service
@@ -900,3 +900,72 @@ def bulk_charge():
         charged.append(e.student_id)
     db.session.commit()
     return jsonify({'message': f'Charged {len(charged)} students', 'count': len(charged)}), 201
+
+# Recurring charge endpoints
+def recurring_to_dict(rc):
+    return {
+        'id': rc.id,
+        'class_id': rc.class_id,
+        'class_name': rc.dance_class.name,
+        'amount': str(rc.amount),
+        'category': rc.category,
+        'description': rc.description,
+        'day_of_month': rc.day_of_month,
+        'is_active': rc.is_active,
+        'created_at': rc.created_at.isoformat(),
+    }
+
+@bp.route('/recurring-charges', methods=['GET'])
+@login_required
+def get_recurring_charges():
+    """Get all recurring charge rules"""
+    charges = RecurringCharge.query.order_by(RecurringCharge.created_at).all()
+    return jsonify({'recurring_charges': [recurring_to_dict(rc) for rc in charges]})
+
+@bp.route('/recurring-charges', methods=['POST'])
+@login_required
+def create_recurring_charge():
+    """Create a new recurring charge rule"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    for field in ['class_id', 'amount', 'category']:
+        if not data.get(field):
+            return jsonify({'error': f'{field} is required'}), 400
+
+    dance_class = DanceClass.query.get(data['class_id'])
+    if not dance_class:
+        return jsonify({'error': 'Class not found'}), 404
+
+    day = int(data.get('day_of_month', 1))
+    if day < 1 or day > 28:
+        return jsonify({'error': 'day_of_month must be 1-28'}), 400
+
+    rc = RecurringCharge(
+        class_id=dance_class.id,
+        amount=data['amount'],
+        category=data['category'],
+        description=data.get('description', '').strip() or None,
+        day_of_month=day,
+        created_by=current_user.id,
+    )
+    db.session.add(rc)
+    db.session.commit()
+    return jsonify(recurring_to_dict(rc)), 201
+
+@bp.route('/recurring-charges/<int:rc_id>', methods=['DELETE'])
+@login_required
+def delete_recurring_charge(rc_id):
+    """Deactivate a recurring charge"""
+    rc = RecurringCharge.query.get_or_404(rc_id)
+    rc.is_active = False
+    db.session.commit()
+    return jsonify({'message': 'Recurring charge deactivated'})
+
+@bp.route('/recurring-charges/process', methods=['POST'])
+@login_required
+def process_recurring_charges():
+    """Manually trigger recurring charge processing"""
+    from app import _process_recurring_charges
+    _process_recurring_charges()
+    return jsonify({'message': 'Recurring charges processed'})
