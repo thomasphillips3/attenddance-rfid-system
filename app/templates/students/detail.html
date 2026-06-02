@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <a href="{{ url_for('main.students') }}" class="text-sm text-primary-600 hover:text-primary-900"><i class="fas fa-arrow-left mr-1"></i>Back to Students</a>
+                    <h1 class="text-3xl font-bold text-gray-900 mt-1">{{ student.full_name }}</h1>
+                    <p class="mt-1 text-sm text-gray-600">
+                        {% if student.family %}Family: {{ student.family.name }} &middot; {% endif %}
+                        {% if student.school %}{{ student.school }}{% endif %}
+                        {% if student.grade %} &middot; {{ student.grade }}{% endif %}
+                    </p>
+                </div>
+                <div class="flex items-center gap-3">
+                    {% if student.is_active %}
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">Active</span>
+                    {% else %}
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">Inactive</span>
+                    {% endif %}
+                    <button onclick="toggleActive()" id="toggle-btn" class="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        {% if student.is_active %}<i class="fas fa-pause mr-1"></i>Deactivate{% else %}<i class="fas fa-play mr-1"></i>Reactivate{% endif %}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 space-y-6">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">Contact &amp; Emergency</h2>
+                    <div class="grid grid-cols-2 gap-4 text-sm">
+                        {% if student.email %}<div><span class="text-gray-500">Email:</span> {{ student.email }}</div>{% endif %}
+                        {% if student.phone %}<div><span class="text-gray-500">Phone:</span> {{ student.phone }}</div>{% endif %}
+                        {% if student.parent_email %}<div><span class="text-gray-500">Parent Email:</span> {{ student.parent_email }}</div>{% endif %}
+                        {% if student.date_of_birth %}<div><span class="text-gray-500">DOB:</span> {{ student.date_of_birth.strftime('%b %d, %Y') }} (age {{ student.age }})</div>{% endif %}
+                        {% if student.emergency_contact_name %}
+                        <div class="col-span-2 mt-2 p-3 bg-red-50 border border-red-200 rounded-md">
+                            <p class="text-xs font-semibold text-red-700 uppercase mb-1">Emergency Contact</p>
+                            <p class="text-sm text-red-900 font-medium">{{ student.emergency_contact_name }}</p>
+                            {% if student.emergency_contact_phone %}<p class="text-sm text-red-700">{{ student.emergency_contact_phone }}</p>{% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">Enrolled Classes</h2>
+                    {% if classes %}
+                    <div class="space-y-2">
+                        {% for c in classes %}
+                        <div class="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                            <div>
+                                <p class="text-sm font-medium text-gray-900">{{ c.name }}</p>
+                                <p class="text-xs text-gray-500">{{ c.day_name }} {{ c.start_time.strftime('%I:%M %p') }} - {{ c.end_time.strftime('%I:%M %p') }}</p>
+                            </div>
+                            {% if c.level %}<span class="text-xs text-gray-500">{{ c.level }}</span>{% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-sm text-gray-500">Not enrolled in any classes.</p>
+                    {% endif %}
+                </div>
+
+                {% if student.allergies or student.special_needs or student.medical_notes %}
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">Health &amp; Special Needs</h2>
+                    <div class="space-y-2 text-sm">
+                        {% if student.allergies %}<div><span class="text-gray-500 font-medium">Allergies:</span> <span class="text-red-600">{{ student.allergies }}</span></div>{% endif %}
+                        {% if student.special_needs %}<div><span class="text-gray-500 font-medium">Special Needs:</span> {{ student.special_needs }}</div>{% endif %}
+                        {% if student.medical_notes %}<div><span class="text-gray-500 font-medium">Medical Notes:</span> {{ student.medical_notes }}</div>{% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">Recent Attendance</h2>
+                    {% if recent_attendance %}
+                    <table class="min-w-full text-sm">
+                        <thead><tr><th class="text-left text-xs text-gray-500 pb-2">Date</th><th class="text-left text-xs text-gray-500 pb-2">Class</th></tr></thead>
+                        <tbody>
+                        {% for att in recent_attendance %}
+                        <tr><td class="py-1 text-gray-900">{{ att.check_in_time.strftime('%b %d, %Y') }}</td><td class="py-1 text-gray-900">{{ att.dance_class.name }}</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <p class="text-sm text-gray-500">No attendance records yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="space-y-6">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">Account</h2>
+                    <div class="text-center mb-3">
+                        {% if balance > 0 %}
+                        <p class="text-3xl font-bold text-red-600">${{ '%.2f' % balance }}</p>
+                        <p class="text-xs text-red-500">Balance Due</p>
+                        {% elif balance < 0 %}
+                        <p class="text-3xl font-bold text-green-600">${{ '%.2f' % (-balance) }}</p>
+                        <p class="text-xs text-green-500">Credit</p>
+                        {% else %}
+                        <p class="text-3xl font-bold text-gray-900">$0.00</p>
+                        <p class="text-xs text-green-500">Paid Up</p>
+                        {% endif %}
+                    </div>
+                    <div class="text-xs text-gray-500 text-center">${{ '%.2f' % total_charges }} charged &middot; ${{ '%.2f' % total_payments }} paid</div>
+                    <div class="mt-3 text-center">
+                        <a href="{{ url_for('main.student_ledger', student_id=student.id) }}" class="text-sm text-primary-600 hover:text-primary-900">View Full Ledger</a>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">Sizes</h2>
+                    {% set sizes = [
+                        ('T-Shirt', student.shirt_size), ('Leotard', student.leotard_size),
+                        ('Pant', student.pants_size), ('Dress', student.dress_size),
+                        ('Shoe', student.shoe_size), ('Tight', student.tight_size),
+                        ('Waist', student.waist), ('Bust', student.bust),
+                        ('Hips', student.hips), ('Chest', student.chest),
+                        ('Height', student.height), ('Sleeve', student.sleeve),
+                        ('Girth', student.girth), ('Inseam', student.inseam),
+                        ('Neck', student.neck), ('Weight', student.weight),
+                    ] %}
+                    {% set has_sizes = sizes | selectattr('1') | list %}
+                    {% if has_sizes %}
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        {% for label, val in sizes %}
+                            {% if val %}
+                            <div class="flex justify-between py-1 border-b border-gray-100">
+                                <span class="text-gray-500">{{ label }}</span>
+                                <span class="font-medium">{{ val }}</span>
+                            </div>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% if student.size_notes %}
+                    <p class="mt-2 text-xs text-gray-500">{{ student.size_notes }}</p>
+                    {% endif %}
+                    {% else %}
+                    <p class="text-sm text-gray-400">No sizes recorded yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function toggleActive() {
+    const isActive = {{ 'true' if student.is_active else 'false' }};
+    const action = isActive ? 'Deactivate' : 'Reactivate';
+    if (!confirm(action + ' {{ student.full_name }}?')) return;
+    try {
+        const res = await fetch('/api/students/{{ student.id }}', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ is_active: !isActive }),
+        });
+        if (res.ok) { location.reload(); } else { alert('Error updating status'); }
+    } catch (err) { alert('Network error'); }
+}
+</script>
+{% endblock %}

@@ -116,6 +116,23 @@ def transactions():
     classes = DanceClass.query.filter_by(is_active=True).order_by(DanceClass.name).all()
     return render_template('transactions/list.html', students=students, classes=classes)
 
+@bp.route('/students/<int:student_id>/detail')
+@staff_required
+def student_detail(student_id):
+    """Student detail page with classes, billing, measurements"""
+    student = Student.query.get_or_404(student_id)
+    enrollments = ClassEnrollment.query.filter_by(student_id=student_id, is_active=True).all()
+    classes = [DanceClass.query.get(e.class_id) for e in enrollments]
+    classes = [c for c in classes if c]
+    txns = Transaction.query.filter_by(student_id=student_id).all()
+    total_charges = sum(float(t.amount) for t in txns if (t.type or 'payment') == 'charge')
+    total_payments = sum(float(t.amount) for t in txns if (t.type or 'payment') == 'payment')
+    recent_att = Attendance.query.filter_by(student_id=student_id).order_by(
+        desc(Attendance.check_in_time)).limit(10).all()
+    return render_template('students/detail.html', student=student, classes=classes,
+        balance=total_charges - total_payments, total_charges=total_charges,
+        total_payments=total_payments, recent_attendance=recent_att)
+
 @bp.route('/students/<int:student_id>/ledger')
 @login_required
 def student_ledger(student_id):

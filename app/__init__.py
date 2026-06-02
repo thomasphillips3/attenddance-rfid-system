@@ -99,7 +99,12 @@ def create_app(config_name=None):
                                  ('family_id', 'INTEGER'), ('height', 'VARCHAR(20)'),
                                  ('weight', 'VARCHAR(20)'), ('shoe_size', 'VARCHAR(20)'),
                                  ('shirt_size', 'VARCHAR(20)'), ('pants_size', 'VARCHAR(20)'),
-                                 ('leotard_size', 'VARCHAR(20)')]:
+                                 ('leotard_size', 'VARCHAR(20)'), ('dress_size', 'VARCHAR(20)'),
+                                 ('waist', 'VARCHAR(20)'), ('girth', 'VARCHAR(20)'),
+                                 ('inseam', 'VARCHAR(20)'), ('neck', 'VARCHAR(20)'),
+                                 ('tight_size', 'VARCHAR(20)'), ('bust', 'VARCHAR(20)'),
+                                 ('hips', 'VARCHAR(20)'), ('sleeve', 'VARCHAR(20)'),
+                                 ('chest', 'VARCHAR(20)'), ('size_notes', 'TEXT')]:
                 if col not in student_cols:
                     conn.execute(sqlalchemy.text(f'ALTER TABLE students ADD COLUMN {col} {coltype}'))
             user_cols = [c['name'] for c in inspector.get_columns('users')]

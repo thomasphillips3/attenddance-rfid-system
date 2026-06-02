@@ -62,6 +62,17 @@ def student_to_dict(student):
         'shirt_size': student.shirt_size,
         'pants_size': student.pants_size,
         'leotard_size': student.leotard_size,
+        'dress_size': student.dress_size,
+        'waist': student.waist,
+        'girth': student.girth,
+        'inseam': student.inseam,
+        'neck': student.neck,
+        'tight_size': student.tight_size,
+        'bust': student.bust,
+        'hips': student.hips,
+        'sleeve': student.sleeve,
+        'chest': student.chest,
+        'size_notes': student.size_notes,
         'family_id': student.family_id,
         'family_name': student.family.name if student.family else None,
         'rfid_uid': student.rfid_uid,
@@ -229,6 +240,17 @@ def create_student():
             shirt_size=data.get('shirt_size', '').strip() or None,
             pants_size=data.get('pants_size', '').strip() or None,
             leotard_size=data.get('leotard_size', '').strip() or None,
+            dress_size=data.get('dress_size', '').strip() or None,
+            waist=data.get('waist', '').strip() or None,
+            girth=data.get('girth', '').strip() or None,
+            inseam=data.get('inseam', '').strip() or None,
+            neck=data.get('neck', '').strip() or None,
+            tight_size=data.get('tight_size', '').strip() or None,
+            bust=data.get('bust', '').strip() or None,
+            hips=data.get('hips', '').strip() or None,
+            sleeve=data.get('sleeve', '').strip() or None,
+            chest=data.get('chest', '').strip() or None,
+            size_notes=data.get('size_notes', '').strip() or None,
             family_id=int(data['family_id']) if data.get('family_id') else None,
             notes=data.get('notes', '').strip() or None,
             medical_notes=data.get('medical_notes', '').strip() or None
@@ -284,7 +306,9 @@ def update_student(student_id):
             student.allergies = data['allergies'].strip() or None
         if 'special_needs' in data:
             student.special_needs = data['special_needs'].strip() or None
-        for mfield in ['height', 'weight', 'shoe_size', 'shirt_size', 'pants_size', 'leotard_size']:
+        for mfield in ['height', 'weight', 'shoe_size', 'shirt_size', 'pants_size', 'leotard_size',
+                       'dress_size', 'waist', 'girth', 'inseam', 'neck', 'tight_size',
+                       'bust', 'hips', 'sleeve', 'chest', 'size_notes']:
             if mfield in data:
                 setattr(student, mfield, data[mfield].strip() or None)
         if 'family_id' in data:
