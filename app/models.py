@@ -3,7 +3,6 @@ Database models for AttenDANCE system
 """
 
 from datetime import datetime, date
-from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from app import db
@@ -57,8 +56,12 @@ class User(UserMixin, db.Model):
         """Get students linked to this parent user."""
         if not self.is_parent:
             return []
-        links = ParentStudent.query.filter_by(parent_id=self.id).all()
-        return [Student.query.get(l.student_id) for l in links if Student.query.get(l.student_id)]
+        return (
+            Student.query
+            .join(ParentStudent, ParentStudent.student_id == Student.id)
+            .filter(ParentStudent.parent_id == self.id)
+            .all()
+        )
 
     def __repr__(self):
         return f'<User {self.username}>'

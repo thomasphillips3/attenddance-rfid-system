@@ -82,7 +82,7 @@ class RFIDReader:
                             text_str = text.strip() if text else ""
                             logger.info(f"RFID card read: UID={uid_str}")
                             return (uid_str, text_str)
-                    except:
+                    except Exception:
                         pass
                     time.sleep(0.1)
                 
@@ -151,10 +151,9 @@ class RFIDReader:
             return False
         
         try:
-            # Try a quick non-blocking read
             result = self.read_card(timeout=0.1)
             return result is not None
-        except:
+        except Exception:
             return False
     
     def cleanup(self):
@@ -164,7 +163,7 @@ class RFIDReader:
                 import RPi.GPIO as GPIO
                 GPIO.cleanup()
                 logger.info("RFID reader cleanup completed")
-            except:
+            except Exception:
                 pass
 
 class MockRFIDReader(RFIDReader):
@@ -240,6 +239,6 @@ def create_rfid_reader(spi_dev=0, rst_pin=25, force_mock=False) -> RFIDReader:
         else:
             logger.info("Falling back to mock RFID reader")
             return MockRFIDReader(spi_dev, rst_pin)
-    except:
+    except Exception:
         logger.info("Creating mock RFID reader")
         return MockRFIDReader(spi_dev, rst_pin) 

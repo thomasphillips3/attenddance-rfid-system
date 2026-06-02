@@ -1,24 +1,20 @@
 #!/usr/bin/env python3
-"""
-AttenDANCE - RFID Attendance System
-Main application entry point
-"""
+"""AttenDANCE - RFID Attendance System — main entry point."""
 
+import logging
 import os
-import sys
 import threading
+
 from app import create_app
-from config.config import Config
+
+logger = logging.getLogger(__name__)
 
 # Module-level app for gunicorn (gunicorn run:app)
 app = create_app()
 
+
 def main():
-    """Main application entry point"""
-    # Create Flask app
-    app = create_app()
-    
-    # Start RFID service in background thread if not in testing mode
+    """Run the dev server with optional RFID service."""
     if not app.config.get('TESTING', False):
         try:
             from rfid.service import RFIDService
@@ -26,30 +22,27 @@ def main():
             rfid_thread = threading.Thread(
                 target=rfid_service.start_listening,
                 daemon=True,
-                name="RFID-Service"
+                name="RFID-Service",
             )
             rfid_thread.start()
-            print("RFID service started successfully")
-        except Exception as e:
-            print(f"Warning: Could not start RFID service: {e}")
-            print("   This is normal if running on non-Raspberry Pi hardware")
-    
-    # Get configuration
+            logger.info("RFID service started successfully")
+        except Exception:
+            logger.info("RFID service not available (normal on non-Raspberry Pi hardware)")
+
     host = os.environ.get('FLASK_HOST', '0.0.0.0')
     port = int(os.environ.get('FLASK_PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
-    
-    print(f"🎭 AttenDANCE starting on http://{host}:{port}")
-    print(f"   Debug mode: {debug}")
-    print(f"   Database: {app.config['SQLALCHEMY_DATABASE_URI']}")
-    
-    # Run the application
+
+    logger.info("AttenDANCE starting on http://%s:%d (debug=%s)", host, port, debug)
+
     app.run(
         host=host,
         port=port,
         debug=debug,
-        use_reloader=False  # Disable reloader to prevent RFID service conflicts
+        use_reloader=False,
     )
 
+
 if __name__ == '__main__':
-    main() 
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+    main()

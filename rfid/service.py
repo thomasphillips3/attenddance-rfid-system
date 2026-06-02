@@ -2,10 +2,9 @@
 RFID Background Service for automatic attendance processing
 """
 
-import time
 import logging
-import threading
-from datetime import datetime, date, time as dt_time
+import time
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from rfid.reader import create_rfid_reader
@@ -211,12 +210,10 @@ class RFIDService:
                 class_start = dance_class.start_time
                 class_end = dance_class.end_time
                 
-                # Add 30-minute buffer before class starts and 15-minute buffer after
-                from datetime import timedelta
-                start_buffer = (datetime.combine(date.today(), class_start) - 
-                              timedelta(minutes=30)).time()
-                end_buffer = (datetime.combine(date.today(), class_end) + 
-                            timedelta(minutes=15)).time()
+                start_buffer = (datetime.combine(date.today(), class_start) -
+                                timedelta(minutes=30)).time()
+                end_buffer = (datetime.combine(date.today(), class_end) +
+                              timedelta(minutes=15)).time()
                 
                 if start_buffer <= current_time <= end_buffer:
                     return dance_class
@@ -262,7 +259,7 @@ class RFIDService:
         if self.reader:
             try:
                 self.reader.cleanup()
-            except:
+            except Exception:
                 pass
         
         logger.info(f"RFID service stopped. Stats: Total scans: {self.total_scans}, "
