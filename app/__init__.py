@@ -89,36 +89,9 @@ def create_app(config_name=None):
         # Create all database tables
         db.create_all()
 
-        # Add new columns to existing tables (SQLite ALTER TABLE)
-        import sqlalchemy
-        with db.engine.connect() as conn:
-            inspector = sqlalchemy.inspect(db.engine)
-            student_cols = [c['name'] for c in inspector.get_columns('students')]
-            for col, coltype in [('school', 'VARCHAR(150)'), ('grade', 'VARCHAR(30)'),
-                                 ('allergies', 'TEXT'), ('special_needs', 'TEXT'),
-                                 ('family_id', 'INTEGER'), ('height', 'VARCHAR(20)'),
-                                 ('weight', 'VARCHAR(20)'), ('shoe_size', 'VARCHAR(20)'),
-                                 ('shirt_size', 'VARCHAR(20)'), ('pants_size', 'VARCHAR(20)'),
-                                 ('leotard_size', 'VARCHAR(20)'), ('dress_size', 'VARCHAR(20)'),
-                                 ('waist', 'VARCHAR(20)'), ('girth', 'VARCHAR(20)'),
-                                 ('inseam', 'VARCHAR(20)'), ('neck', 'VARCHAR(20)'),
-                                 ('tight_size', 'VARCHAR(20)'), ('bust', 'VARCHAR(20)'),
-                                 ('hips', 'VARCHAR(20)'), ('sleeve', 'VARCHAR(20)'),
-                                 ('chest', 'VARCHAR(20)'), ('size_notes', 'TEXT')]:
-                if col not in student_cols:
-                    conn.execute(sqlalchemy.text(f'ALTER TABLE students ADD COLUMN {col} {coltype}'))
-            user_cols = [c['name'] for c in inspector.get_columns('users')]
-            if 'role' not in user_cols:
-                conn.execute(sqlalchemy.text("ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'teacher'"))
-            if 'invite_code' not in user_cols:
-                conn.execute(sqlalchemy.text("ALTER TABLE users ADD COLUMN invite_code VARCHAR(20)"))
-            if 'transactions' in inspector.get_table_names():
-                txn_cols = [c['name'] for c in inspector.get_columns('transactions')]
-                if 'type' not in txn_cols:
-                    conn.execute(sqlalchemy.text("ALTER TABLE transactions ADD COLUMN type VARCHAR(10) DEFAULT 'payment'"))
-                if 'recurring_charge_id' not in txn_cols:
-                    conn.execute(sqlalchemy.text("ALTER TABLE transactions ADD COLUMN recurring_charge_id INTEGER"))
-            conn.commit()
+        # Run schema migrations (adds columns to existing tables)
+        from app.migrations import run_migrations
+        run_migrations(db)
         
         # Create default admin user if none exists
         from app.models import User
