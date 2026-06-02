@@ -8,7 +8,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import and_, or_, desc, func
 
 from app.api import bp
-from app.models import User, Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction, RecurringCharge, ParentStudent, Rule, RuleAcknowledgment, Message
+from app.models import User, Student, DanceClass, ClassEnrollment, Attendance, RFIDLog, Transaction, RecurringCharge, ParentStudent, Rule, RuleAcknowledgment, Message, Family
 import secrets
 from app import square_service
 from app import db
@@ -56,6 +56,14 @@ def student_to_dict(student):
         'grade': student.grade,
         'allergies': student.allergies,
         'special_needs': student.special_needs,
+        'height': student.height,
+        'weight': student.weight,
+        'shoe_size': student.shoe_size,
+        'shirt_size': student.shirt_size,
+        'pants_size': student.pants_size,
+        'leotard_size': student.leotard_size,
+        'family_id': student.family_id,
+        'family_name': student.family.name if student.family else None,
         'rfid_uid': student.rfid_uid,
         'has_rfid': student.has_rfid(),
         'rfid_assigned_at': student.rfid_assigned_at.isoformat() if student.rfid_assigned_at else None,
@@ -215,6 +223,13 @@ def create_student():
             grade=data.get('grade', '').strip() or None,
             allergies=data.get('allergies', '').strip() or None,
             special_needs=data.get('special_needs', '').strip() or None,
+            height=data.get('height', '').strip() or None,
+            weight=data.get('weight', '').strip() or None,
+            shoe_size=data.get('shoe_size', '').strip() or None,
+            shirt_size=data.get('shirt_size', '').strip() or None,
+            pants_size=data.get('pants_size', '').strip() or None,
+            leotard_size=data.get('leotard_size', '').strip() or None,
+            family_id=int(data['family_id']) if data.get('family_id') else None,
             notes=data.get('notes', '').strip() or None,
             medical_notes=data.get('medical_notes', '').strip() or None
         )
@@ -269,6 +284,11 @@ def update_student(student_id):
             student.allergies = data['allergies'].strip() or None
         if 'special_needs' in data:
             student.special_needs = data['special_needs'].strip() or None
+        for mfield in ['height', 'weight', 'shoe_size', 'shirt_size', 'pants_size', 'leotard_size']:
+            if mfield in data:
+                setattr(student, mfield, data[mfield].strip() or None)
+        if 'family_id' in data:
+            student.family_id = int(data['family_id']) if data['family_id'] else None
         if 'notes' in data:
             student.notes = data['notes'].strip() or None
         if 'medical_notes' in data:
@@ -1315,3 +1335,74 @@ def send_message():
             'recipient_emails': sorted(emails),
             'recipient_count': len(emails),
         }), 201
+
+# Family endpoints
+@bp.route('/families', methods=['GET'])
+@login_required
+def get_families():
+    """Get all families"""
+    families = Family.query.filter_by(is_active=True).order_by(Family.name).all()
+    result = []
+    for f in families:
+        students = f.students.filter_by(is_active=True).all()
+        all_txns = []
+        for s in students:
+            all_txns.extend(Transaction.query.filter_by(student_id=s.id).all())
+        total_charges = sum(float(t.amount) for t in all_txns if (t.type or 'payment') == 'charge')
+        total_payments = sum(float(t.amount) for t in all_txns if (t.type or 'payment') == 'payment')
+        result.append({
+            'id': f.id, 'name': f.name,
+            'primary_email': f.primary_email, 'primary_phone': f.primary_phone,
+            'student_count': len(students),
+            'students': [{'id': s.id, 'full_name': s.full_name} for s in students],
+            'total_charges': f'{total_charges:.2f}',
+            'total_payments': f'{total_payments:.2f}',
+            'balance': f'{total_charges - total_payments:.2f}',
+        })
+    return jsonify({'families': result})
+
+@bp.route('/families', methods=['POST'])
+@login_required
+def create_family():
+    """Create a new family"""
+    data = request.get_json()
+    if not data or not data.get('name'):
+        return jsonify({'error': 'name is required'}), 400
+    f = Family(
+        name=data['name'].strip(),
+        primary_email=data.get('primary_email', '').strip() or None,
+        primary_phone=data.get('primary_phone', '').strip() or None,
+    )
+    db.session.add(f)
+    db.session.commit()
+    return jsonify({'id': f.id, 'name': f.name}), 201
+
+@bp.route('/families/<int:family_id>/ledger', methods=['GET'])
+@login_required
+def get_family_ledger(family_id):
+    """Get combined ledger for all students in a family"""
+    family = Family.query.get_or_404(family_id)
+    students = family.students.filter_by(is_active=True).all()
+    all_txns = []
+    for s in students:
+        all_txns.extend(Transaction.query.filter_by(student_id=s.id).all())
+    all_txns.sort(key=lambda t: (t.transaction_date, t.created_at))
+    running = 0.0
+    ledger = []
+    for t in all_txns:
+        amt = float(t.amount)
+        if (t.type or 'payment') == 'charge':
+            running += amt
+        else:
+            running -= amt
+        ledger.append({**transaction_to_dict(t), 'running_balance': f'{running:.2f}'})
+    total_charges = sum(float(t.amount) for t in all_txns if (t.type or 'payment') == 'charge')
+    total_payments = sum(float(t.amount) for t in all_txns if (t.type or 'payment') == 'payment')
+    return jsonify({
+        'family_id': family.id, 'family_name': family.name,
+        'students': [{'id': s.id, 'full_name': s.full_name} for s in students],
+        'ledger': ledger,
+        'total_charges': f'{total_charges:.2f}',
+        'total_payments': f'{total_payments:.2f}',
+        'balance': f'{total_charges - total_payments:.2f}',
+    })

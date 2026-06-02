@@ -108,6 +108,44 @@
                     </div>
                 </div>
 
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-5 mb-2">Family</p>
+                <div class="grid grid-cols-1 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Family</label>
+                        <select id="family_id" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                            <option value="">No family assigned</option>
+                        </select>
+                    </div>
+                </div>
+
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-5 mb-2">Measurements</p>
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Height</label>
+                        <input type="text" id="height" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. 4'2&quot;">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Weight</label>
+                        <input type="text" id="weight" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. 65 lbs">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Shoe Size</label>
+                        <input type="text" id="shoe_size" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. 5Y">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Shirt Size</label>
+                        <input type="text" id="shirt_size" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. YM">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Pants Size</label>
+                        <input type="text" id="pants_size" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. 10">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Leotard Size</label>
+                        <input type="text" id="leotard_size" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. CL">
+                    </div>
+                </div>
+
                 <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-5 mb-2">Health &amp; Special Needs</p>
                 <div class="grid grid-cols-1 gap-4">
                     <div>
@@ -229,6 +267,13 @@ function editStudent(s) {
     document.getElementById('allergies').value = s.allergies || '';
     document.getElementById('special_needs').value = s.special_needs || '';
     document.getElementById('medical_notes').value = s.medical_notes || '';
+    document.getElementById('family_id').value = s.family_id || '';
+    document.getElementById('height').value = s.height || '';
+    document.getElementById('weight').value = s.weight || '';
+    document.getElementById('shoe_size').value = s.shoe_size || '';
+    document.getElementById('shirt_size').value = s.shirt_size || '';
+    document.getElementById('pants_size').value = s.pants_size || '';
+    document.getElementById('leotard_size').value = s.leotard_size || '';
     document.getElementById('student-modal').classList.remove('hidden');
 }
 
@@ -251,6 +296,13 @@ async function saveStudent(e) {
         allergies: document.getElementById('allergies').value,
         special_needs: document.getElementById('special_needs').value,
         medical_notes: document.getElementById('medical_notes').value,
+        family_id: document.getElementById('family_id').value || null,
+        height: document.getElementById('height').value,
+        weight: document.getElementById('weight').value,
+        shoe_size: document.getElementById('shoe_size').value,
+        shirt_size: document.getElementById('shirt_size').value,
+        pants_size: document.getElementById('pants_size').value,
+        leotard_size: document.getElementById('leotard_size').value,
     };
     const url = id ? `/api/students/${id}` : '/api/students';
     try {
@@ -265,6 +317,16 @@ async function deleteStudent(id, name) {
     loadStudents();
 }
 
+async function loadFamilies() {
+    try {
+        const res = await fetch('/api/families');
+        const data = await res.json();
+        const sel = document.getElementById('family_id');
+        sel.innerHTML = '<option value="">No family assigned</option>' +
+            data.families.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
+    } catch (err) {}
+}
 loadStudents();
+loadFamilies();
 </script>
 {% endblock %}

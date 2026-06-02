@@ -95,7 +95,11 @@ def create_app(config_name=None):
             inspector = sqlalchemy.inspect(db.engine)
             student_cols = [c['name'] for c in inspector.get_columns('students')]
             for col, coltype in [('school', 'VARCHAR(150)'), ('grade', 'VARCHAR(30)'),
-                                 ('allergies', 'TEXT'), ('special_needs', 'TEXT')]:
+                                 ('allergies', 'TEXT'), ('special_needs', 'TEXT'),
+                                 ('family_id', 'INTEGER'), ('height', 'VARCHAR(20)'),
+                                 ('weight', 'VARCHAR(20)'), ('shoe_size', 'VARCHAR(20)'),
+                                 ('shirt_size', 'VARCHAR(20)'), ('pants_size', 'VARCHAR(20)'),
+                                 ('leotard_size', 'VARCHAR(20)')]:
                 if col not in student_cols:
                     conn.execute(sqlalchemy.text(f'ALTER TABLE students ADD COLUMN {col} {coltype}'))
             user_cols = [c['name'] for c in inspector.get_columns('users')]

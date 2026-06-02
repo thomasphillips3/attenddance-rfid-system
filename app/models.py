@@ -79,12 +79,28 @@ class ParentStudent(db.Model):
     parent = db.relationship('User', backref='parent_links')
     student = db.relationship('Student', backref='parent_links')
 
+class Family(db.Model):
+    """Family account — groups siblings, billing is per-family"""
+    __tablename__ = 'families'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    primary_email = db.Column(db.String(120))
+    primary_phone = db.Column(db.String(20))
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    students = db.relationship('Student', backref='family', lazy='dynamic')
+    def __repr__(self):
+        return f'<Family {self.name}>'
+
 class Student(db.Model):
     """Student model"""
     __tablename__ = 'students'
-    
+
     id = db.Column(db.Integer, primary_key=True)
-    
+    family_id = db.Column(db.Integer, db.ForeignKey('families.id'))
+
     # Basic information
     first_name = db.Column(db.String(50), nullable=False)
     last_name = db.Column(db.String(50), nullable=False)
@@ -113,6 +129,14 @@ class Student(db.Model):
     # Health / special needs
     allergies = db.Column(db.Text)
     special_needs = db.Column(db.Text)
+
+    # Measurements (for costumes)
+    height = db.Column(db.String(20))
+    weight = db.Column(db.String(20))
+    shoe_size = db.Column(db.String(20))
+    shirt_size = db.Column(db.String(20))
+    pants_size = db.Column(db.String(20))
+    leotard_size = db.Column(db.String(20))
 
     # Notes
     notes = db.Column(db.Text)

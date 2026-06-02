@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900">Families</h1>
+                    <p class="mt-1 text-sm text-gray-600">Group students by family for combined billing</p>
+                </div>
+                <button onclick="openAddFamily()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
+                    <i class="fas fa-plus mr-2"></i>Add Family
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div id="families-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <p class="text-gray-500 col-span-full">Loading...</p>
+        </div>
+    </div>
+</div>
+
+<div id="family-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75" onclick="closeFamilyModal()"></div>
+        <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Add Family</h3>
+            <form id="family-form" onsubmit="saveFamily(event)">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Family Name *</label>
+                        <input type="text" id="fam-name" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. The Johnson Family">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Primary Email</label>
+                        <input type="email" id="fam-email" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Primary Phone</label>
+                        <input type="tel" id="fam-phone" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" onclick="closeFamilyModal()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                    <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function esc(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+async function loadFamilies() {
+    try {
+        const res = await fetch('/api/families');
+        const data = await res.json();
+        renderFamilies(data.families);
+    } catch (err) {
+        document.getElementById('families-container').innerHTML = '<p class="text-red-500 col-span-full">Failed to load</p>';
+    }
+}
+function renderFamilies(families) {
+    const el = document.getElementById('families-container');
+    if (!families.length) {
+        el.innerHTML = '<p class="text-gray-500 col-span-full">No families yet. Click "Add Family" to create one, then assign students to it from the Students page.</p>';
+        return;
+    }
+    el.innerHTML = families.map(f => {
+        const bal = parseFloat(f.balance);
+        const balClass = bal > 0 ? 'text-red-600' : 'text-green-600';
+        const balText = bal > 0 ? '$' + bal.toFixed(2) + ' due' : bal === 0 ? 'Paid up' : '$' + Math.abs(bal).toFixed(2) + ' credit';
+        const kids = f.students.map(s => esc(s.full_name)).join(', ') || 'No students assigned';
+        return `<div class="bg-white rounded-lg shadow-lg overflow-hidden">
+            <div class="bg-primary-500 px-5 py-3">
+                <h3 class="text-lg font-bold text-white">${esc(f.name)}</h3>
+                <p class="text-primary-100 text-sm">${f.student_count} student(s)</p>
+            </div>
+            <div class="p-5">
+                <p class="text-sm text-gray-600 mb-2"><i class="fas fa-users mr-1"></i>${kids}</p>
+                ${f.primary_email ? '<p class="text-sm text-gray-500"><i class="fas fa-envelope mr-1"></i>' + esc(f.primary_email) + '</p>' : ''}
+                <div class="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center">
+                    <span class="text-sm font-bold ${balClass}">${balText}</span>
+                    <a href="/families/${f.id}/ledger" class="text-sm text-primary-600 hover:text-primary-900">View Ledger</a>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function openAddFamily() { document.getElementById('family-form').reset(); document.getElementById('family-modal').classList.remove('hidden'); }
+function closeFamilyModal() { document.getElementById('family-modal').classList.add('hidden'); }
+
+async function saveFamily(e) {
+    e.preventDefault();
+    const body = {
+        name: document.getElementById('fam-name').value,
+        primary_email: document.getElementById('fam-email').value,
+        primary_phone: document.getElementById('fam-phone').value,
+    };
+    try {
+        const res = await fetch('/api/families', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        if (res.ok) { closeFamilyModal(); loadFamilies(); } else { const d = await res.json(); alert(d.error || 'Error'); }
+    } catch (err) { alert('Network error'); }
+}
+
+loadFamilies();
+</script>
+{% endblock %}

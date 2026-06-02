@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <a href="{{ url_for('main.families_page') }}" class="text-sm text-primary-600 hover:text-primary-900"><i class="fas fa-arrow-left mr-1"></i>Back to Families</a>
+            <h1 class="text-3xl font-bold text-gray-900 mt-1">{{ family.name }}</h1>
+            <p class="mt-1 text-sm text-gray-600">Combined family ledger — all students' charges and payments</p>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-3 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-4 text-center">
+                <p class="text-xs font-medium text-gray-500 uppercase">Total Charges</p>
+                <p id="sum-charges" class="text-2xl font-bold text-red-600">-</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 text-center">
+                <p class="text-xs font-medium text-gray-500 uppercase">Total Payments</p>
+                <p id="sum-payments" class="text-2xl font-bold text-green-600">-</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 text-center">
+                <p class="text-xs font-medium text-gray-500 uppercase">Family Balance</p>
+                <p id="sum-balance" class="text-2xl font-bold">-</p>
+            </div>
+        </div>
+
+        <div id="students-list" class="mb-4 text-sm text-gray-600"></div>
+
+        <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Charge</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Payment</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                    </tr>
+                </thead>
+                <tbody id="ledger-table" class="bg-white divide-y divide-gray-200">
+                    <tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function esc(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+async function loadLedger() {
+    try {
+        const res = await fetch('/api/families/{{ family.id }}/ledger');
+        const data = await res.json();
+
+        document.getElementById('sum-charges').textContent = '$' + parseFloat(data.total_charges).toFixed(2);
+        document.getElementById('sum-payments').textContent = '$' + parseFloat(data.total_payments).toFixed(2);
+        const bal = parseFloat(data.balance);
+        const balEl = document.getElementById('sum-balance');
+        balEl.textContent = bal > 0 ? '$' + bal.toFixed(2) + ' due' : bal < 0 ? '$' + Math.abs(bal).toFixed(2) + ' credit' : 'Paid up';
+        balEl.className = 'text-2xl font-bold ' + (bal > 0 ? 'text-red-600' : bal < 0 ? 'text-green-600' : 'text-gray-900');
+
+        document.getElementById('students-list').innerHTML = '<i class="fas fa-users mr-1"></i>Students: ' + data.students.map(s => esc(s.full_name)).join(', ');
+
+        const tbody = document.getElementById('ledger-table');
+        if (!data.ledger.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">No transactions yet.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = data.ledger.map(r => {
+            const isCharge = r.type === 'charge';
+            const runBal = parseFloat(r.running_balance);
+            const balClass = runBal > 0 ? 'text-red-600 font-semibold' : runBal < 0 ? 'text-green-600' : 'text-gray-900';
+            return `<tr>
+                <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900">${esc(r.transaction_date)}</td>
+                <td class="px-6 py-3 text-sm text-gray-700">${esc(r.student_name)}</td>
+                <td class="px-6 py-3 text-sm text-gray-700">${esc(r.description || r.category)}</td>
+                <td class="px-6 py-3 whitespace-nowrap text-sm text-right ${isCharge ? 'text-red-600' : ''}">${isCharge ? '$' + parseFloat(r.amount).toFixed(2) : ''}</td>
+                <td class="px-6 py-3 whitespace-nowrap text-sm text-right ${!isCharge ? 'text-green-600' : ''}">${!isCharge ? '$' + parseFloat(r.amount).toFixed(2) : ''}</td>
+                <td class="px-6 py-3 whitespace-nowrap text-sm text-right ${balClass}">$${runBal.toFixed(2)}</td>
+            </tr>`;
+        }).join('');
+    } catch (err) {
+        document.getElementById('ledger-table').innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-red-500">Failed to load</td></tr>';
+    }
+}
+
+loadLedger();
+</script>
+{% endblock %}
