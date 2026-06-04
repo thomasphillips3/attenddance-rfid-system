@@ -141,6 +141,12 @@
                            class="nav-item {% if request.endpoint and 'message' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                             <i class="fas fa-envelope mr-2"></i>Messages
                         </a>
+                        {% if current_user.is_admin %}
+                        <a href="{{ url_for('main.staff_page') }}"
+                           class="nav-item {% if request.endpoint and 'staff' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                            <i class="fas fa-chalkboard-teacher mr-2"></i>Staff
+                        </a>
+                        {% endif %}
                     {% endif %}
                     </div>
                 </div>
@@ -249,6 +255,12 @@
                    class="{% if request.endpoint and 'message' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-envelope mr-2"></i>Messages
                 </a>
+                {% if current_user.is_admin %}
+                <a href="{{ url_for('main.staff_page') }}"
+                   class="{% if request.endpoint and 'staff' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
+                    <i class="fas fa-chalkboard-teacher mr-2"></i>Staff
+                </a>
+                {% endif %}
             {% endif %}
             </div>
         </div>

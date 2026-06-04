@@ -1205,3 +1205,121 @@ def get_family_ledger(family_id):
         'students': [{'id': s.id, 'full_name': s.full_name} for s in students],
         **result,
     })
+
+
+# ── Staff / Teacher endpoints (admin only) ──────────────────────────
+
+def _staff_to_dict(u):
+    return {
+        'id': u.id,
+        'username': u.username,
+        'email': u.email,
+        'first_name': u.first_name,
+        'last_name': u.last_name,
+        'full_name': u.full_name,
+        'phone': u.phone,
+        'role': u.role,
+        'is_admin': u.is_admin,
+        'is_active': u.is_active,
+        'last_login': u.last_login.isoformat() if u.last_login else None,
+        'created_at': u.created_at.isoformat(),
+    }
+
+
+@bp.route('/staff', methods=['GET'])
+@login_required
+def get_staff():
+    """Get all staff (admin + teacher) users."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    users = User.query.filter(User.role.in_(['admin', 'teacher'])).order_by(User.last_name, User.first_name).all()
+    return jsonify({'staff': [_staff_to_dict(u) for u in users]})
+
+
+@bp.route('/staff', methods=['POST'])
+@login_required
+def create_staff():
+    """Create a new teacher or admin user."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    for field in ('first_name', 'last_name', 'email', 'username', 'password'):
+        if not data.get(field):
+            return jsonify({'error': f'{field} is required'}), 400
+
+    if User.query.filter_by(username=data['username'].strip()).first():
+        return jsonify({'error': 'Username already taken'}), 400
+    if User.query.filter_by(email=data['email'].strip()).first():
+        return jsonify({'error': 'Email already in use'}), 400
+
+    role = data.get('role', 'teacher')
+    if role not in ('admin', 'teacher'):
+        return jsonify({'error': 'Role must be admin or teacher'}), 400
+
+    u = User(
+        username=data['username'].strip(),
+        email=data['email'].strip(),
+        first_name=data['first_name'].strip(),
+        last_name=data['last_name'].strip(),
+        phone=data.get('phone', '').strip() or None,
+        role=role,
+        is_admin=(role == 'admin'),
+        is_active=True,
+    )
+    u.set_password(data['password'])
+    db.session.add(u)
+    db.session.commit()
+    return jsonify(_staff_to_dict(u)), 201
+
+
+@bp.route('/staff/<int:user_id>', methods=['PUT'])
+@login_required
+def update_staff(user_id):
+    """Update a staff user."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    u = User.query.get_or_404(user_id)
+    if u.role not in ('admin', 'teacher'):
+        return jsonify({'error': 'Not a staff user'}), 400
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    if 'first_name' in data:
+        u.first_name = data['first_name'].strip()
+    if 'last_name' in data:
+        u.last_name = data['last_name'].strip()
+    if 'email' in data:
+        email = data['email'].strip()
+        if email != u.email and User.query.filter_by(email=email).first():
+            return jsonify({'error': 'Email already in use'}), 400
+        u.email = email
+    if 'phone' in data:
+        u.phone = data['phone'].strip() or None
+    if 'role' in data:
+        role = data['role']
+        if role not in ('admin', 'teacher'):
+            return jsonify({'error': 'Role must be admin or teacher'}), 400
+        u.role = role
+        u.is_admin = (role == 'admin')
+    if data.get('password'):
+        u.set_password(data['password'])
+
+    db.session.commit()
+    return jsonify(_staff_to_dict(u))
+
+
+@bp.route('/staff/<int:user_id>', methods=['DELETE'])
+@login_required
+def deactivate_staff(user_id):
+    """Deactivate a staff user (soft delete)."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    u = User.query.get_or_404(user_id)
+    if u.id == current_user.id:
+        return jsonify({'error': 'Cannot deactivate your own account'}), 400
+    u.is_active = False
+    db.session.commit()
+    return jsonify({'message': f'{u.full_name} deactivated'})

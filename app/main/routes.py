@@ -31,6 +31,17 @@ def staff_required(f):
     return decorated
 
 
+def admin_required(f):
+    """Decorator: only admin can access."""
+    @wraps(f)
+    @login_required
+    def decorated(*args, **kwargs):
+        if not current_user.is_admin:
+            return redirect(url_for('main.dashboard'))
+        return f(*args, **kwargs)
+    return decorated
+
+
 @bp.route('/')
 def index():
     if current_user.is_authenticated:
@@ -267,3 +278,10 @@ def take_attendance_class(class_id):
         dance_class=dance_class, students=students,
         weeks=weeks, today=today, current_monday=current_monday,
         today_checked=today_checked)
+
+
+@bp.route('/staff')
+@admin_required
+def staff_page():
+    """Staff/teacher management page (admin only)."""
+    return render_template('staff/list.html')
