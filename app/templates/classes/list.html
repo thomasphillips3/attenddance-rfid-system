@@ -60,6 +60,12 @@
                         </div>
                     </div>
                     <div>
+                        <label class="block text-sm font-medium text-gray-700">Location</label>
+                        <select id="location-id" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                            <option value="">No location</option>
+                        </select>
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium text-gray-700">Max Students</label>
                         <input type="number" id="max-students" value="20" min="1" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
                     </div>
@@ -133,6 +139,7 @@ function renderClasses(classes) {
                 <div class="space-y-2 text-sm text-gray-600">
                     <p><i class="fas fa-calendar-day mr-2 text-gray-400"></i>${esc(cls.day_name)}</p>
                     <p><i class="fas fa-clock mr-2 text-gray-400"></i>${esc(cls.start_time)} - ${esc(cls.end_time)}</p>
+                    ${cls.location_name ? `<p><i class="fas fa-map-marker-alt mr-2 text-gray-400"></i>${esc(cls.location_name)}</p>` : ''}
                     <p><i class="fas fa-user mr-2 text-gray-400"></i>${esc(cls.instructor_name)}</p>
                     <p><i class="fas fa-users mr-2 text-gray-400"></i>${cls.enrolled_count}/${cls.max_students} students</p>
                 </div>
@@ -158,11 +165,29 @@ function closeModal() { document.getElementById('class-modal').classList.add('hi
 
 async function saveClass(e) {
     e.preventDefault();
-    const body = { name: document.getElementById('class-name').value, day_of_week: parseInt(document.getElementById('day-of-week').value), start_time: document.getElementById('start-time').value, end_time: document.getElementById('end-time').value, level: document.getElementById('level').value, max_students: parseInt(document.getElementById('max-students').value) || 20 };
+    const body = {
+        name: document.getElementById('class-name').value,
+        day_of_week: parseInt(document.getElementById('day-of-week').value),
+        start_time: document.getElementById('start-time').value,
+        end_time: document.getElementById('end-time').value,
+        level: document.getElementById('level').value,
+        location_id: document.getElementById('location-id').value || null,
+        max_students: parseInt(document.getElementById('max-students').value) || 20,
+    };
     try {
         const res = await fetch('/api/classes', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
         if (res.ok) { closeModal(); loadClasses(); } else { const d = await res.json(); alert(d.error || 'Error saving class'); }
     } catch (err) { alert('Network error'); }
+}
+
+async function loadLocations() {
+    try {
+        const res = await fetch('/api/locations');
+        const data = await res.json();
+        const sel = document.getElementById('location-id');
+        sel.innerHTML = '<option value="">No location</option>' +
+            data.locations.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+    } catch (err) {}
 }
 
 let currentClassId = null;
@@ -257,5 +282,6 @@ async function unenrollStudent(enrollmentId) {
 }
 
 loadClasses();
+loadLocations();
 </script>
 {% endblock %}

@@ -26,6 +26,7 @@ from app.models import (
     ClassEnrollment,
     DanceClass,
     Family,
+    Location,
     Message,
     ParentStudent,
     RecurringCharge,
@@ -242,6 +243,7 @@ def create_class():
         dance_class = DanceClass(
             name=data['name'].strip(),
             description=data.get('description', '').strip() or None,
+            location_id=int(data['location_id']) if data.get('location_id') else None,
             day_of_week=int(data['day_of_week']),
             start_time=datetime.strptime(data['start_time'], '%H:%M').time(),
             end_time=datetime.strptime(data['end_time'], '%H:%M').time(),
@@ -1323,3 +1325,86 @@ def deactivate_staff(user_id):
     u.is_active = False
     db.session.commit()
     return jsonify({'message': f'{u.full_name} deactivated'})
+
+
+# ── Location endpoints ──────────────────────────────────────────────
+
+def _location_to_dict(loc):
+    return {
+        'id': loc.id,
+        'name': loc.name,
+        'address': loc.address,
+        'city': loc.city,
+        'state': loc.state,
+        'zip_code': loc.zip_code,
+        'full_address': loc.full_address,
+        'phone': loc.phone,
+        'notes': loc.notes,
+        'is_active': loc.is_active,
+        'class_count': loc.classes.filter_by(is_active=True).count(),
+        'created_at': loc.created_at.isoformat(),
+    }
+
+
+@bp.route('/locations', methods=['GET'])
+@login_required
+def get_locations():
+    """Get all locations."""
+    locations = Location.query.filter_by(is_active=True).order_by(Location.name).all()
+    return jsonify({'locations': [_location_to_dict(loc) for loc in locations]})
+
+
+@bp.route('/locations', methods=['POST'])
+@login_required
+def create_location():
+    """Create a new location (admin only)."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    data = request.get_json()
+    if not data or not data.get('name'):
+        return jsonify({'error': 'name is required'}), 400
+
+    loc = Location(
+        name=data['name'].strip(),
+        address=data.get('address', '').strip() or None,
+        city=data.get('city', '').strip() or None,
+        state=data.get('state', '').strip() or None,
+        zip_code=data.get('zip_code', '').strip() or None,
+        phone=data.get('phone', '').strip() or None,
+        notes=data.get('notes', '').strip() or None,
+    )
+    db.session.add(loc)
+    db.session.commit()
+    return jsonify(_location_to_dict(loc)), 201
+
+
+@bp.route('/locations/<int:location_id>', methods=['PUT'])
+@login_required
+def update_location(location_id):
+    """Update a location."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    loc = Location.query.get_or_404(location_id)
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    for field in ('name', 'address', 'city', 'state', 'zip_code', 'phone', 'notes'):
+        if field in data:
+            val = data[field]
+            setattr(loc, field, val.strip() or None if val else None)
+
+    db.session.commit()
+    return jsonify(_location_to_dict(loc))
+
+
+@bp.route('/locations/<int:location_id>', methods=['DELETE'])
+@login_required
+def deactivate_location(location_id):
+    """Deactivate a location."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    loc = Location.query.get_or_404(location_id)
+    loc.is_active = False
+    db.session.commit()
+    return jsonify({'message': f'{loc.name} deactivated'})

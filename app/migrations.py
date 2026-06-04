@@ -29,6 +29,10 @@ TRANSACTION_COLUMNS = [
     ('recurring_charge_id', 'INTEGER'),
 ]
 
+CLASS_COLUMNS = [
+    ('location_id', 'INTEGER'),
+]
+
 
 def _add_missing_columns(conn, inspector, table, columns):
     existing = [c['name'] for c in inspector.get_columns(table)]
@@ -44,4 +48,6 @@ def run_migrations(db):
         _add_missing_columns(conn, inspector, 'users', USER_COLUMNS)
         if 'transactions' in inspector.get_table_names():
             _add_missing_columns(conn, inspector, 'transactions', TRANSACTION_COLUMNS)
+        if 'classes' in inspector.get_table_names():
+            _add_missing_columns(conn, inspector, 'classes', CLASS_COLUMNS)
         conn.commit()

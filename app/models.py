@@ -97,6 +97,33 @@ class Family(db.Model):
     def __repr__(self):
         return f'<Family {self.name}>'
 
+
+class Location(db.Model):
+    """Studio location where classes are held"""
+    __tablename__ = 'locations'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    address = db.Column(db.String(200))
+    city = db.Column(db.String(100))
+    state = db.Column(db.String(2))
+    zip_code = db.Column(db.String(10))
+    phone = db.Column(db.String(20))
+    notes = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    classes = db.relationship('DanceClass', backref='location', lazy='dynamic')
+
+    @property
+    def full_address(self):
+        parts = [self.address, self.city, self.state, self.zip_code]
+        return ', '.join(p for p in parts if p)
+
+    def __repr__(self):
+        return f'<Location {self.name}>'
+
+
 class Student(db.Model):
     """Student model"""
     __tablename__ = 'students'
@@ -201,7 +228,8 @@ class DanceClass(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
-    
+    location_id = db.Column(db.Integer, db.ForeignKey('locations.id'))
+
     # Schedule
     day_of_week = db.Column(db.Integer, nullable=False)  # 0=Monday, 6=Sunday
     start_time = db.Column(db.Time, nullable=False)

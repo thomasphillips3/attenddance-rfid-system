@@ -173,6 +173,8 @@ def class_to_dict(dance_class) -> dict:
         'id': dance_class.id,
         'name': dance_class.name,
         'description': dance_class.description,
+        'location_id': dance_class.location_id,
+        'location_name': dance_class.location.name if dance_class.location else None,
         'day_of_week': dance_class.day_of_week,
         'day_name': dance_class.day_name,
         'start_time': dance_class.start_time.strftime('%H:%M'),

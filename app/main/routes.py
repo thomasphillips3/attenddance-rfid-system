@@ -285,3 +285,10 @@ def take_attendance_class(class_id):
 def staff_page():
     """Staff/teacher management page (admin only)."""
     return render_template('staff/list.html')
+
+
+@bp.route('/locations')
+@admin_required
+def locations_page():
+    """Locations management page (admin only)."""
+    return render_template('locations/list.html')
