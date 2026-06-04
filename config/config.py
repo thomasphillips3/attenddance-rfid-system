@@ -63,6 +63,7 @@ class Config:
     MAIL_USE_TLS = os.environ.get('MAIL_USE_TLS', 'true').lower() == 'true'
     MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
     MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
+    MAIL_REPLY_TO = os.environ.get('MAIL_REPLY_TO', 'LaShellesDance@gmail.com')
     
 class DevelopmentConfig(Config):
     """Development configuration"""

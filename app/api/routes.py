@@ -1068,11 +1068,13 @@ def send_message():
     if msg.sent:
         return jsonify({'message': f'Email sent to {len(emails)} recipient(s)', 'message_id': msg.id}), 201
 
+    reply_to = current_app.config.get('MAIL_REPLY_TO', '')
     return jsonify({
         'message': 'Message saved (SMTP not configured — copy emails below to send manually)',
         'message_id': msg.id,
         'recipient_emails': sorted(emails),
         'recipient_count': len(emails),
+        'reply_to': reply_to,
     }), 201
 
 
@@ -1129,6 +1131,9 @@ def _send_smtp(mail_server: str, subject: str, body: str, emails: set):
         m['From'] = sender
         m['To'] = email_addr
         m['Subject'] = subject
+        reply_to = current_app.config.get('MAIL_REPLY_TO')
+        if reply_to:
+            m['Reply-To'] = reply_to
         m.attach(MIMEText(body, 'plain'))
         smtp.sendmail(sender, email_addr, m.as_string())
     smtp.quit()
