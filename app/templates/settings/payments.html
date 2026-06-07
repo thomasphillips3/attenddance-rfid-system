@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <h1 class="text-3xl font-bold text-gray-900">Settings</h1>
+            <p class="mt-1 text-sm text-gray-600">Configure billing and payment options</p>
+        </div>
+    </div>
+
+    <div class="max-w-3xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div id="status-msg" class="hidden mb-4 p-3 rounded-md text-sm font-medium"></div>
+
+        <!-- Zelle -->
+        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <div class="flex items-center">
+                    <span class="text-lg font-semibold text-gray-900 mr-3">Zelle</span>
+                    <span class="text-xs text-gray-500">Parents scan the QR code to pay</span>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="zelle-enabled" class="sr-only peer" onchange="saveSettings()">
+                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                </label>
+            </div>
+            <div class="px-6 py-4 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Display Name</label>
+                    <input type="text" id="zelle-name" placeholder="LASHELLE S SCHOOL OF DANCE" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">QR Code Image</label>
+                    <div class="flex items-start space-x-4">
+                        <div id="qr-preview" class="w-32 h-32 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-gray-50 overflow-hidden">
+                            <span class="text-gray-400 text-xs text-center px-2">No QR uploaded</span>
+                        </div>
+                        <div>
+                            <input type="file" id="qr-file" accept="image/*" class="hidden" onchange="uploadQR()">
+                            <button type="button" onclick="document.getElementById('qr-file').click()" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                                <i class="fas fa-upload mr-2"></i>Upload QR Code
+                            </button>
+                            <p class="mt-1 text-xs text-gray-500">PNG or JPG, shown to parents</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cash App -->
+        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <div class="flex items-center">
+                    <span class="text-lg font-semibold text-gray-900 mr-3">Cash App</span>
+                    <span class="text-xs text-gray-500">Link parents directly to your Cash App</span>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="cashapp-enabled" class="sr-only peer" onchange="saveSettings()">
+                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                </label>
+            </div>
+            <div class="px-6 py-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Cashtag</label>
+                    <div class="mt-1 flex rounded-md shadow-sm">
+                        <span class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">$</span>
+                        <input type="text" id="cashapp-tag" placeholder="Lashellesdance" class="flex-1 block w-full border border-gray-300 rounded-none rounded-r-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Square -->
+        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <div class="flex items-center">
+                    <span class="text-lg font-semibold text-gray-900 mr-3">Square</span>
+                    <span class="text-xs text-gray-500">Send invoices parents can pay online</span>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="square-enabled" class="sr-only peer" onchange="saveSettings()">
+                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                </label>
+            </div>
+            <div class="px-6 py-4 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Access Token</label>
+                    <input type="password" id="square-token" placeholder="Enter your Square access token" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    <p class="mt-1 text-xs text-gray-500">From <a href="https://developer.squareup.com/apps" target="_blank" class="text-primary-600 hover:underline">Square Developer Dashboard</a></p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Location ID</label>
+                    <input type="text" id="square-location" placeholder="e.g. LXXXXXXXXXXXXXXXXX" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Environment</label>
+                    <select id="square-env" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                        <option value="sandbox">Sandbox (testing)</option>
+                        <option value="production">Production (live)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-end">
+            <button onclick="saveSettings()" class="inline-flex items-center px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
+                <i class="fas fa-save mr-2"></i>Save Settings
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function loadSettings() {
+    try {
+        const res = await fetch('/api/settings/payments');
+        const data = await res.json();
+        const s = data.settings;
+        document.getElementById('zelle-enabled').checked = s.payments_zelle_enabled === '1';
+        document.getElementById('zelle-name').value = s.payments_zelle_name || '';
+        document.getElementById('cashapp-enabled').checked = s.payments_cashapp_enabled === '1';
+        document.getElementById('cashapp-tag').value = (s.payments_cashapp_tag || '').replace(/^\$/, '');
+        document.getElementById('square-enabled').checked = s.payments_square_enabled === '1';
+        document.getElementById('square-token').value = s.payments_square_access_token || '';
+        document.getElementById('square-location').value = s.payments_square_location_id || '';
+        document.getElementById('square-env').value = s.payments_square_environment || 'sandbox';
+
+        // Load QR preview
+        const qrPath = await fetch('/api/payment-options').then(r => r.json());
+        const zelleOpt = (qrPath.payment_options || []).find(o => o.type === 'zelle');
+        if (zelleOpt && zelleOpt.qr_path) {
+            document.getElementById('qr-preview').innerHTML = `<img src="${zelleOpt.qr_path}" class="w-full h-full object-contain">`;
+        }
+    } catch (err) {
+        console.error('Failed to load settings:', err);
+    }
+}
+
+async function saveSettings() {
+    const tag = document.getElementById('cashapp-tag').value.trim();
+    const body = {
+        payments_zelle_enabled: document.getElementById('zelle-enabled').checked ? '1' : '0',
+        payments_zelle_name: document.getElementById('zelle-name').value.trim(),
+        payments_cashapp_enabled: document.getElementById('cashapp-enabled').checked ? '1' : '0',
+        payments_cashapp_tag: tag.startsWith('$') ? tag : (tag ? '$' + tag : ''),
+        payments_square_enabled: document.getElementById('square-enabled').checked ? '1' : '0',
+        payments_square_access_token: document.getElementById('square-token').value.trim(),
+        payments_square_location_id: document.getElementById('square-location').value.trim(),
+        payments_square_environment: document.getElementById('square-env').value,
+    };
+    try {
+        const res = await fetch('/api/settings/payments', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body),
+        });
+        const msg = document.getElementById('status-msg');
+        if (res.ok) {
+            msg.textContent = 'Settings saved!';
+            msg.className = 'mb-4 p-3 rounded-md text-sm font-medium bg-green-100 text-green-800';
+        } else {
+            const d = await res.json();
+            msg.textContent = d.error || 'Error saving';
+            msg.className = 'mb-4 p-3 rounded-md text-sm font-medium bg-red-100 text-red-800';
+        }
+        msg.classList.remove('hidden');
+        setTimeout(() => msg.classList.add('hidden'), 3000);
+    } catch (err) {
+        alert('Network error');
+    }
+}
+
+async function uploadQR() {
+    const file = document.getElementById('qr-file').files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+        const res = await fetch('/api/settings/payments/zelle-qr', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (res.ok) {
+            document.getElementById('qr-preview').innerHTML = `<img src="${data.path}" class="w-full h-full object-contain">`;
+        } else {
+            alert(data.error || 'Upload failed');
+        }
+    } catch (err) {
+        alert('Network error');
+    }
+}
+
+loadSettings();
+</script>
+{% endblock %}

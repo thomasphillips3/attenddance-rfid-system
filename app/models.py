@@ -473,4 +473,32 @@ class Message(db.Model):
     creator = db.relationship('User', backref='sent_messages')
 
     def __repr__(self):
-        return f'<Message "{self.subject}" to {self.recipient_count}>' 
+        return f'<Message "{self.subject}" to {self.recipient_count}>'
+
+
+class Setting(db.Model):
+    """Key-value settings store for studio configuration"""
+    __tablename__ = 'settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    value = db.Column(db.Text)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @staticmethod
+    def get(key: str, default: str = '') -> str:
+        row = Setting.query.filter_by(key=key).first()
+        return row.value if row and row.value else default
+
+    @staticmethod
+    def set(key: str, value: str):
+        from app import db as _db
+        row = Setting.query.filter_by(key=key).first()
+        if row:
+            row.value = value
+        else:
+            _db.session.add(Setting(key=key, value=value))
+        _db.session.commit()
+
+    def __repr__(self):
+        return f'<Setting {self.key}>'

@@ -290,5 +290,10 @@ def staff_page():
 @bp.route('/locations')
 @admin_required
 def locations_page():
-    """Locations management page (admin only)."""
     return render_template('locations/list.html')
+
+
+@bp.route('/settings')
+@admin_required
+def settings_page():
+    return render_template('settings/payments.html')

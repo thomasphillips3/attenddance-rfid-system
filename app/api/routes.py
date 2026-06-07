@@ -32,6 +32,7 @@ from app.models import (
     RecurringCharge,
     Rule,
     RuleAcknowledgment,
+    Setting,
     Student,
     Transaction,
     User,
@@ -1413,3 +1414,100 @@ def deactivate_location(location_id):
     loc.is_active = False
     db.session.commit()
     return jsonify({'message': f'{loc.name} deactivated'})
+
+
+# ── Settings endpoints (admin only) ─────────────────────────────────
+
+PAYMENT_SETTINGS_KEYS = [
+    'payments_zelle_enabled', 'payments_zelle_name',
+    'payments_cashapp_enabled', 'payments_cashapp_tag',
+    'payments_square_enabled', 'payments_square_access_token',
+    'payments_square_location_id', 'payments_square_environment',
+]
+
+
+@bp.route('/settings/payments', methods=['GET'])
+@login_required
+def get_payment_settings():
+    """Get payment configuration."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    settings = {}
+    for key in PAYMENT_SETTINGS_KEYS:
+        val = Setting.get(key, '')
+        # Mask the Square access token for display
+        if key == 'payments_square_access_token' and val:
+            settings[key] = val[:8] + '...' + val[-4:] if len(val) > 12 else '****'
+        else:
+            settings[key] = val
+    return jsonify({'settings': settings})
+
+
+@bp.route('/settings/payments', methods=['PUT'])
+@login_required
+def update_payment_settings():
+    """Update payment configuration."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    for key in PAYMENT_SETTINGS_KEYS:
+        if key in data:
+            # Don't overwrite token with the masked version
+            if key == 'payments_square_access_token' and '...' in (data[key] or ''):
+                continue
+            Setting.set(key, data[key].strip() if data[key] else '')
+    return jsonify({'message': 'Payment settings updated'})
+
+
+@bp.route('/settings/payments/zelle-qr', methods=['POST'])
+@login_required
+def upload_zelle_qr():
+    """Upload Zelle QR code image."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'error': 'No file selected'}), 400
+
+    import os
+    upload_dir = os.path.join(current_app.root_path, 'static', 'uploads')
+    os.makedirs(upload_dir, exist_ok=True)
+
+    # Save as zelle-qr.png (overwrite previous)
+    ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else 'png'
+    filename = f'zelle-qr.{ext}'
+    filepath = os.path.join(upload_dir, filename)
+    f.save(filepath)
+
+    Setting.set('payments_zelle_qr_path', f'/static/uploads/{filename}')
+    return jsonify({'message': 'QR code uploaded', 'path': f'/static/uploads/{filename}'})
+
+
+@bp.route('/payment-options', methods=['GET'])
+@login_required
+def get_payment_options():
+    """Get enabled payment options for parent portal (no sensitive data)."""
+    options = []
+    if Setting.get('payments_zelle_enabled') == '1':
+        options.append({
+            'type': 'zelle',
+            'name': Setting.get('payments_zelle_name', 'Zelle'),
+            'qr_path': Setting.get('payments_zelle_qr_path', ''),
+        })
+    if Setting.get('payments_cashapp_enabled') == '1':
+        tag = Setting.get('payments_cashapp_tag', '')
+        options.append({
+            'type': 'cashapp',
+            'tag': tag,
+            'url': f'https://cash.app/{tag}' if tag else '',
+        })
+    if Setting.get('payments_square_enabled') == '1':
+        options.append({
+            'type': 'square',
+            'configured': bool(Setting.get('payments_square_access_token')),
+        })
+    return jsonify({'payment_options': options})
