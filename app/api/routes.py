@@ -45,6 +45,7 @@ from app.models import (
     PerformanceAssignment,
     PerformanceGroup,
     RecurringCharge,
+    Registration,
     Rule,
     RuleAcknowledgment,
     Setting,
@@ -54,6 +55,7 @@ from app.models import (
     TicketType,
     Transaction,
     User,
+    WaitlistEntry,
     WaiverSignature,
     WaiverTemplate,
 )
@@ -1440,6 +1442,8 @@ PAYMENT_SETTINGS_KEYS = [
     'late_fee_amount', 'late_fee_min_balance',
     # Donations / Foundation
     'donations_enabled', 'donations_org_name', 'donations_ein',
+    # Self-registration
+    'registration_open', 'registration_message',
 ]
 
 # Secret settings: encrypted at rest, masked on read
@@ -3322,3 +3326,242 @@ def delete_donation(did):
     db.session.delete(d)
     db.session.commit()
     return jsonify({'message': 'Donation removed'})
+
+
+# ── Self-registration (public) ──────────────────────────────────────
+
+@bp.route('/registration/open', methods=['GET'])
+def registration_open_info():
+    """Public: is enrollment open, plus the classes a family can request."""
+    is_open = Setting.get_bool('registration_open')
+    classes = []
+    if is_open:
+        for c in DanceClass.query.filter_by(is_active=True).order_by(DanceClass.name).all():
+            enrolled = c.enrolled_students_count
+            classes.append({
+                'id': c.id, 'name': c.name, 'day_name': c.day_name,
+                'start_time': c.start_time.strftime('%I:%M %p').lstrip('0'),
+                'level': c.level, 'age_group': c.age_group,
+                'full': c.max_students is not None and enrolled >= c.max_students,
+            })
+    return jsonify({
+        'open': is_open,
+        'message': Setting.get('registration_message', '') or "Welcome! Tell us about your dancer(s) and we'll be in touch.",
+        'classes': classes,
+    })
+
+
+@bp.route('/register', methods=['POST'])
+def submit_registration():
+    """Public: submit an enrollment request for admin review."""
+    import json
+    if not Setting.get_bool('registration_open'):
+        return jsonify({'error': 'Registration is currently closed'}), 403
+    data = request.get_json() or {}
+    parent_name = (data.get('parent_name') or '').strip()
+    parent_email = (data.get('parent_email') or '').strip()
+    students = data.get('students') or []
+    if not parent_name or not parent_email:
+        return jsonify({'error': 'Parent name and email are required'}), 400
+    students = [s for s in students if (s.get('first_name') or '').strip()]
+    if not students:
+        return jsonify({'error': 'Add at least one dancer'}), 400
+
+    reg = Registration(
+        parent_name=parent_name,
+        parent_email=parent_email,
+        parent_phone=(data.get('parent_phone') or '').strip() or None,
+        students_json=json.dumps(students),
+        class_ids=','.join(str(int(c)) for c in (data.get('class_ids') or []) if str(c).isdigit()),
+        note=(data.get('note') or '').strip() or None,
+    )
+    db.session.add(reg)
+    db.session.commit()
+
+    # Notify admins
+    from app import email as email_service
+    if email_service.is_configured():
+        admins = {u.email for u in User.query.filter_by(role='admin', is_active=True).all() if u.email and '@' in u.email}
+        if admins:
+            try:
+                email_service.send_email(admins, 'New registration request',
+                                         f'{parent_name} ({parent_email}) registered {len(students)} dancer(s). '
+                                         f'Review it in the Registrations page.')
+            except Exception:
+                logger.exception("Failed to notify admins of registration")
+    return jsonify({'message': "Thanks! Your registration was received — the studio will reach out soon."}), 201
+
+
+@bp.route('/registrations', methods=['GET'])
+@login_required
+def list_registrations():
+    err = _admin_only()
+    if err:
+        return err
+    import json
+    status = request.args.get('status', 'pending').strip()
+    q = Registration.query
+    if status and status != 'all':
+        q = q.filter_by(status=status)
+    rows = q.order_by(desc(Registration.created_at)).limit(200).all()
+    out = []
+    for r in rows:
+        try:
+            students = json.loads(r.students_json or '[]')
+        except ValueError:
+            students = []
+        class_names = []
+        if r.class_ids:
+            ids = [int(x) for x in r.class_ids.split(',') if x.isdigit()]
+            class_names = [c.name for c in DanceClass.query.filter(DanceClass.id.in_(ids)).all()]
+        out.append({
+            'id': r.id, 'parent_name': r.parent_name, 'parent_email': r.parent_email,
+            'parent_phone': r.parent_phone, 'students': students, 'class_names': class_names,
+            'note': r.note, 'status': r.status, 'created_at': r.created_at.isoformat(),
+        })
+    return jsonify({'registrations': out})
+
+
+@bp.route('/registrations/count', methods=['GET'])
+@login_required
+def registrations_count():
+    if not current_user.is_staff:
+        return jsonify({'count': 0})
+    return jsonify({'count': Registration.query.filter_by(status='pending').count()})
+
+
+@bp.route('/registrations/<int:rid>/approve', methods=['POST'])
+@login_required
+def approve_registration(rid):
+    err = _admin_only()
+    if err:
+        return err
+    import json
+    from datetime import datetime as _dt
+    reg = Registration.query.get_or_404(rid)
+    if reg.status != 'pending':
+        return jsonify({'error': f'Already {reg.status}'}), 400
+    try:
+        students = json.loads(reg.students_json or '[]')
+    except ValueError:
+        students = []
+    if not students:
+        return jsonify({'error': 'No dancers on this registration'}), 400
+
+    fam = Family(name=f'{reg.parent_name} Family', primary_email=reg.parent_email,
+                 primary_phone=reg.parent_phone)
+    db.session.add(fam)
+    db.session.flush()
+
+    class_ids = [int(x) for x in (reg.class_ids or '').split(',') if x.isdigit()]
+    created = []
+    for s in students:
+        fn = (s.get('first_name') or '').strip()
+        if not fn:
+            continue
+        dob = None
+        if s.get('dob'):
+            try:
+                dob = _dt.strptime(s['dob'], '%Y-%m-%d').date()
+            except ValueError:
+                dob = None
+        student = Student(
+            first_name=fn, last_name=(s.get('last_name') or reg.parent_name.split()[-1]).strip(),
+            family_id=fam.id, parent_email=reg.parent_email, parent_phone=reg.parent_phone,
+            date_of_birth=dob, allergies=(s.get('allergies') or '').strip() or None,
+        )
+        db.session.add(student)
+        db.session.flush()
+        for cid in class_ids:
+            db.session.add(ClassEnrollment(student_id=student.id, class_id=cid))
+        created.append(student.full_name)
+
+    reg.status = 'approved'
+    reg.reviewed_at = _dt.utcnow()
+    reg.reviewed_by = current_user.id
+    AuditLog.record(current_user.id, 'registration.approve',
+                    f'Approved {reg.parent_name}: {", ".join(created)}')
+    db.session.commit()
+    return jsonify({'message': f'Created {len(created)} dancer(s) under {fam.name}', 'students': created})
+
+
+@bp.route('/registrations/<int:rid>/reject', methods=['POST'])
+@login_required
+def reject_registration(rid):
+    err = _admin_only()
+    if err:
+        return err
+    reg = Registration.query.get_or_404(rid)
+    reg.status = 'rejected'
+    reg.reviewed_at = datetime.utcnow()
+    reg.reviewed_by = current_user.id
+    db.session.commit()
+    return jsonify({'message': 'Registration rejected'})
+
+
+# ── Waitlists ───────────────────────────────────────────────────────
+
+@bp.route('/classes/<int:class_id>/waitlist', methods=['GET'])
+@login_required
+def get_waitlist(class_id):
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    DanceClass.query.get_or_404(class_id)
+    rows = (WaitlistEntry.query.filter_by(class_id=class_id, status='waiting')
+            .order_by(WaitlistEntry.created_at).all())
+    return jsonify({'waitlist': [{
+        'id': w.id, 'student_id': w.student_id, 'student_name': w.student.full_name,
+        'position': i + 1, 'created_at': w.created_at.isoformat(),
+    } for i, w in enumerate(rows)]})
+
+
+@bp.route('/classes/<int:class_id>/waitlist', methods=['POST'])
+@login_required
+def add_to_waitlist(class_id):
+    DanceClass.query.get_or_404(class_id)
+    data = request.get_json() or {}
+    student_id = data.get('student_id')
+    if not student_id:
+        return jsonify({'error': 'student_id is required'}), 400
+    if current_user.is_parent and int(student_id) not in _parent_student_ids(current_user):
+        return jsonify({'error': 'Not authorized for this student'}), 403
+    if ClassEnrollment.query.filter_by(class_id=class_id, student_id=student_id, is_active=True).first():
+        return jsonify({'error': 'Already enrolled in this class'}), 400
+    existing = WaitlistEntry.query.filter_by(class_id=class_id, student_id=student_id).first()
+    if existing and existing.status == 'waiting':
+        return jsonify({'error': 'Already on the waitlist'}), 400
+    if existing:
+        existing.status = 'waiting'
+        existing.created_at = datetime.utcnow()
+    else:
+        db.session.add(WaitlistEntry(class_id=class_id, student_id=int(student_id),
+                                     parent_id=current_user.id if current_user.is_parent else None))
+    db.session.commit()
+    return jsonify({'message': 'Added to the waitlist'}), 201
+
+
+@bp.route('/waitlist/<int:wid>/promote', methods=['POST'])
+@login_required
+def promote_waitlist(wid):
+    err = _admin_only()
+    if err:
+        return err
+    w = WaitlistEntry.query.get_or_404(wid)
+    if not ClassEnrollment.query.filter_by(class_id=w.class_id, student_id=w.student_id, is_active=True).first():
+        db.session.add(ClassEnrollment(student_id=w.student_id, class_id=w.class_id))
+    w.status = 'enrolled'
+    AuditLog.record(current_user.id, 'waitlist.promote',
+                    f'Enrolled {w.student.full_name} from waitlist into {w.dance_class.name}')
+    db.session.commit()
+    return jsonify({'message': f'{w.student.full_name} enrolled in {w.dance_class.name}'})
+
+
+@bp.route('/waitlist/<int:wid>', methods=['DELETE'])
+@login_required
+def remove_waitlist(wid):
+    w = WaitlistEntry.query.get_or_404(wid)
+    if current_user.is_parent and w.parent_id != current_user.id:
+        return jsonify({'error': 'Not authorized'}), 403
+    w.status = 'removed'
+    db.session.commit()
+    return jsonify({'message': 'Removed from waitlist'})

@@ -341,6 +341,24 @@ def donations_page():
     return render_template('donations/admin.html')
 
 
+@bp.route('/register')
+def public_register():
+    """Public self-registration page (no login)."""
+    return render_template('registration/public.html')
+
+
+@bp.route('/registrations')
+@admin_required
+def registrations_page():
+    return render_template('registration/admin.html')
+
+
+@bp.route('/calendar')
+@login_required
+def calendar_page():
+    return render_template('calendar/view.html')
+
+
 def _parent_owns(student):
     return (not current_user.is_parent) or (student.id in {s.id for s in current_user.get_children()})
 

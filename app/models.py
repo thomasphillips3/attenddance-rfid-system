@@ -904,3 +904,49 @@ class Donation(db.Model):
 
     def __repr__(self):
         return f'<Donation ${self.amount} {self.status}>'
+
+
+# ── Self-registration & waitlists ───────────────────────────────────
+
+class Registration(db.Model):
+    """A public enrollment request awaiting admin approval."""
+    __tablename__ = 'registrations'
+
+    id = db.Column(db.Integer, primary_key=True)
+    parent_name = db.Column(db.String(120), nullable=False)
+    parent_email = db.Column(db.String(120), nullable=False)
+    parent_phone = db.Column(db.String(20))
+    students_json = db.Column(db.Text)  # JSON list of {first_name, last_name, dob, allergies}
+    class_ids = db.Column(db.String(200))  # comma-separated requested class ids
+    note = db.Column(db.Text)
+    status = db.Column(db.String(20), default='pending', nullable=False)  # pending, approved, rejected
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    reviewed_at = db.Column(db.DateTime)
+    reviewed_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+
+    reviewer = db.relationship('User')
+
+    def __repr__(self):
+        return f'<Registration {self.parent_name} {self.status}>'
+
+
+class WaitlistEntry(db.Model):
+    """A student waiting for a spot in a full class."""
+    __tablename__ = 'waitlist_entries'
+
+    id = db.Column(db.Integer, primary_key=True)
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    status = db.Column(db.String(20), default='waiting', nullable=False)  # waiting, enrolled, removed
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    dance_class = db.relationship('DanceClass', backref='waitlist_entries')
+    student = db.relationship('Student', backref='waitlist_entries')
+
+    __table_args__ = (
+        db.UniqueConstraint('class_id', 'student_id', name='unique_waitlist_entry'),
+    )
+
+    def __repr__(self):
+        return f'<WaitlistEntry c={self.class_id} s={self.student_id} {self.status}>'

@@ -95,6 +95,7 @@
                 </div>
                 <div class="flex justify-end mt-2 space-x-2">
                     <button onclick="toggleAddSection(false)" class="px-3 py-1.5 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+                    <button onclick="waitlistSelected()" class="px-3 py-1.5 border border-amber-400 text-amber-700 rounded-md text-sm font-medium hover:bg-amber-50">Add to Waitlist</button>
                     <button onclick="enrollSelected()" class="px-3 py-1.5 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700">Enroll Selected</button>
                 </div>
             </div>
@@ -106,6 +107,11 @@
             <!-- Enrolled students list -->
             <div id="enrolled-students" class="space-y-2">
                 <p class="text-gray-500 text-sm">Loading...</p>
+            </div>
+            <!-- Waitlist -->
+            <div id="waitlist-section" class="mt-4 hidden">
+                <h4 class="text-xs font-semibold text-amber-700 uppercase tracking-wider mb-2"><i class="fas fa-clock mr-1"></i>Waitlist</h4>
+                <div id="waitlist-list" class="space-y-2"></div>
             </div>
         </div>
     </div>
@@ -198,6 +204,47 @@ async function openEnrollModal(classId, className) {
     document.getElementById('enroll-modal').classList.remove('hidden');
     toggleAddSection(false);
     loadEnrollments();
+    loadWaitlist();
+}
+
+async function loadWaitlist() {
+    const sec = document.getElementById('waitlist-section');
+    const el = document.getElementById('waitlist-list');
+    try {
+        const data = await (await fetch(`/api/classes/${currentClassId}/waitlist`)).json();
+        const w = data.waitlist || [];
+        if (!w.length) { sec.classList.add('hidden'); return; }
+        sec.classList.remove('hidden');
+        el.innerHTML = w.map(x => `
+            <div class="flex items-center justify-between p-2 bg-amber-50 rounded-lg">
+                <span class="text-sm text-gray-900"><span class="text-xs text-amber-600 mr-2">#${x.position}</span>${esc(x.student_name)}</span>
+                <span>
+                    <button onclick="promoteWait(${x.id})" class="text-xs text-green-600 hover:underline mr-2">Enroll</button>
+                    <button onclick="removeWait(${x.id})" class="text-xs text-red-500 hover:underline">Remove</button>
+                </span>
+            </div>`).join('');
+    } catch { sec.classList.add('hidden'); }
+}
+
+async function waitlistSelected() {
+    const checked = [...document.querySelectorAll('.student-cb:checked')].map(cb => parseInt(cb.value));
+    if (!checked.length) { alert('Select at least one student'); return; }
+    for (const sid of checked) {
+        await fetch(`/api/classes/${currentClassId}/waitlist`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ student_id: sid })
+        });
+    }
+    toggleAddSection(false); loadWaitlist();
+}
+
+async function promoteWait(id) {
+    const r = await fetch(`/api/waitlist/${id}/promote`, { method: 'POST' });
+    if (r.ok) { loadEnrollments(); loadWaitlist(); }
+}
+async function removeWait(id) {
+    const r = await fetch(`/api/waitlist/${id}`, { method: 'DELETE' });
+    if (r.ok) loadWaitlist();
 }
 
 function closeEnrollModal() {

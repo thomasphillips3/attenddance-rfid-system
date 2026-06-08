@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex items-center justify-between flex-wrap gap-3">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900"><i class="fas fa-user-plus text-primary-500 mr-2"></i>Enrollment Requests</h1>
+                <p class="mt-1 text-sm text-gray-600">Review families who registered through your public sign-up link</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <a href="{{ url_for('main.public_register', _external=True) }}" target="_blank" class="text-sm text-primary-600 hover:underline"><i class="fas fa-external-link-alt mr-1"></i>Public link</a>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="reg-open" class="sr-only peer" onchange="toggleOpen()">
+                    <div class="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                    <span class="ml-2 text-sm text-gray-700">Registration open</span>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div id="msg" class="hidden mb-4 p-3 rounded-md text-sm font-medium"></div>
+        <div class="mb-4">
+            <select id="status-filter" onchange="load()" class="border border-gray-300 rounded-md px-3 py-2 text-sm">
+                <option value="pending">Pending</option><option value="approved">Approved</option>
+                <option value="rejected">Rejected</option><option value="all">All</option>
+            </select>
+        </div>
+        <div id="list" class="space-y-4"><p class="text-gray-500">Loading…</p></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;m.className='mb-4 p-3 rounded-md text-sm font-medium '+(ok?'bg-green-100 text-green-800':'bg-red-100 text-red-800');m.classList.remove('hidden');setTimeout(()=>m.classList.add('hidden'),4000);}
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+async function loadToggle(){
+    const s = (await (await fetch('/api/settings/payments')).json()).settings;
+    document.getElementById('reg-open').checked = s.registration_open === '1';
+}
+async function toggleOpen(){
+    const open = document.getElementById('reg-open').checked;
+    const r = await fetch('/api/settings/payments',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({registration_open: open?'1':'0'})});
+    msg(r.ok?('Registration '+(open?'opened':'closed')):'Error', r.ok);
+}
+
+async function load(){
+    const status=document.getElementById('status-filter').value;
+    const el=document.getElementById('list');
+    const data=await (await fetch('/api/registrations?status='+status)).json();
+    const rows=data.registrations||[];
+    if(!rows.length){el.innerHTML='<p class="text-gray-500">Nothing here.</p>';return;}
+    const badge=s=>({pending:'bg-amber-100 text-amber-800',approved:'bg-green-100 text-green-800',rejected:'bg-gray-200 text-gray-600'}[s]||'');
+    el.innerHTML=rows.map(r=>`
+        <div class="bg-white shadow rounded-lg p-5">
+            <div class="flex items-start justify-between flex-wrap gap-2">
+                <div>
+                    <span class="font-semibold text-gray-900">${esc(r.parent_name)}</span>
+                    <span class="px-2 py-0.5 rounded-full text-xs ml-2 ${badge(r.status)}">${r.status}</span>
+                    <p class="text-sm text-gray-500">${esc(r.parent_email)}${r.parent_phone?' · '+esc(r.parent_phone):''} · ${new Date(r.created_at).toLocaleDateString()}</p>
+                </div>
+                ${r.status==='pending'?`<div class="flex gap-2">
+                    <button onclick="approve(${r.id})" class="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700">Approve</button>
+                    <button onclick="reject(${r.id})" class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">Reject</button>
+                </div>`:''}
+            </div>
+            <div class="mt-3 text-sm">
+                <span class="font-medium text-gray-700">Dancers:</span>
+                ${(r.students||[]).map(s=>`<span class="inline-block bg-gray-100 rounded px-2 py-0.5 mr-1 mb-1">${esc(s.first_name)} ${esc(s.last_name||'')}${s.dob?' ('+esc(s.dob)+')':''}${s.allergies?' · ⚠ '+esc(s.allergies):''}</span>`).join('')}
+            </div>
+            ${(r.class_names||[]).length?`<div class="mt-1 text-sm"><span class="font-medium text-gray-700">Classes:</span> ${r.class_names.map(esc).join(', ')}</div>`:''}
+            ${r.note?`<div class="mt-1 text-xs text-gray-500">"${esc(r.note)}"</div>`:''}
+        </div>`).join('');
+}
+async function approve(id){if(!confirm('Approve and create these dancers + a family account?'))return;const r=await fetch(`/api/registrations/${id}/approve`,{method:'POST'});const d=await r.json();msg(r.ok?d.message:d.error,r.ok);if(r.ok)load();}
+async function reject(id){if(!confirm('Reject this registration?'))return;const r=await fetch(`/api/registrations/${id}/reject`,{method:'POST'});if(r.ok){msg('Rejected',true);load();}}
+loadToggle(); load();
+</script>
+{% endblock %}
