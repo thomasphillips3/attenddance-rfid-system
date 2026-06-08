@@ -584,3 +584,170 @@ class AuditLog(db.Model):
 
     def __repr__(self):
         return f'<AuditLog {self.action} by {self.user_id}>'
+
+
+# ── Performance Company management ──────────────────────────────────
+
+class PerformanceGroup(db.Model):
+    """A performance/competition company or team (e.g. 'LSODance Company')."""
+    __tablename__ = 'performance_groups'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    memberships = db.relationship('CompanyMembership', backref='group', lazy='dynamic')
+    auditions = db.relationship('Audition', backref='group', lazy='dynamic')
+    performances = db.relationship('Performance', backref='group', lazy='dynamic')
+
+    def __repr__(self):
+        return f'<PerformanceGroup {self.name}>'
+
+
+class CompanyMembership(db.Model):
+    """A student's membership in a performance group."""
+    __tablename__ = 'company_memberships'
+
+    id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('performance_groups.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    role = db.Column(db.String(40), default='Member', nullable=False)  # Member, Captain, etc.
+    joined_date = db.Column(db.Date, default=date.today, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    student = db.relationship('Student', backref='company_memberships')
+
+    __table_args__ = (
+        db.UniqueConstraint('group_id', 'student_id', name='unique_group_member'),
+    )
+
+    def __repr__(self):
+        return f'<CompanyMembership s={self.student_id} g={self.group_id}>'
+
+
+class Audition(db.Model):
+    """An audition event for a performance group."""
+    __tablename__ = 'auditions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('performance_groups.id'))
+    title = db.Column(db.String(150), nullable=False)
+    audition_date = db.Column(db.Date)
+    location_text = db.Column(db.String(200))
+    description = db.Column(db.Text)
+    is_open = db.Column(db.Boolean, default=True, nullable=False)  # accepting signups
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    signups = db.relationship('AuditionSignup', backref='audition', lazy='dynamic')
+
+    def __repr__(self):
+        return f'<Audition {self.title}>'
+
+
+class AuditionSignup(db.Model):
+    """A student's signup for an audition."""
+    __tablename__ = 'audition_signups'
+
+    id = db.Column(db.Integer, primary_key=True)
+    audition_id = db.Column(db.Integer, db.ForeignKey('auditions.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # who signed up (null if admin)
+    status = db.Column(db.String(20), default='signed_up', nullable=False)  # signed_up, accepted, declined, waitlist
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    student = db.relationship('Student', backref='audition_signups')
+    parent = db.relationship('User')
+
+    __table_args__ = (
+        db.UniqueConstraint('audition_id', 'student_id', name='unique_audition_signup'),
+    )
+
+    def __repr__(self):
+        return f'<AuditionSignup s={self.student_id} a={self.audition_id} {self.status}>'
+
+
+class Performance(db.Model):
+    """A scheduled performance/show. group_id null = studio-wide event."""
+    __tablename__ = 'performances'
+
+    id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('performance_groups.id'))
+    title = db.Column(db.String(150), nullable=False)
+    performance_date = db.Column(db.Date)
+    call_time = db.Column(db.String(40))  # free text, e.g. "5:30 PM call, 7 PM show"
+    venue = db.Column(db.String(200))
+    description = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    assignments = db.relationship('PerformanceAssignment', backref='performance', lazy='dynamic')
+
+    def __repr__(self):
+        return f'<Performance {self.title}>'
+
+
+class PerformanceAssignment(db.Model):
+    """A student assigned to perform in a Performance."""
+    __tablename__ = 'performance_assignments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    performance_id = db.Column(db.Integer, db.ForeignKey('performances.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    notes = db.Column(db.String(200))  # e.g. role, number, costume note
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    student = db.relationship('Student', backref='performance_assignments')
+
+    __table_args__ = (
+        db.UniqueConstraint('performance_id', 'student_id', name='unique_performance_assignment'),
+    )
+
+    def __repr__(self):
+        return f'<PerformanceAssignment s={self.student_id} p={self.performance_id}>'
+
+
+# ── Waivers & forms ─────────────────────────────────────────────────
+
+class WaiverTemplate(db.Model):
+    """A form parents must sign per student (liability, photo release, medical auth)."""
+    __tablename__ = 'waiver_templates'
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(150), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    # If True, a parent may sign while declining consent (e.g. opt OUT of photo release)
+    allow_decline = db.Column(db.Boolean, default=False, nullable=False)
+    display_order = db.Column(db.Integer, default=0, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    signatures = db.relationship('WaiverSignature', backref='template', lazy='dynamic')
+
+    def __repr__(self):
+        return f'<WaiverTemplate {self.title}>'
+
+
+class WaiverSignature(db.Model):
+    """A parent's signature of a waiver for a specific student."""
+    __tablename__ = 'waiver_signatures'
+
+    id = db.Column(db.Integer, primary_key=True)
+    template_id = db.Column(db.Integer, db.ForeignKey('waiver_templates.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    signed_name = db.Column(db.String(120), nullable=False)  # typed signature
+    consent = db.Column(db.Boolean, default=True, nullable=False)  # False = declined (opt-out forms)
+    signed_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    student = db.relationship('Student', backref='waiver_signatures')
+    parent = db.relationship('User', backref='waiver_signatures')
+
+    __table_args__ = (
+        db.UniqueConstraint('template_id', 'student_id', name='unique_waiver_signature'),
+    )
+
+    def __repr__(self):
+        return f'<WaiverSignature t={self.template_id} s={self.student_id} consent={self.consent}>'

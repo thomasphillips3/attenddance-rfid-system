@@ -24,14 +24,20 @@ from app.helpers import (
 )
 from app.models import (
     Attendance,
+    Audition,
+    AuditionSignup,
     AuditLog,
     ClassEnrollment,
+    CompanyMembership,
     DanceClass,
     Family,
     Location,
     Message,
     ParentStudent,
     PendingPayment,
+    Performance,
+    PerformanceAssignment,
+    PerformanceGroup,
     RecurringCharge,
     Rule,
     RuleAcknowledgment,
@@ -40,6 +46,8 @@ from app.models import (
     Student,
     Transaction,
     User,
+    WaiverSignature,
+    WaiverTemplate,
 )
 
 try:
@@ -2024,3 +2032,612 @@ def square_webhook():
 
     _send_receipt(student.parent_email or student.email, student.full_name, amount, 'square')
     return jsonify({'status': 'recorded'}), 200
+
+
+# ── Performance Company endpoints ───────────────────────────────────
+
+def _group_to_dict(g):
+    return {
+        'id': g.id,
+        'name': g.name,
+        'description': g.description,
+        'is_active': g.is_active,
+        'member_count': g.memberships.filter_by(is_active=True).count(),
+    }
+
+
+def _performance_to_dict(p):
+    return {
+        'id': p.id,
+        'group_id': p.group_id,
+        'group_name': p.group.name if p.group else 'Studio-wide',
+        'title': p.title,
+        'performance_date': p.performance_date.isoformat() if p.performance_date else None,
+        'call_time': p.call_time,
+        'venue': p.venue,
+        'description': p.description,
+        'assignment_count': p.assignments.count(),
+    }
+
+
+@bp.route('/performance/groups', methods=['GET'])
+@login_required
+def list_groups():
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    groups = PerformanceGroup.query.filter_by(is_active=True).order_by(PerformanceGroup.name).all()
+    return jsonify({'groups': [_group_to_dict(g) for g in groups]})
+
+
+@bp.route('/performance/groups', methods=['POST'])
+@login_required
+def create_group():
+    err = _admin_only()
+    if err:
+        return err
+    data = request.get_json() or {}
+    if not data.get('name'):
+        return jsonify({'error': 'name is required'}), 400
+    g = PerformanceGroup(name=data['name'].strip(), description=(data.get('description') or '').strip() or None)
+    db.session.add(g)
+    db.session.commit()
+    return jsonify(_group_to_dict(g)), 201
+
+
+@bp.route('/performance/groups/<int:gid>', methods=['PUT'])
+@login_required
+def update_group(gid):
+    err = _admin_only()
+    if err:
+        return err
+    g = PerformanceGroup.query.get_or_404(gid)
+    data = request.get_json() or {}
+    if 'name' in data and data['name'].strip():
+        g.name = data['name'].strip()
+    if 'description' in data:
+        g.description = (data['description'] or '').strip() or None
+    db.session.commit()
+    return jsonify(_group_to_dict(g))
+
+
+@bp.route('/performance/groups/<int:gid>', methods=['DELETE'])
+@login_required
+def delete_group(gid):
+    err = _admin_only()
+    if err:
+        return err
+    g = PerformanceGroup.query.get_or_404(gid)
+    g.is_active = False
+    db.session.commit()
+    return jsonify({'message': f'{g.name} archived'})
+
+
+@bp.route('/performance/groups/<int:gid>/members', methods=['GET'])
+@login_required
+def list_group_members(gid):
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    g = PerformanceGroup.query.get_or_404(gid)
+    members = g.memberships.filter_by(is_active=True).all()
+    return jsonify({'members': [{
+        'id': m.id,
+        'student_id': m.student_id,
+        'student_name': m.student.full_name,
+        'role': m.role,
+        'joined_date': m.joined_date.isoformat() if m.joined_date else None,
+    } for m in members]})
+
+
+@bp.route('/performance/groups/<int:gid>/members', methods=['POST'])
+@login_required
+def add_group_member(gid):
+    err = _admin_only()
+    if err:
+        return err
+    g = PerformanceGroup.query.get_or_404(gid)
+    data = request.get_json() or {}
+    if not data.get('student_id'):
+        return jsonify({'error': 'student_id is required'}), 400
+    existing = CompanyMembership.query.filter_by(group_id=gid, student_id=data['student_id']).first()
+    if existing:
+        existing.is_active = True
+        existing.role = (data.get('role') or existing.role).strip()
+        db.session.commit()
+        return jsonify({'message': 'Member reactivated'}), 200
+    m = CompanyMembership(group_id=gid, student_id=int(data['student_id']),
+                          role=(data.get('role') or 'Member').strip())
+    db.session.add(m)
+    db.session.commit()
+    return jsonify({'message': 'Member added', 'id': m.id}), 201
+
+
+@bp.route('/performance/members/<int:mid>', methods=['DELETE'])
+@login_required
+def remove_group_member(mid):
+    err = _admin_only()
+    if err:
+        return err
+    m = CompanyMembership.query.get_or_404(mid)
+    m.is_active = False
+    db.session.commit()
+    return jsonify({'message': 'Member removed'})
+
+
+@bp.route('/performance/auditions', methods=['GET'])
+@login_required
+def list_auditions():
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    rows = Audition.query.order_by(desc(Audition.created_at)).all()
+    return jsonify({'auditions': [{
+        'id': a.id,
+        'group_id': a.group_id,
+        'group_name': a.group.name if a.group else None,
+        'title': a.title,
+        'audition_date': a.audition_date.isoformat() if a.audition_date else None,
+        'location_text': a.location_text,
+        'description': a.description,
+        'is_open': a.is_open,
+        'signup_count': a.signups.count(),
+    } for a in rows]})
+
+
+@bp.route('/performance/auditions', methods=['POST'])
+@login_required
+def create_audition():
+    err = _admin_only()
+    if err:
+        return err
+    data = request.get_json() or {}
+    if not data.get('title'):
+        return jsonify({'error': 'title is required'}), 400
+    a = Audition(
+        group_id=int(data['group_id']) if data.get('group_id') else None,
+        title=data['title'].strip(),
+        audition_date=(datetime.strptime(data['audition_date'], '%Y-%m-%d').date()
+                       if data.get('audition_date') else None),
+        location_text=(data.get('location_text') or '').strip() or None,
+        description=(data.get('description') or '').strip() or None,
+        is_open=bool(data.get('is_open', True)),
+    )
+    db.session.add(a)
+    db.session.commit()
+    return jsonify({'message': 'Audition created', 'id': a.id}), 201
+
+
+@bp.route('/performance/auditions/<int:aid>', methods=['PUT'])
+@login_required
+def update_audition(aid):
+    err = _admin_only()
+    if err:
+        return err
+    a = Audition.query.get_or_404(aid)
+    data = request.get_json() or {}
+    if 'title' in data and data['title'].strip():
+        a.title = data['title'].strip()
+    if 'group_id' in data:
+        a.group_id = int(data['group_id']) if data['group_id'] else None
+    if 'audition_date' in data:
+        a.audition_date = datetime.strptime(data['audition_date'], '%Y-%m-%d').date() if data['audition_date'] else None
+    if 'location_text' in data:
+        a.location_text = (data['location_text'] or '').strip() or None
+    if 'description' in data:
+        a.description = (data['description'] or '').strip() or None
+    if 'is_open' in data:
+        a.is_open = bool(data['is_open'])
+    db.session.commit()
+    return jsonify({'message': 'Audition updated'})
+
+
+@bp.route('/performance/auditions/<int:aid>', methods=['DELETE'])
+@login_required
+def delete_audition(aid):
+    err = _admin_only()
+    if err:
+        return err
+    a = Audition.query.get_or_404(aid)
+    AuditionSignup.query.filter_by(audition_id=aid).delete()
+    db.session.delete(a)
+    db.session.commit()
+    return jsonify({'message': 'Audition deleted'})
+
+
+@bp.route('/performance/auditions/<int:aid>/signups', methods=['GET'])
+@login_required
+def list_audition_signups(aid):
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    a = Audition.query.get_or_404(aid)
+    return jsonify({'signups': [{
+        'id': s.id,
+        'student_id': s.student_id,
+        'student_name': s.student.full_name,
+        'status': s.status,
+        'notes': s.notes,
+        'created_at': s.created_at.isoformat(),
+    } for s in a.signups.order_by(AuditionSignup.created_at).all()]})
+
+
+@bp.route('/performance/auditions/<int:aid>/signup', methods=['POST'])
+@login_required
+def signup_for_audition(aid):
+    """A parent signs their child up for an audition."""
+    a = Audition.query.get_or_404(aid)
+    if not a.is_open:
+        return jsonify({'error': 'This audition is closed'}), 400
+    data = request.get_json() or {}
+    student_id = data.get('student_id')
+    if not student_id:
+        return jsonify({'error': 'student_id is required'}), 400
+    if current_user.is_parent and int(student_id) not in _parent_student_ids(current_user):
+        return jsonify({'error': 'Not authorized for this student'}), 403
+    if AuditionSignup.query.filter_by(audition_id=aid, student_id=student_id).first():
+        return jsonify({'error': 'Already signed up'}), 400
+    s = AuditionSignup(audition_id=aid, student_id=int(student_id), parent_id=current_user.id,
+                       notes=(data.get('notes') or '').strip() or None)
+    db.session.add(s)
+    db.session.commit()
+    return jsonify({'message': 'Signed up for audition'}), 201
+
+
+@bp.route('/performance/signups/<int:sid>/status', methods=['POST'])
+@login_required
+def set_signup_status(sid):
+    err = _admin_only()
+    if err:
+        return err
+    s = AuditionSignup.query.get_or_404(sid)
+    data = request.get_json() or {}
+    status = (data.get('status') or '').strip()
+    if status not in ('signed_up', 'accepted', 'declined', 'waitlist'):
+        return jsonify({'error': 'Invalid status'}), 400
+    s.status = status
+    # Auto-add accepted students to the audition's group as members
+    if status == 'accepted' and s.audition.group_id:
+        existing = CompanyMembership.query.filter_by(group_id=s.audition.group_id, student_id=s.student_id).first()
+        if existing:
+            existing.is_active = True
+        else:
+            db.session.add(CompanyMembership(group_id=s.audition.group_id, student_id=s.student_id))
+    db.session.commit()
+    return jsonify({'message': f'Marked {status}'})
+
+
+@bp.route('/performance/performances', methods=['GET'])
+@login_required
+def list_performances():
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    rows = Performance.query.order_by(desc(Performance.performance_date)).all()
+    return jsonify({'performances': [_performance_to_dict(p) for p in rows]})
+
+
+@bp.route('/performance/performances', methods=['POST'])
+@login_required
+def create_performance():
+    err = _admin_only()
+    if err:
+        return err
+    data = request.get_json() or {}
+    if not data.get('title'):
+        return jsonify({'error': 'title is required'}), 400
+    p = Performance(
+        group_id=int(data['group_id']) if data.get('group_id') else None,
+        title=data['title'].strip(),
+        performance_date=(datetime.strptime(data['performance_date'], '%Y-%m-%d').date()
+                          if data.get('performance_date') else None),
+        call_time=(data.get('call_time') or '').strip() or None,
+        venue=(data.get('venue') or '').strip() or None,
+        description=(data.get('description') or '').strip() or None,
+    )
+    db.session.add(p)
+    db.session.commit()
+    return jsonify(_performance_to_dict(p)), 201
+
+
+@bp.route('/performance/performances/<int:pid>', methods=['PUT'])
+@login_required
+def update_performance(pid):
+    err = _admin_only()
+    if err:
+        return err
+    p = Performance.query.get_or_404(pid)
+    data = request.get_json() or {}
+    if 'title' in data and data['title'].strip():
+        p.title = data['title'].strip()
+    if 'group_id' in data:
+        p.group_id = int(data['group_id']) if data['group_id'] else None
+    if 'performance_date' in data:
+        p.performance_date = datetime.strptime(data['performance_date'], '%Y-%m-%d').date() if data['performance_date'] else None
+    if 'call_time' in data:
+        p.call_time = (data['call_time'] or '').strip() or None
+    if 'venue' in data:
+        p.venue = (data['venue'] or '').strip() or None
+    if 'description' in data:
+        p.description = (data['description'] or '').strip() or None
+    db.session.commit()
+    return jsonify(_performance_to_dict(p))
+
+
+@bp.route('/performance/performances/<int:pid>', methods=['DELETE'])
+@login_required
+def delete_performance(pid):
+    err = _admin_only()
+    if err:
+        return err
+    p = Performance.query.get_or_404(pid)
+    PerformanceAssignment.query.filter_by(performance_id=pid).delete()
+    db.session.delete(p)
+    db.session.commit()
+    return jsonify({'message': 'Performance deleted'})
+
+
+@bp.route('/performance/performances/<int:pid>/assignments', methods=['GET'])
+@login_required
+def list_assignments(pid):
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    p = Performance.query.get_or_404(pid)
+    return jsonify({'assignments': [{
+        'id': a.id,
+        'student_id': a.student_id,
+        'student_name': a.student.full_name,
+        'notes': a.notes,
+    } for a in p.assignments.all()]})
+
+
+@bp.route('/performance/performances/<int:pid>/assignments', methods=['POST'])
+@login_required
+def add_assignment(pid):
+    err = _admin_only()
+    if err:
+        return err
+    p = Performance.query.get_or_404(pid)
+    data = request.get_json() or {}
+    # Bulk: assign all active members of the performance's group
+    if data.get('assign_group') and p.group_id:
+        added = 0
+        for m in p.group.memberships.filter_by(is_active=True).all():
+            if not PerformanceAssignment.query.filter_by(performance_id=pid, student_id=m.student_id).first():
+                db.session.add(PerformanceAssignment(performance_id=pid, student_id=m.student_id))
+                added += 1
+        db.session.commit()
+        return jsonify({'message': f'Assigned {added} group members'}), 201
+    if not data.get('student_id'):
+        return jsonify({'error': 'student_id is required'}), 400
+    if PerformanceAssignment.query.filter_by(performance_id=pid, student_id=data['student_id']).first():
+        return jsonify({'error': 'Already assigned'}), 400
+    a = PerformanceAssignment(performance_id=pid, student_id=int(data['student_id']),
+                              notes=(data.get('notes') or '').strip() or None)
+    db.session.add(a)
+    db.session.commit()
+    return jsonify({'message': 'Assigned', 'id': a.id}), 201
+
+
+@bp.route('/performance/assignments/<int:aid>', methods=['DELETE'])
+@login_required
+def remove_assignment(aid):
+    err = _admin_only()
+    if err:
+        return err
+    a = PerformanceAssignment.query.get_or_404(aid)
+    db.session.delete(a)
+    db.session.commit()
+    return jsonify({'message': 'Removed'})
+
+
+@bp.route('/my-company', methods=['GET'])
+@login_required
+def my_company():
+    """A parent's children's company memberships, upcoming performances, open auditions."""
+    if not current_user.is_parent:
+        return jsonify({'memberships': [], 'performances': [], 'open_auditions': []})
+    student_ids = _parent_student_ids(current_user)
+    if not student_ids:
+        return jsonify({'memberships': [], 'performances': [], 'open_auditions': []})
+
+    memberships = (CompanyMembership.query
+                   .filter(CompanyMembership.student_id.in_(student_ids), CompanyMembership.is_active == True)  # noqa: E712
+                   .all())
+    group_ids = {m.group_id for m in memberships}
+    members_out = [{
+        'student_id': m.student_id,
+        'student_name': m.student.full_name,
+        'group_name': m.group.name,
+        'role': m.role,
+    } for m in memberships]
+
+    today = date.today()
+    # Performances for their groups, studio-wide events, or where their child is individually assigned
+    assigned_perf_ids = {a.performance_id for a in PerformanceAssignment.query
+                         .filter(PerformanceAssignment.student_id.in_(student_ids)).all()}
+    perfs = Performance.query.filter(
+        db.or_(
+            Performance.group_id.in_(group_ids) if group_ids else db.false(),
+            Performance.group_id.is_(None),
+            Performance.id.in_(assigned_perf_ids) if assigned_perf_ids else db.false(),
+        )
+    ).all()
+    perfs = [p for p in perfs if (p.performance_date is None or p.performance_date >= today)]
+    perfs.sort(key=lambda p: (p.performance_date or date.max))
+
+    open_auditions = [{
+        'id': a.id,
+        'title': a.title,
+        'group_name': a.group.name if a.group else None,
+        'audition_date': a.audition_date.isoformat() if a.audition_date else None,
+        'location_text': a.location_text,
+        'description': a.description,
+        'children': [{
+            'student_id': sid,
+            'student_name': Student.query.get(sid).full_name,
+            'signed_up': bool(AuditionSignup.query.filter_by(audition_id=a.id, student_id=sid).first()),
+        } for sid in student_ids],
+    } for a in Audition.query.filter_by(is_open=True).order_by(Audition.audition_date).all()]
+
+    return jsonify({
+        'memberships': members_out,
+        'performances': [_performance_to_dict(p) for p in perfs],
+        'open_auditions': open_auditions,
+    })
+
+
+# ── Waivers & forms endpoints ───────────────────────────────────────
+
+def _waiver_template_to_dict(t):
+    return {
+        'id': t.id,
+        'title': t.title,
+        'body': t.body,
+        'allow_decline': t.allow_decline,
+        'display_order': t.display_order,
+        'is_active': t.is_active,
+        'signed_count': t.signatures.count(),
+    }
+
+
+@bp.route('/waivers/templates', methods=['GET'])
+@login_required
+def list_waiver_templates():
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    include_inactive = request.args.get('all') == '1'
+    q = WaiverTemplate.query
+    if not include_inactive:
+        q = q.filter_by(is_active=True)
+    rows = q.order_by(WaiverTemplate.display_order, WaiverTemplate.id).all()
+    return jsonify({'templates': [_waiver_template_to_dict(t) for t in rows]})
+
+
+@bp.route('/waivers/templates', methods=['POST'])
+@login_required
+def create_waiver_template():
+    err = _admin_only()
+    if err:
+        return err
+    data = request.get_json() or {}
+    if not data.get('title') or not data.get('body'):
+        return jsonify({'error': 'title and body are required'}), 400
+    t = WaiverTemplate(
+        title=data['title'].strip(),
+        body=data['body'].strip(),
+        allow_decline=bool(data.get('allow_decline', False)),
+        display_order=int(data.get('display_order', 0)),
+    )
+    db.session.add(t)
+    db.session.commit()
+    return jsonify(_waiver_template_to_dict(t)), 201
+
+
+@bp.route('/waivers/templates/<int:tid>', methods=['PUT'])
+@login_required
+def update_waiver_template(tid):
+    err = _admin_only()
+    if err:
+        return err
+    t = WaiverTemplate.query.get_or_404(tid)
+    data = request.get_json() or {}
+    if 'title' in data and data['title'].strip():
+        t.title = data['title'].strip()
+    if 'body' in data and data['body'].strip():
+        t.body = data['body'].strip()
+    if 'allow_decline' in data:
+        t.allow_decline = bool(data['allow_decline'])
+    if 'display_order' in data:
+        t.display_order = int(data['display_order'])
+    if 'is_active' in data:
+        t.is_active = bool(data['is_active'])
+    db.session.commit()
+    return jsonify(_waiver_template_to_dict(t))
+
+
+@bp.route('/waivers/templates/<int:tid>', methods=['DELETE'])
+@login_required
+def delete_waiver_template(tid):
+    err = _admin_only()
+    if err:
+        return err
+    t = WaiverTemplate.query.get_or_404(tid)
+    t.is_active = False
+    db.session.commit()
+    return jsonify({'message': f'{t.title} archived'})
+
+
+@bp.route('/waivers/compliance', methods=['GET'])
+@login_required
+def waiver_compliance():
+    """Per-template: how many active students have signed, and who hasn't."""
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    students = Student.query.filter_by(is_active=True).all()
+    total = len(students)
+    templates = WaiverTemplate.query.filter_by(is_active=True).order_by(WaiverTemplate.display_order).all()
+    out = []
+    for t in templates:
+        signed = {s.student_id: s for s in t.signatures.all()}
+        unsigned = [{'student_id': s.id, 'student_name': s.full_name} for s in students if s.id not in signed]
+        declined = [{'student_id': sid, 'student_name': Student.query.get(sid).full_name}
+                    for sid, sig in signed.items() if not sig.consent]
+        out.append({
+            'id': t.id,
+            'title': t.title,
+            'allow_decline': t.allow_decline,
+            'signed_count': len([1 for sid in signed if sid in {s.id for s in students}]),
+            'total': total,
+            'unsigned': unsigned,
+            'declined': declined,
+        })
+    return jsonify({'compliance': out})
+
+
+@bp.route('/students/<int:student_id>/waivers', methods=['GET'])
+@login_required
+def get_student_waivers(student_id):
+    """List active waiver templates and this student's signature status."""
+    if current_user.is_parent and student_id not in _parent_student_ids(current_user):
+        return jsonify({'error': 'Not authorized'}), 403
+    student = Student.query.get_or_404(student_id)
+    templates = WaiverTemplate.query.filter_by(is_active=True).order_by(WaiverTemplate.display_order).all()
+    out = []
+    for t in templates:
+        sig = WaiverSignature.query.filter_by(template_id=t.id, student_id=student_id).first()
+        out.append({
+            'id': t.id,
+            'title': t.title,
+            'body': t.body,
+            'allow_decline': t.allow_decline,
+            'signed': sig is not None,
+            'consent': sig.consent if sig else None,
+            'signed_name': sig.signed_name if sig else None,
+            'signed_at': sig.signed_at.isoformat() if sig else None,
+        })
+    return jsonify({'student_id': student.id, 'student_name': student.full_name, 'waivers': out})
+
+
+@bp.route('/students/<int:student_id>/waivers/<int:template_id>/sign', methods=['POST'])
+@login_required
+def sign_waiver(student_id, template_id):
+    if current_user.is_parent and student_id not in _parent_student_ids(current_user):
+        return jsonify({'error': 'Not authorized'}), 403
+    Student.query.get_or_404(student_id)
+    t = WaiverTemplate.query.get_or_404(template_id)
+    data = request.get_json() or {}
+    signed_name = (data.get('signed_name') or '').strip()
+    if not signed_name:
+        return jsonify({'error': 'A typed signature (your name) is required'}), 400
+    consent = bool(data.get('consent', True))
+    if not consent and not t.allow_decline:
+        return jsonify({'error': 'This form requires agreement to participate'}), 400
+
+    sig = WaiverSignature.query.filter_by(template_id=template_id, student_id=student_id).first()
+    if sig:
+        sig.signed_name = signed_name
+        sig.consent = consent
+        sig.parent_id = current_user.id
+        sig.signed_at = datetime.utcnow()
+    else:
+        sig = WaiverSignature(template_id=template_id, student_id=student_id, parent_id=current_user.id,
+                              signed_name=signed_name, consent=consent)
+        db.session.add(sig)
+    db.session.commit()
+    return jsonify({'message': 'Signed', 'consent': consent})

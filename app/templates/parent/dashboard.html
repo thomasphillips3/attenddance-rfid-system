@@ -99,10 +99,14 @@
                 </div>
                 {% endif %}
 
-                <div class="mb-4">
+                <div class="mb-4 flex flex-wrap gap-2">
                     <a href="{{ url_for('main.acknowledge_rules', student_id=child.student.id) }}"
                        class="inline-flex items-center px-4 py-2 border border-primary-600 rounded-md text-sm font-medium text-primary-600 hover:bg-primary-50">
                         <i class="fas fa-gavel mr-2"></i>Review &amp; Initial Rules
+                    </a>
+                    <a href="{{ url_for('main.sign_waivers_page', student_id=child.student.id) }}"
+                       class="inline-flex items-center px-4 py-2 border border-primary-600 rounded-md text-sm font-medium text-primary-600 hover:bg-primary-50">
+                        <i class="fas fa-file-signature mr-2"></i>Sign Forms<span class="forms-badge ml-1" data-student-id="{{ child.student.id }}"></span>
                     </a>
                 </div>
 
@@ -138,6 +142,18 @@
         {% endfor %}
 
         {% if children %}
+        <!-- Company & performances -->
+        <div id="company-card" class="bg-white rounded-lg shadow-lg mb-8 overflow-hidden hidden">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-star mr-2 text-amber-400"></i>Company &amp; Performances</h2>
+            </div>
+            <div class="p-6 space-y-6">
+                <div id="company-memberships"></div>
+                <div id="company-performances"></div>
+                <div id="company-auditions"></div>
+            </div>
+        </div>
+
         <!-- Payment history & pending claims -->
         <div class="bg-white rounded-lg shadow-lg mb-8 overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-200">
@@ -360,9 +376,77 @@ async function loadMyPayments() {
     }
 }
 
+async function loadFormsBadges() {
+    const badges = document.querySelectorAll('.forms-badge');
+    for (const b of badges) {
+        const sid = b.dataset.studentId;
+        try {
+            const data = await (await fetch(`/api/students/${sid}/waivers`)).json();
+            const unsigned = (data.waivers || []).filter(w => !w.signed).length;
+            if (unsigned) b.innerHTML = ` <span class="inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold text-white bg-red-500 rounded-full">${unsigned}</span>`;
+        } catch {}
+    }
+}
+
+async function signupAudition(auditionId, studentId, btn) {
+    try {
+        const res = await fetch(`/api/performance/auditions/${auditionId}/signup`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({student_id: studentId}),
+        });
+        const d = await res.json();
+        toast(res.ok ? 'Signed up for the audition!' : (d.error || 'Error'), res.ok);
+        if (res.ok) loadCompany();
+    } catch { toast('Network error', false); }
+}
+
+async function loadCompany() {
+    try {
+        const data = await (await fetch('/api/my-company')).json();
+        const memberships = data.memberships || [];
+        const perfs = data.performances || [];
+        const auditions = data.open_auditions || [];
+        if (!memberships.length && !perfs.length && !auditions.length) return;
+        document.getElementById('company-card').classList.remove('hidden');
+
+        const mEl = document.getElementById('company-memberships');
+        mEl.innerHTML = memberships.length ? `
+            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Company Member</h3>
+            <div class="flex flex-wrap gap-2">${memberships.map(m => `
+                <span class="inline-flex items-center bg-amber-50 border border-amber-200 rounded-full px-3 py-1 text-sm">
+                    <i class="fas fa-star text-amber-400 mr-1"></i>${esc(m.student_name)} — ${esc(m.group_name)}${m.role && m.role!=='Member' ? ' ('+esc(m.role)+')' : ''}
+                </span>`).join('')}</div>` : '';
+
+        const pEl = document.getElementById('company-performances');
+        pEl.innerHTML = perfs.length ? `
+            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Upcoming Performances</h3>
+            <div class="space-y-2">${perfs.map(p => `
+                <div class="border border-gray-200 rounded-lg p-3">
+                    <div class="font-medium text-gray-900">${esc(p.title)} <span class="text-xs text-amber-600 ml-1">${esc(p.group_name)}</span></div>
+                    <div class="text-sm text-gray-500">${p.performance_date ? new Date(p.performance_date+'T00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD'}${p.call_time ? ' · call '+esc(p.call_time) : ''}${p.venue ? ' · '+esc(p.venue) : ''}</div>
+                    ${p.description ? `<div class="text-xs text-gray-400 mt-1">${esc(p.description)}</div>` : ''}
+                </div>`).join('')}</div>` : '';
+
+        const aEl = document.getElementById('company-auditions');
+        aEl.innerHTML = auditions.length ? `
+            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Open Auditions</h3>
+            <div class="space-y-2">${auditions.map(a => `
+                <div class="border border-indigo-200 bg-indigo-50 rounded-lg p-3">
+                    <div class="font-medium text-indigo-900">${esc(a.title)}${a.group_name ? ' — '+esc(a.group_name) : ''}</div>
+                    <div class="text-sm text-indigo-700">${a.audition_date ? new Date(a.audition_date+'T00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD'}${a.location_text ? ' · '+esc(a.location_text) : ''}</div>
+                    ${a.description ? `<div class="text-xs text-indigo-600 mt-1">${esc(a.description)}</div>` : ''}
+                    <div class="mt-2 flex flex-wrap gap-2">${a.children.map(c => c.signed_up
+                        ? `<span class="text-xs text-green-700 px-2 py-1">✓ ${esc(c.student_name)} signed up</span>`
+                        : `<button onclick="signupAudition(${a.id}, ${c.student_id}, this)" class="text-xs px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700">Sign up ${esc(c.student_name)}</button>`
+                    ).join('')}</div>
+                </div>`).join('')}</div>` : '';
+    } catch (err) { /* leave hidden */ }
+}
+
 (async function init() {
     await loadPayOptions();
     loadMyPayments();
+    loadCompany();
+    loadFormsBadges();
 })();
 </script>
 {% endblock %}

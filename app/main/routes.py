@@ -316,3 +316,23 @@ def settings_page():
 @admin_required
 def pending_payments_page():
     return render_template('payments/pending.html')
+
+
+@bp.route('/company')
+@admin_required
+def company_page():
+    students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
+    return render_template('company/manage.html', students=students)
+
+
+@bp.route('/waivers')
+@admin_required
+def waivers_page():
+    return render_template('waivers/admin.html')
+
+
+@bp.route('/students/<int:student_id>/sign-waivers')
+@login_required
+def sign_waivers_page(student_id):
+    student = Student.query.get_or_404(student_id)
+    return render_template('waivers/sign.html', student=student)

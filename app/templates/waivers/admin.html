@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex items-center justify-between flex-wrap gap-3">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900"><i class="fas fa-file-signature text-primary-500 mr-2"></i>Forms &amp; Waivers</h1>
+                <p class="mt-1 text-sm text-gray-600">Liability releases, photo consent, medical authorization — signed by parents per student</p>
+            </div>
+            <button onclick="createTemplate()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-plus mr-2"></i>New Form</button>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div id="msg" class="hidden mb-4 p-3 rounded-md text-sm font-medium"></div>
+        <div id="forms-list" class="space-y-4"><p class="text-gray-500">Loading…</p></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function msg(t, ok){const m=document.getElementById('msg');m.textContent=t;m.className='mb-4 p-3 rounded-md text-sm font-medium '+(ok?'bg-green-100 text-green-800':'bg-red-100 text-red-800');m.classList.remove('hidden');setTimeout(()=>m.classList.add('hidden'),4000);}
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+async function load(){
+    const el=document.getElementById('forms-list');
+    const data=await (await fetch('/api/waivers/compliance')).json();
+    const comp=data.compliance||[];
+    if(!comp.length){el.innerHTML='<p class="text-gray-500">No forms yet. Create a liability waiver, photo release, or medical authorization to get started.</p>';return;}
+    el.innerHTML=comp.map(c=>{
+        const pct = c.total ? Math.round(c.signed_count/c.total*100) : 0;
+        return `<div class="bg-white shadow rounded-lg overflow-hidden">
+            <div class="px-5 py-3 border-b flex items-center justify-between flex-wrap gap-2">
+                <div><span class="font-semibold text-gray-900">${esc(c.title)}</span>
+                    ${c.allow_decline?'<span class="text-xs text-blue-600 ml-2">opt-out allowed</span>':''}
+                    <p class="text-xs text-gray-500">${c.signed_count}/${c.total} students signed (${pct}%)</p></div>
+                <div class="flex gap-3">
+                    <button onclick="editTemplate(${c.id})" class="text-xs text-gray-600 hover:underline">Edit</button>
+                    <button onclick="archiveTemplate(${c.id},'${esc(c.title)}')" class="text-xs text-red-600 hover:underline">Archive</button>
+                </div>
+            </div>
+            <div class="px-5 py-3 text-sm">
+                ${c.unsigned.length?`<div class="mb-2"><span class="font-medium text-amber-700">Not signed (${c.unsigned.length}):</span>
+                    <span class="text-gray-600">${c.unsigned.map(u=>esc(u.student_name)).join(', ')}</span></div>`:'<div class="text-green-700 mb-2">✓ Everyone has signed.</div>'}
+                ${c.declined.length?`<div><span class="font-medium text-red-700">Opted out (${c.declined.length}):</span>
+                    <span class="text-gray-600">${c.declined.map(d=>esc(d.student_name)).join(', ')}</span></div>`:''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function createTemplate(){
+    const title=prompt('Form title (e.g. Liability Waiver, Photo Release, Medical Authorization):');if(!title)return;
+    const body=prompt('Form text the parent will read & agree to:');if(!body)return;
+    const allow_decline=confirm('Allow parents to OPT OUT while still signing? (OK for photo release; Cancel for mandatory liability/medical)');
+    const r=await fetch('/api/waivers/templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,body,allow_decline})});
+    msg(r.ok?'Form created':'Error',r.ok);if(r.ok)load();
+}
+async function editTemplate(id){
+    const t=(await (await fetch('/api/waivers/templates?all=1')).json()).templates.find(x=>x.id===id);
+    const title=prompt('Title:',t.title);if(title===null)return;
+    const body=prompt('Form text:',t.body);if(body===null)return;
+    const r=await fetch(`/api/waivers/templates/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,body})});
+    msg(r.ok?'Saved':'Error',r.ok);if(r.ok)load();
+}
+async function archiveTemplate(id,title){if(!confirm(`Archive "${title}"? Existing signatures are kept.`))return;const r=await fetch(`/api/waivers/templates/${id}`,{method:'DELETE'});msg(r.ok?'Archived':'Error',r.ok);if(r.ok)load();}
+
+load();
+</script>
+{% endblock %}

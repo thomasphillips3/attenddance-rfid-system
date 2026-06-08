@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-full" x-data="{ tab: 'groups' }">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <h1 class="text-3xl font-bold text-gray-900"><i class="fas fa-star text-amber-400 mr-2"></i>Performance Company</h1>
+            <p class="mt-1 text-sm text-gray-600">Companies & teams, auditions, and performances</p>
+            <div class="mt-4 flex gap-2 border-b border-gray-200">
+                <button @click="tab='groups'" :class="tab==='groups' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500'" class="px-4 py-2 border-b-2 text-sm font-medium">Companies</button>
+                <button @click="tab='auditions'" :class="tab==='auditions' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500'" class="px-4 py-2 border-b-2 text-sm font-medium">Auditions</button>
+                <button @click="tab='performances'" :class="tab==='performances' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500'" class="px-4 py-2 border-b-2 text-sm font-medium">Performances</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div id="msg" class="hidden mb-4 p-3 rounded-md text-sm font-medium"></div>
+
+        <!-- COMPANIES -->
+        <div x-show="tab==='groups'">
+            <div class="flex justify-end mb-3">
+                <button onclick="createGroup()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-plus mr-2"></i>New Company</button>
+            </div>
+            <div id="groups-list" class="space-y-4"><p class="text-gray-500">Loading…</p></div>
+        </div>
+
+        <!-- AUDITIONS -->
+        <div x-show="tab==='auditions'" style="display:none">
+            <div class="flex justify-end mb-3">
+                <button onclick="createAudition()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-plus mr-2"></i>New Audition</button>
+            </div>
+            <div id="auditions-list" class="space-y-4"><p class="text-gray-500">Loading…</p></div>
+        </div>
+
+        <!-- PERFORMANCES -->
+        <div x-show="tab==='performances'" style="display:none">
+            <div class="flex justify-end mb-3">
+                <button onclick="createPerformance()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-plus mr-2"></i>New Performance</button>
+            </div>
+            <div id="performances-list" class="space-y-4"><p class="text-gray-500">Loading…</p></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const STUDENTS = [{% for s in students %}{id:{{ s.id }}, name:"{{ s.full_name|e }}"},{% endfor %}];
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function msg(t, ok) {
+    const m = document.getElementById('msg');
+    m.textContent = t; m.className = 'mb-4 p-3 rounded-md text-sm font-medium ' + (ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800');
+    m.classList.remove('hidden'); setTimeout(() => m.classList.add('hidden'), 4000);
+}
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function studentPicker(id){return `<select id="${id}" class="border border-gray-300 rounded px-2 py-1 text-sm"><option value="">Pick a student…</option>${STUDENTS.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>`;}
+async function jpost(url, body){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});}
+async function jput(url, body){return fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});}
+
+/* ---- Companies ---- */
+async function loadGroups(){
+    const el = document.getElementById('groups-list');
+    const data = await (await fetch('/api/performance/groups')).json();
+    const groups = data.groups||[];
+    if(!groups.length){el.innerHTML='<p class="text-gray-500">No companies yet. Create one to get started.</p>';return;}
+    el.innerHTML = groups.map(g=>`
+        <div class="bg-white shadow rounded-lg overflow-hidden">
+            <div class="px-5 py-3 border-b flex items-center justify-between">
+                <div><span class="font-semibold text-gray-900">${esc(g.name)}</span> <span class="text-xs text-gray-500 ml-2">${g.member_count} members</span>
+                    ${g.description?`<p class="text-xs text-gray-500">${esc(g.description)}</p>`:''}</div>
+                <button onclick="deleteGroup(${g.id},'${esc(g.name)}')" class="text-xs text-red-600 hover:underline">Archive</button>
+            </div>
+            <div class="px-5 py-3">
+                <div id="members-${g.id}" class="text-sm text-gray-500 mb-3">Loading members…</div>
+                <div class="flex items-center gap-2">
+                    ${studentPicker('addmem-'+g.id)}
+                    <input id="role-${g.id}" placeholder="Role (e.g. Captain)" class="border border-gray-300 rounded px-2 py-1 text-sm w-36">
+                    <button onclick="addMember(${g.id})" class="px-3 py-1 bg-primary-600 text-white rounded text-sm">Add member</button>
+                </div>
+            </div>
+        </div>`).join('');
+    groups.forEach(g=>loadMembers(g.id));
+}
+async function loadMembers(gid){
+    const el = document.getElementById('members-'+gid);
+    const data = await (await fetch(`/api/performance/groups/${gid}/members`)).json();
+    const m = data.members||[];
+    if(!m.length){el.innerHTML='<span class="text-gray-400">No members yet.</span>';return;}
+    el.innerHTML = m.map(x=>`<span class="inline-flex items-center bg-amber-50 border border-amber-200 rounded-full px-3 py-1 mr-2 mb-2">
+        ${esc(x.student_name)} <span class="text-xs text-amber-600 ml-1">${esc(x.role)}</span>
+        <button onclick="removeMember(${x.id})" class="ml-2 text-red-500 hover:text-red-700">&times;</button></span>`).join('');
+}
+async function createGroup(){
+    const name = prompt('Company name (e.g. LSODance Company):'); if(!name)return;
+    const description = prompt('Short description (optional):')||'';
+    const r = await jpost('/api/performance/groups',{name,description});
+    msg(r.ok?'Company created':'Error', r.ok); if(r.ok)loadGroups();
+}
+async function deleteGroup(id,name){if(!confirm(`Archive ${name}?`))return;const r=await fetch(`/api/performance/groups/${id}`,{method:'DELETE'});msg(r.ok?'Archived':'Error',r.ok);if(r.ok)loadGroups();}
+async function addMember(gid){
+    const sid = document.getElementById('addmem-'+gid).value; if(!sid){msg('Pick a student',false);return;}
+    const role = document.getElementById('role-'+gid).value.trim();
+    const r = await jpost(`/api/performance/groups/${gid}/members`,{student_id:sid,role});
+    if(r.ok){loadMembers(gid);loadGroups();}else msg((await r.json()).error||'Error',false);
+}
+async function removeMember(id){const r=await fetch(`/api/performance/members/${id}`,{method:'DELETE'});if(r.ok)loadGroups();}
+
+/* ---- Auditions ---- */
+async function loadAuditions(){
+    const el=document.getElementById('auditions-list');
+    const data=await (await fetch('/api/performance/auditions')).json();
+    const a=data.auditions||[];
+    if(!a.length){el.innerHTML='<p class="text-gray-500">No auditions yet.</p>';return;}
+    el.innerHTML=a.map(x=>`
+        <div class="bg-white shadow rounded-lg overflow-hidden">
+            <div class="px-5 py-3 border-b flex items-center justify-between">
+                <div><span class="font-semibold text-gray-900">${esc(x.title)}</span>
+                    ${x.group_name?`<span class="text-xs text-amber-600 ml-2">${esc(x.group_name)}</span>`:''}
+                    <span class="text-xs ${x.is_open?'text-green-600':'text-gray-400'} ml-2">${x.is_open?'Open':'Closed'}</span>
+                    <p class="text-xs text-gray-500">${x.audition_date?new Date(x.audition_date+'T00:00').toLocaleDateString():'No date'} ${x.location_text?'· '+esc(x.location_text):''} · ${x.signup_count} signups</p></div>
+                <div class="flex gap-2">
+                    <button onclick="toggleAudition(${x.id},${!x.is_open})" class="text-xs text-gray-600 hover:underline">${x.is_open?'Close':'Reopen'}</button>
+                    <button onclick="deleteAudition(${x.id})" class="text-xs text-red-600 hover:underline">Delete</button>
+                </div>
+            </div>
+            <div class="px-5 py-3"><div id="signups-${x.id}" class="text-sm text-gray-500">Loading signups…</div></div>
+        </div>`).join('');
+    a.forEach(x=>loadSignups(x.id));
+}
+async function loadSignups(aid){
+    const el=document.getElementById('signups-'+aid);
+    const data=await (await fetch(`/api/performance/auditions/${aid}/signups`)).json();
+    const s=data.signups||[];
+    if(!s.length){el.innerHTML='<span class="text-gray-400">No signups yet.</span>';return;}
+    const badge=st=>({signed_up:'bg-blue-100 text-blue-800',accepted:'bg-green-100 text-green-800',declined:'bg-gray-200 text-gray-600',waitlist:'bg-amber-100 text-amber-800'}[st]||'');
+    el.innerHTML=`<table class="min-w-full text-sm"><tbody>${s.map(x=>`<tr class="border-b border-gray-100">
+        <td class="py-1 pr-4">${esc(x.student_name)}</td>
+        <td class="py-1 pr-4"><span class="px-2 py-0.5 rounded-full text-xs ${badge(x.status)}">${x.status.replace('_',' ')}</span></td>
+        <td class="py-1 text-right">
+            <button onclick="setStatus(${x.id},'accepted',${aid})" class="text-xs text-green-600 hover:underline mr-2">Accept</button>
+            <button onclick="setStatus(${x.id},'waitlist',${aid})" class="text-xs text-amber-600 hover:underline mr-2">Waitlist</button>
+            <button onclick="setStatus(${x.id},'declined',${aid})" class="text-xs text-gray-500 hover:underline">Decline</button>
+        </td></tr>`).join('')}</tbody></table>`;
+}
+async function createAudition(){
+    const title=prompt('Audition title:');if(!title)return;
+    const groups=(await (await fetch('/api/performance/groups')).json()).groups||[];
+    let group_id='';
+    if(groups.length){const list=groups.map((g,i)=>`${i+1}. ${g.name}`).join('\n');const pick=prompt(`Which company? Enter number (or blank for none):\n${list}`);if(pick&&groups[parseInt(pick)-1])group_id=groups[parseInt(pick)-1].id;}
+    const audition_date=prompt('Date (YYYY-MM-DD, optional):')||'';
+    const location_text=prompt('Location (optional):')||'';
+    const r=await jpost('/api/performance/auditions',{title,group_id,audition_date,location_text});
+    msg(r.ok?'Audition created':'Error',r.ok);if(r.ok)loadAuditions();
+}
+async function toggleAudition(id,open){const r=await jput(`/api/performance/auditions/${id}`,{is_open:open});if(r.ok)loadAuditions();}
+async function deleteAudition(id){if(!confirm('Delete this audition and its signups?'))return;const r=await fetch(`/api/performance/auditions/${id}`,{method:'DELETE'});if(r.ok)loadAuditions();}
+async function setStatus(sid,status,aid){const r=await jpost(`/api/performance/signups/${sid}/status`,{status});if(r.ok){loadSignups(aid);if(status==='accepted')msg('Accepted — added to company',true);}}
+
+/* ---- Performances ---- */
+async function loadPerformances(){
+    const el=document.getElementById('performances-list');
+    const data=await (await fetch('/api/performance/performances')).json();
+    const p=data.performances||[];
+    if(!p.length){el.innerHTML='<p class="text-gray-500">No performances scheduled.</p>';return;}
+    el.innerHTML=p.map(x=>`
+        <div class="bg-white shadow rounded-lg overflow-hidden">
+            <div class="px-5 py-3 border-b flex items-center justify-between">
+                <div><span class="font-semibold text-gray-900">${esc(x.title)}</span>
+                    <span class="text-xs text-amber-600 ml-2">${esc(x.group_name)}</span>
+                    <p class="text-xs text-gray-500">${x.performance_date?new Date(x.performance_date+'T00:00').toLocaleDateString():'No date'} ${x.call_time?'· call '+esc(x.call_time):''} ${x.venue?'· '+esc(x.venue):''} · ${x.assignment_count} dancers</p></div>
+                <button onclick="deletePerformance(${x.id})" class="text-xs text-red-600 hover:underline">Delete</button>
+            </div>
+            <div class="px-5 py-3">
+                <div id="assign-${x.id}" class="text-sm text-gray-500 mb-3">Loading lineup…</div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    ${studentPicker('addassign-'+x.id)}
+                    <button onclick="addAssign(${x.id})" class="px-3 py-1 bg-primary-600 text-white rounded text-sm">Add dancer</button>
+                    ${x.group_id?`<button onclick="assignGroup(${x.id})" class="px-3 py-1 bg-amber-500 text-white rounded text-sm">Add whole company</button>`:''}
+                </div>
+            </div>
+        </div>`).join('');
+    p.forEach(x=>loadAssign(x.id));
+}
+async function loadAssign(pid){
+    const el=document.getElementById('assign-'+pid);
+    const data=await (await fetch(`/api/performance/performances/${pid}/assignments`)).json();
+    const a=data.assignments||[];
+    if(!a.length){el.innerHTML='<span class="text-gray-400">No dancers assigned.</span>';return;}
+    el.innerHTML=a.map(x=>`<span class="inline-flex items-center bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1 mr-2 mb-2">${esc(x.student_name)}
+        <button onclick="removeAssign(${x.id},${pid})" class="ml-2 text-red-500 hover:text-red-700">&times;</button></span>`).join('');
+}
+async function createPerformance(){
+    const title=prompt('Performance title (e.g. 22nd Annual Recital):');if(!title)return;
+    const groups=(await (await fetch('/api/performance/groups')).json()).groups||[];
+    let group_id='';
+    if(groups.length){const list=groups.map((g,i)=>`${i+1}. ${g.name}`).join('\n');const pick=prompt(`Company performing? Enter number (blank = studio-wide):\n${list}`);if(pick&&groups[parseInt(pick)-1])group_id=groups[parseInt(pick)-1].id;}
+    const performance_date=prompt('Date (YYYY-MM-DD, optional):')||'';
+    const call_time=prompt('Call time (free text, optional):')||'';
+    const venue=prompt('Venue (optional):')||'';
+    const r=await jpost('/api/performance/performances',{title,group_id,performance_date,call_time,venue});
+    msg(r.ok?'Performance created':'Error',r.ok);if(r.ok)loadPerformances();
+}
+async function deletePerformance(id){if(!confirm('Delete this performance?'))return;const r=await fetch(`/api/performance/performances/${id}`,{method:'DELETE'});if(r.ok)loadPerformances();}
+async function addAssign(pid){const sid=document.getElementById('addassign-'+pid).value;if(!sid){msg('Pick a student',false);return;}const r=await jpost(`/api/performance/performances/${pid}/assignments`,{student_id:sid});if(r.ok){loadAssign(pid);loadPerformances();}else msg((await r.json()).error||'Error',false);}
+async function assignGroup(pid){const r=await jpost(`/api/performance/performances/${pid}/assignments`,{assign_group:true});const d=await r.json();msg(r.ok?d.message:d.error,r.ok);if(r.ok){loadAssign(pid);loadPerformances();}}
+async function removeAssign(id,pid){const r=await fetch(`/api/performance/assignments/${id}`,{method:'DELETE'});if(r.ok)loadAssign(pid);}
+
+loadGroups(); loadAuditions(); loadPerformances();
+</script>
+{% endblock %}
