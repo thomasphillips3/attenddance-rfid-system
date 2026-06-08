@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-2xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+    <div class="flex justify-between items-center mb-4 print:hidden">
+        <div class="flex gap-2 items-center">
+            <label class="text-sm text-gray-600">Year</label>
+            <select onchange="location.href='?year='+this.value+'&email={{ email|urlencode }}'" class="border border-gray-300 rounded px-2 py-1 text-sm">
+                {% for y in range(2024, year + 2) %}
+                <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button onclick="window.print()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-print mr-2"></i>Print / Save PDF</button>
+    </div>
+
+    <div class="bg-white shadow rounded-lg p-8 print:shadow-none">
+        <div class="text-center border-b pb-4 mb-4">
+            <h1 class="text-2xl font-bold text-gray-900">{{ org_name }}</h1>
+            <p class="text-sm text-gray-600">{{ year }} Charitable Giving Statement</p>
+            {% if ein %}<p class="text-xs text-gray-500">EIN: {{ ein }}</p>{% endif %}
+        </div>
+
+        <p class="text-sm text-gray-700 mb-4">Thank you for supporting {{ org_name }}. This statement summarizes your tax-deductible contributions for {{ year }} from <strong>{{ email }}</strong>.</p>
+
+        {% if donations %}
+        <table class="min-w-full text-sm mb-4">
+            <thead><tr class="text-xs text-gray-500 uppercase border-b">
+                <th class="text-left py-2">Date</th><th class="text-left py-2">Method</th><th class="text-right py-2">Amount</th>
+            </tr></thead>
+            <tbody>
+                {% for d in donations %}
+                <tr class="border-b border-gray-100">
+                    <td class="py-2">{{ d.donation_date.strftime('%b %d, %Y') }}</td>
+                    <td class="py-2 capitalize">{{ d.method or '—' }}</td>
+                    <td class="py-2 text-right">${{ '%.2f' % d.amount }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="flex justify-end">
+            <table class="text-sm"><tr class="font-bold border-t"><td class="pr-8 py-1">Total contributions {{ year }}</td><td class="text-right py-1">${{ '%.2f' % total }}</td></tr></table>
+        </div>
+        <p class="text-xs text-gray-400 mt-6">No goods or services were provided in exchange for these contributions, except as noted. Please retain for your tax records.</p>
+        {% else %}
+        <p class="text-gray-500">No recorded contributions for {{ year }}.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

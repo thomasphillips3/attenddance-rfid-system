@@ -108,6 +108,10 @@
                        class="inline-flex items-center px-4 py-2 border border-primary-600 rounded-md text-sm font-medium text-primary-600 hover:bg-primary-50">
                         <i class="fas fa-file-signature mr-2"></i>Sign Forms<span class="forms-badge ml-1" data-student-id="{{ child.student.id }}"></span>
                     </a>
+                    <a href="{{ url_for('main.student_statement', student_id=child.student.id) }}"
+                       class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        <i class="fas fa-file-invoice mr-2"></i>Statement
+                    </a>
                 </div>
 
                 <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Recent Attendance</h3>
@@ -161,9 +165,22 @@
                 <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-receipt mr-2 text-gray-400"></i>Payments</h2>
             </div>
             <div class="p-6">
+                <div id="payment-plans" class="mb-6"></div>
                 <div id="pending-claims" class="mb-6"></div>
                 <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">History</h3>
                 <div id="payment-history" class="text-sm text-gray-500">Loading…</div>
+            </div>
+        </div>
+
+        <!-- Donate to Foundation -->
+        <div id="donate-card" class="bg-white rounded-lg shadow-lg mb-8 overflow-hidden hidden">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-hand-holding-heart mr-2 text-rose-400"></i><span id="donate-org">Foundation</span></h2>
+                <a id="giving-link" href="/giving-statement" class="text-sm text-primary-600 hover:underline">My giving statement</a>
+            </div>
+            <div class="p-6 flex items-center gap-3 flex-wrap">
+                <span class="text-sm text-gray-600">Support the studio's nonprofit:</span>
+                <button onclick="openDonate()" class="px-4 py-2 bg-rose-500 text-white rounded-lg text-sm font-medium hover:bg-rose-600"><i class="fas fa-heart mr-2"></i>Donate</button>
             </div>
         </div>
         {% endif %}
@@ -331,6 +348,21 @@ async function loadMyPayments() {
         const res = await fetch('/api/my-payments');
         const data = await res.json();
 
+        const plansEl = document.getElementById('payment-plans');
+        const plans = data.plans || [];
+        if (plansEl) {
+            plansEl.innerHTML = plans.length ? `
+                <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                    <h3 class="text-sm font-semibold text-indigo-800 mb-2"><i class="fas fa-calendar-check mr-1"></i>Payment Plan</h3>
+                    ${plans.map(p => `<div class="text-sm text-indigo-900 mb-2">
+                        <span class="font-medium">${esc(p.student_name)}</span> — $${p.installment_amount}/mo, ${p.paid_count}/${p.num_installments} paid
+                        <div class="flex flex-wrap gap-1 mt-1">${p.installments.map(i => `
+                            <span class="px-2 py-0.5 rounded text-xs ${i.paid ? 'bg-green-100 text-green-700' : 'bg-white border border-indigo-200 text-indigo-700'}">
+                                ${new Date(i.due_date+'T00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'})} $${i.amount}${i.paid ? ' ✓' : ''}</span>`).join('')}</div>
+                    </div>`).join('')}
+                </div>` : '';
+        }
+
         const pending = (data.pending || []).filter(p => p.status === 'pending');
         if (pending.length) {
             pendEl.innerHTML = `
@@ -481,11 +513,35 @@ async function loadCompany() {
     } catch (err) { /* leave hidden */ }
 }
 
+async function loadDonate() {
+    try {
+        const info = await (await fetch('/api/donation-info')).json();
+        if (!info.enabled) return;
+        document.getElementById('donate-org').textContent = info.org_name;
+        document.getElementById('donate-card').classList.remove('hidden');
+    } catch {}
+}
+
+async function openDonate() {
+    const amount = prompt('Donation amount ($):');
+    if (!amount) return;
+    const method = prompt('How are you sending it? (zelle, cashapp, cash, check, other)', 'zelle') || '';
+    try {
+        const res = await fetch('/api/donations', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({amount, method}),
+        });
+        const d = await res.json();
+        toast(res.ok ? (d.message || 'Thank you!') : (d.error || 'Error'), res.ok);
+    } catch { toast('Network error', false); }
+}
+
 (async function init() {
     await loadPayOptions();
     loadMyPayments();
     loadCompany();
     loadFormsBadges();
+    loadDonate();
 })();
 </script>
 {% endblock %}

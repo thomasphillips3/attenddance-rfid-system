@@ -17,6 +17,7 @@ STUDENT_COLUMNS = [
     ('tight_size', 'VARCHAR(20)'), ('bust', 'VARCHAR(20)'),
     ('hips', 'VARCHAR(20)'), ('sleeve', 'VARCHAR(20)'),
     ('chest', 'VARCHAR(20)'), ('size_notes', 'TEXT'),
+    ('parent_phone', 'VARCHAR(20)'),
 ]
 
 USER_COLUMNS = [

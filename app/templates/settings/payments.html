@@ -134,6 +134,63 @@
             </div>
         </div>
 
+        <!-- SMS / Twilio -->
+        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <div class="flex items-center"><span class="text-lg font-semibold text-gray-900 mr-3">Text Messages (SMS)</span><span class="text-xs text-gray-500">Twilio — reminders &amp; alerts by text</span></div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="sms-enabled" class="sr-only peer" onchange="saveSettings()">
+                    <div class="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                </label>
+            </div>
+            <div class="px-6 py-4 space-y-4">
+                <div><label class="block text-sm font-medium text-gray-700">Account SID</label><input type="text" id="sms-sid" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono"></div>
+                <div><label class="block text-sm font-medium text-gray-700">Auth Token</label><input type="password" id="sms-token" autocomplete="off" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono"><p class="mt-1 text-xs text-gray-500">Stored encrypted.</p></div>
+                <div><label class="block text-sm font-medium text-gray-700">From Number</label><input type="text" id="sms-from" placeholder="+13135551234" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono"></div>
+                <div><button type="button" onclick="testSms()" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"><i class="fas fa-plug mr-2"></i>Test Connection</button><span id="sms-test-result" class="ml-3 text-sm"></span></div>
+            </div>
+        </div>
+
+        <!-- Auto-reminders -->
+        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <div class="flex items-center"><span class="text-lg font-semibold text-gray-900 mr-3">Automatic Reminders</span><span class="text-xs text-gray-500">Nudge overdue families automatically</span></div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="rem-enabled" class="sr-only peer" onchange="saveSettings()">
+                    <div class="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                </label>
+            </div>
+            <div class="px-6 py-4 grid grid-cols-2 gap-4">
+                <div><label class="block text-sm font-medium text-gray-700">Send on day of month</label><input type="number" id="rem-day" min="1" max="28" value="1" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"></div>
+                <div><label class="block text-sm font-medium text-gray-700">Only if balance over ($)</label><input type="number" id="rem-min" step="0.01" value="0" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"></div>
+                <div class="col-span-2"><label class="inline-flex items-center text-sm text-gray-700"><input type="checkbox" id="rem-sms" class="mr-2"> Also send by text (SMS)</label></div>
+            </div>
+        </div>
+
+        <!-- Late fees -->
+        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200"><span class="text-lg font-semibold text-gray-900">Late Fees</span><span class="text-xs text-gray-500 ml-3">Defaults for the "Apply late fees" button</span></div>
+            <div class="px-6 py-4 grid grid-cols-2 gap-4">
+                <div><label class="block text-sm font-medium text-gray-700">Late fee amount ($)</label><input type="number" id="late-amount" step="0.01" value="0" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"></div>
+                <div><label class="block text-sm font-medium text-gray-700">Only if balance over ($)</label><input type="number" id="late-min" step="0.01" value="0" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"></div>
+            </div>
+        </div>
+
+        <!-- Donations -->
+        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <div class="flex items-center"><span class="text-lg font-semibold text-gray-900 mr-3">Foundation Donations</span><span class="text-xs text-gray-500">Let parents donate from the portal</span></div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="don-enabled" class="sr-only peer" onchange="saveSettings()">
+                    <div class="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                </label>
+            </div>
+            <div class="px-6 py-4 grid grid-cols-2 gap-4">
+                <div><label class="block text-sm font-medium text-gray-700">Organization name</label><input type="text" id="don-org" placeholder="LSODance Foundation" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"></div>
+                <div><label class="block text-sm font-medium text-gray-700">EIN (for giving statements)</label><input type="text" id="don-ein" placeholder="XX-XXXXXXX" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"></div>
+            </div>
+        </div>
+
         <div class="flex justify-end">
             <button onclick="saveSettings()" class="inline-flex items-center px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
                 <i class="fas fa-save mr-2"></i>Save Settings
@@ -145,7 +202,7 @@
 
 {% block extra_js %}
 <script>
-let hasToken = false, hasWebhookKey = false;
+let hasToken = false, hasWebhookKey = false, hasSmsToken = false;
 
 function showMsg(text, ok) {
     const m = document.getElementById('status-msg');
@@ -195,6 +252,26 @@ async function loadSettings() {
 
         renderQR(s.zelle_qr || '');
         document.getElementById('webhook-url').value = window.location.origin + '/api/webhooks/square';
+
+        // SMS
+        document.getElementById('sms-enabled').checked = s.sms_enabled === '1';
+        document.getElementById('sms-sid').value = s.sms_twilio_sid || '';
+        hasSmsToken = !!s.sms_twilio_token;
+        const stk = document.getElementById('sms-token');
+        stk.value = ''; stk.placeholder = hasSmsToken ? 'Token saved (leave blank to keep)' : 'Auth token';
+        document.getElementById('sms-from').value = s.sms_from_number || '';
+        // Reminders
+        document.getElementById('rem-enabled').checked = s.reminders_auto_enabled === '1';
+        document.getElementById('rem-day').value = s.reminders_day_of_month || '1';
+        document.getElementById('rem-min').value = s.reminders_min_balance || '0';
+        document.getElementById('rem-sms').checked = s.reminders_send_sms === '1';
+        // Late fees
+        document.getElementById('late-amount').value = s.late_fee_amount || '0';
+        document.getElementById('late-min').value = s.late_fee_min_balance || '0';
+        // Donations
+        document.getElementById('don-enabled').checked = s.donations_enabled === '1';
+        document.getElementById('don-org').value = s.donations_org_name || '';
+        document.getElementById('don-ein').value = s.donations_ein || '';
     } catch (err) {
         console.error('Failed to load settings:', err);
     }
@@ -217,6 +294,22 @@ async function saveSettings() {
     if (token) body.payments_square_access_token = token;
     const wkey = document.getElementById('square-webhook-key').value.trim();
     if (wkey) body.payments_square_webhook_signature_key = wkey;
+
+    // SMS + reminders + late fees + donations
+    body.sms_enabled = document.getElementById('sms-enabled').checked ? '1' : '0';
+    body.sms_twilio_sid = document.getElementById('sms-sid').value.trim();
+    body.sms_from_number = document.getElementById('sms-from').value.trim();
+    const smsTok = document.getElementById('sms-token').value.trim();
+    if (smsTok) body.sms_twilio_token = smsTok;
+    body.reminders_auto_enabled = document.getElementById('rem-enabled').checked ? '1' : '0';
+    body.reminders_day_of_month = document.getElementById('rem-day').value || '1';
+    body.reminders_min_balance = document.getElementById('rem-min').value || '0';
+    body.reminders_send_sms = document.getElementById('rem-sms').checked ? '1' : '0';
+    body.late_fee_amount = document.getElementById('late-amount').value || '0';
+    body.late_fee_min_balance = document.getElementById('late-min').value || '0';
+    body.donations_enabled = document.getElementById('don-enabled').checked ? '1' : '0';
+    body.donations_org_name = document.getElementById('don-org').value.trim();
+    body.donations_ein = document.getElementById('don-ein').value.trim();
 
     try {
         const res = await fetch('/api/settings/payments', {
@@ -278,6 +371,16 @@ async function testSquare() {
 function copyWebhook() {
     const f = document.getElementById('webhook-url');
     navigator.clipboard.writeText(f.value).then(() => showMsg('Webhook URL copied', true));
+}
+
+async function testSms() {
+    const el = document.getElementById('sms-test-result');
+    el.textContent = 'Testing…'; el.className = 'ml-3 text-sm text-gray-500';
+    try {
+        const res = await fetch('/api/settings/sms/test', {method: 'POST'});
+        const d = await res.json();
+        el.textContent = d.message; el.className = 'ml-3 text-sm ' + (d.ok ? 'text-green-600' : 'text-red-600');
+    } catch { el.textContent = 'Network error'; el.className = 'ml-3 text-sm text-red-600'; }
 }
 
 loadSettings();

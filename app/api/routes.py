@@ -1,6 +1,7 @@
 """REST API routes for AttenDANCE system."""
 
 import logging
+import os
 import secrets
 from datetime import date, datetime, timedelta
 
@@ -32,10 +33,13 @@ from app.models import (
     Costume,
     CostumeAssignment,
     DanceClass,
+    Donation,
     Family,
     Location,
     Message,
     ParentStudent,
+    PaymentPlan,
+    PaymentPlanInstallment,
     PendingPayment,
     Performance,
     PerformanceAssignment,
@@ -1428,12 +1432,21 @@ PAYMENT_SETTINGS_KEYS = [
     'payments_square_enabled', 'payments_square_access_token',
     'payments_square_location_id', 'payments_square_environment',
     'payments_square_webhook_signature_key',
+    # SMS / Twilio
+    'sms_enabled', 'sms_twilio_sid', 'sms_twilio_token', 'sms_from_number',
+    # Automated reminders
+    'reminders_auto_enabled', 'reminders_day_of_month', 'reminders_min_balance', 'reminders_send_sms',
+    # Late fees
+    'late_fee_amount', 'late_fee_min_balance',
+    # Donations / Foundation
+    'donations_enabled', 'donations_org_name', 'donations_ein',
 ]
 
 # Secret settings: encrypted at rest, masked on read
 SECRET_SETTINGS_KEYS = {
     'payments_square_access_token',
     'payments_square_webhook_signature_key',
+    'sms_twilio_token',
 }
 
 DEFAULT_ZELLE_MEMO = "Put your dancer's full name in the memo so we can match your payment."
@@ -1876,16 +1889,32 @@ def my_payments():
                .order_by(desc(PendingPayment.created_at)).limit(50).all())
 
     history = []
+    plans = []
     if student_ids:
         txns = (Transaction.query
                 .filter(Transaction.student_id.in_(student_ids), Transaction.type == 'payment')
                 .order_by(desc(Transaction.transaction_date), desc(Transaction.created_at))
                 .limit(50).all())
         history = [transaction_to_dict(t) for t in txns]
+        plan_rows = (PaymentPlan.query
+                     .filter(PaymentPlan.student_id.in_(student_ids), PaymentPlan.is_active == True)  # noqa: E712
+                     .all())
+        plans = [_plan_to_dict(p) for p in plan_rows]
 
     return jsonify({
         'pending': [_pending_to_dict(p) for p in pending],
         'history': history,
+        'plans': plans,
+    })
+
+
+@bp.route('/donation-info', methods=['GET'])
+@login_required
+def donation_info():
+    """Whether the Foundation accepts donations via the portal (for parents)."""
+    return jsonify({
+        'enabled': Setting.get_bool('donations_enabled'),
+        'org_name': Setting.get('donations_org_name', '') or 'LSODance Foundation',
     })
 
 
@@ -1901,34 +1930,56 @@ def _reminder_body(name, balance):
     )
 
 
+def _student_phone(s):
+    return s.parent_phone or (s.family.primary_phone if s.family else None) or s.phone
+
+
+def _notify_student_balance(s, balance, email_ok, sms_ok):
+    """Send a balance reminder to one student's parent via the available channels.
+    Returns a set of channels actually used."""
+    from app import email as email_service
+    from app import sms as sms_service
+    used = set()
+    body = _reminder_body(s.full_name, balance)
+    if email_ok:
+        to = s.parent_email or s.email
+        if to:
+            try:
+                email_service.send_email(to, f'Balance reminder — {STUDIO_NAME}', body)
+                used.add('email')
+            except Exception:
+                logger.exception("Reminder email failed for %s", s.full_name)
+    if sms_ok:
+        phone = _student_phone(s)
+        if phone and sms_service.send_sms(phone, body):
+            used.add('sms')
+    return used
+
+
 @bp.route('/balances/send-reminders', methods=['POST'])
 @login_required
 def send_balance_reminders():
-    """Email every student with an outstanding balance a reminder."""
+    """Send a balance reminder to every student who owes, via email and/or SMS."""
     err = _admin_only()
     if err:
         return err
     from app import email as email_service
-    if not email_service.is_configured():
-        return jsonify({'error': 'Email (SMTP) is not configured'}), 400
+    from app import sms as sms_service
+    email_ok = email_service.is_configured()
+    sms_ok = sms_service.is_configured()
+    if not email_ok and not sms_ok:
+        return jsonify({'error': 'Configure email (SMTP) or SMS (Twilio) first'}), 400
 
     students = Student.query.filter_by(is_active=True).all()
     balances = calc_balance_bulk([s.id for s in students])
     sent, skipped = 0, 0
     for s in students:
-        bal = balances[s.id]['balance']
-        if bal <= 0:
+        if balances[s.id]['balance'] <= 0:
             continue
-        to = s.parent_email or s.email
-        if not to:
-            skipped += 1
-            continue
-        try:
-            email_service.send_email(to, f'Balance reminder — {STUDIO_NAME}',
-                                     _reminder_body(s.full_name, bal))
+        used = _notify_student_balance(s, balances[s.id]['balance'], email_ok, sms_ok)
+        if used:
             sent += 1
-        except Exception:
-            logger.exception("Failed to send reminder for %s", s.full_name)
+        else:
             skipped += 1
 
     AuditLog.record(current_user.id, 'reminders.send', f'Sent {sent} balance reminders ({skipped} skipped)')
@@ -1943,23 +1994,21 @@ def send_student_reminder(student_id):
     if err:
         return err
     from app import email as email_service
-    if not email_service.is_configured():
-        return jsonify({'error': 'Email (SMTP) is not configured'}), 400
+    from app import sms as sms_service
+    email_ok = email_service.is_configured()
+    sms_ok = sms_service.is_configured()
+    if not email_ok and not sms_ok:
+        return jsonify({'error': 'Configure email (SMTP) or SMS (Twilio) first'}), 400
     student = Student.query.get_or_404(student_id)
     bal = calc_balance(student_id)['balance']
     if bal <= 0:
         return jsonify({'error': 'No outstanding balance'}), 400
-    to = student.parent_email or student.email
-    if not to:
-        return jsonify({'error': 'No email on file for this student'}), 400
-    try:
-        email_service.send_email(to, f'Balance reminder — {STUDIO_NAME}',
-                                 _reminder_body(student.full_name, bal))
-    except Exception as e:
-        return jsonify({'error': f'Send failed: {e}'}), 500
-    AuditLog.record(current_user.id, 'reminders.send', f'Sent reminder to {student.full_name}')
+    used = _notify_student_balance(student, bal, email_ok, sms_ok)
+    if not used:
+        return jsonify({'error': 'No email or phone on file for this student'}), 400
+    AuditLog.record(current_user.id, 'reminders.send', f'Sent reminder to {student.full_name} via {", ".join(used)}')
     db.session.commit()
-    return jsonify({'message': f'Reminder sent to {to}'})
+    return jsonify({'message': f'Reminder sent via {", ".join(used)}'})
 
 
 # ── Square webhook (auto-reconcile online invoice payments) ──────────
@@ -3014,3 +3063,262 @@ def delete_ticket_order(oid):
     db.session.delete(o)
     db.session.commit()
     return jsonify({'message': 'Order removed'})
+
+
+# ── SMS test + cron + late fees ─────────────────────────────────────
+
+@bp.route('/settings/sms/test', methods=['POST'])
+@login_required
+def test_sms_connection():
+    err = _admin_only()
+    if err:
+        return err
+    from app import sms as sms_service
+    ok, message = sms_service.test_connection()
+    return jsonify({'ok': ok, 'message': message}), (200 if ok else 400)
+
+
+@bp.route('/cron/run', methods=['POST'])
+def cron_run():
+    """Token-protected endpoint for external schedulers to run recurring charges
+    and auto-reminders. Token from Setting 'cron_token' or env CRON_TOKEN."""
+    token = Setting.get('cron_token', '') or current_app.config.get('CRON_TOKEN') or os.environ.get('CRON_TOKEN', '')
+    provided = request.args.get('token') or request.headers.get('X-Cron-Token', '')
+    if not token or provided != token:
+        return jsonify({'error': 'Invalid or missing cron token'}), 403
+    from app import _process_auto_reminders, _process_recurring_charges
+    _process_recurring_charges()
+    _process_auto_reminders()
+    return jsonify({'status': 'ran recurring charges + auto reminders'})
+
+
+@bp.route('/balances/apply-late-fees', methods=['POST'])
+@login_required
+def apply_late_fees():
+    """Apply a late fee charge to every student over a balance threshold."""
+    err = _admin_only()
+    if err:
+        return err
+    data = request.get_json() or {}
+    try:
+        amount = round(float(data.get('amount') or Setting.get('late_fee_amount', '0') or 0), 2)
+        min_balance = round(float(data.get('min_balance') if data.get('min_balance') is not None
+                                  else (Setting.get('late_fee_min_balance', '0') or 0)), 2)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid amount or threshold'}), 400
+    if amount <= 0:
+        return jsonify({'error': 'Set a late fee amount greater than $0'}), 400
+
+    students = Student.query.filter_by(is_active=True).all()
+    balances = calc_balance_bulk([s.id for s in students])
+    applied = 0
+    for s in students:
+        if balances[s.id]['balance'] <= min_balance:
+            continue
+        db.session.add(Transaction(
+            student_id=s.id, type='charge', amount=amount, category='late fee',
+            payment_method='n/a', description='Late fee', transaction_date=date.today(),
+            created_by=current_user.id,
+        ))
+        applied += 1
+    AuditLog.record(current_user.id, 'late_fee.apply',
+                    f'Applied ${amount:.2f} late fee to {applied} students (balance > ${min_balance:.2f})')
+    db.session.commit()
+    return jsonify({'message': f'Applied ${amount:.2f} late fee to {applied} students', 'count': applied})
+
+
+# ── Payment plans ───────────────────────────────────────────────────
+
+def _add_months(d, n):
+    """Return date d shifted by n months, clamping the day to month length."""
+    import calendar
+    month = d.month - 1 + n
+    year = d.year + month // 12
+    month = month % 12 + 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _plan_to_dict(p):
+    insts = p.installments.order_by(PaymentPlanInstallment.seq).all()
+    return {
+        'id': p.id,
+        'student_id': p.student_id,
+        'student_name': p.student.full_name,
+        'installment_amount': f'{float(p.installment_amount):.2f}',
+        'num_installments': p.num_installments,
+        'day_of_month': p.day_of_month,
+        'note': p.note,
+        'is_active': p.is_active,
+        'total': f'{float(p.installment_amount) * p.num_installments:.2f}',
+        'paid_count': sum(1 for i in insts if i.paid),
+        'installments': [{
+            'id': i.id, 'seq': i.seq, 'due_date': i.due_date.isoformat(),
+            'amount': f'{float(i.amount):.2f}', 'paid': i.paid,
+        } for i in insts],
+    }
+
+
+@bp.route('/payment-plans', methods=['GET'])
+@login_required
+def list_payment_plans():
+    err = _admin_only()
+    if err:
+        return err
+    plans = PaymentPlan.query.filter_by(is_active=True).order_by(desc(PaymentPlan.created_at)).all()
+    return jsonify({'plans': [_plan_to_dict(p) for p in plans]})
+
+
+@bp.route('/students/<int:student_id>/payment-plan', methods=['GET'])
+@login_required
+def get_payment_plan(student_id):
+    if current_user.is_parent and student_id not in _parent_student_ids(current_user):
+        return jsonify({'error': 'Not authorized'}), 403
+    plan = PaymentPlan.query.filter_by(student_id=student_id, is_active=True).order_by(desc(PaymentPlan.created_at)).first()
+    return jsonify({'plan': _plan_to_dict(plan) if plan else None})
+
+
+@bp.route('/students/<int:student_id>/payment-plan', methods=['POST'])
+@login_required
+def create_payment_plan(student_id):
+    err = _admin_only()
+    if err:
+        return err
+    Student.query.get_or_404(student_id)
+    data = request.get_json() or {}
+    try:
+        amount = round(float(data.get('installment_amount')), 2)
+        num = int(data.get('num_installments'))
+        day = int(data.get('day_of_month', 1))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'installment_amount, num_installments, day_of_month are required'}), 400
+    if amount <= 0 or num <= 0 or not (1 <= day <= 28):
+        return jsonify({'error': 'Amounts must be positive; day must be 1–28'}), 400
+
+    # Deactivate any prior active plan
+    PaymentPlan.query.filter_by(student_id=student_id, is_active=True).update({'is_active': False})
+
+    plan = PaymentPlan(student_id=student_id, installment_amount=amount, num_installments=num,
+                       day_of_month=day, note=(data.get('note') or '').strip() or None,
+                       created_by=current_user.id)
+    db.session.add(plan)
+    db.session.flush()
+
+    today = date.today()
+    first = today.replace(day=day) if today.day <= day else _add_months(today.replace(day=day), 1)
+    for i in range(num):
+        db.session.add(PaymentPlanInstallment(plan_id=plan.id, seq=i + 1,
+                                              due_date=_add_months(first, i), amount=amount))
+    AuditLog.record(current_user.id, 'payment_plan.create',
+                    f'Plan for {plan.student.full_name}: ${amount:.2f} × {num}')
+    db.session.commit()
+    return jsonify(_plan_to_dict(plan)), 201
+
+
+@bp.route('/payment-plan-installments/<int:iid>/toggle-paid', methods=['POST'])
+@login_required
+def toggle_installment_paid(iid):
+    err = _admin_only()
+    if err:
+        return err
+    i = PaymentPlanInstallment.query.get_or_404(iid)
+    i.paid = not i.paid
+    i.paid_at = datetime.utcnow() if i.paid else None
+    db.session.commit()
+    return jsonify({'message': 'Updated', 'paid': i.paid})
+
+
+@bp.route('/payment-plans/<int:pid>', methods=['DELETE'])
+@login_required
+def delete_payment_plan(pid):
+    err = _admin_only()
+    if err:
+        return err
+    p = PaymentPlan.query.get_or_404(pid)
+    p.is_active = False
+    db.session.commit()
+    return jsonify({'message': 'Payment plan ended'})
+
+
+# ── Donations (Foundation) ──────────────────────────────────────────
+
+def _donation_to_dict(d):
+    return {
+        'id': d.id,
+        'donor_name': d.donor_name,
+        'donor_email': d.donor_email,
+        'amount': f'{float(d.amount):.2f}',
+        'method': d.method,
+        'note': d.note,
+        'status': d.status,
+        'donation_date': d.donation_date.isoformat(),
+    }
+
+
+@bp.route('/donations', methods=['GET'])
+@login_required
+def list_donations():
+    err = _admin_only()
+    if err:
+        return err
+    status = request.args.get('status', '').strip()
+    q = Donation.query
+    if status:
+        q = q.filter_by(status=status)
+    rows = q.order_by(desc(Donation.donation_date), desc(Donation.created_at)).limit(500).all()
+    total = sum(float(d.amount) for d in rows if d.status == 'recorded')
+    return jsonify({'donations': [_donation_to_dict(d) for d in rows], 'recorded_total': f'{total:.2f}'})
+
+
+@bp.route('/donations', methods=['POST'])
+@login_required
+def create_donation():
+    """Admin records a donation (status recorded); a parent submits one (pending)."""
+    data = request.get_json() or {}
+    try:
+        amount = round(float(data.get('amount')), 2)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'A valid amount is required'}), 400
+    if amount <= 0:
+        return jsonify({'error': 'Amount must be greater than zero'}), 400
+
+    is_parent = current_user.is_parent
+    d = Donation(
+        donor_name=(data.get('donor_name') or (current_user.full_name if is_parent else '')).strip() or None,
+        donor_email=(data.get('donor_email') or (current_user.email if is_parent else '')).strip() or None,
+        amount=amount,
+        method=(data.get('method') or '').strip().lower() or None,
+        note=(data.get('note') or '').strip() or None,
+        status='pending' if is_parent else 'recorded',
+        parent_id=current_user.id if is_parent else None,
+        donation_date=date.today(),
+    )
+    db.session.add(d)
+    db.session.commit()
+    msg = ('Thank you! Your donation was submitted — the Foundation will confirm it.'
+           if is_parent else 'Donation recorded')
+    return jsonify({'message': msg, 'donation': _donation_to_dict(d)}), 201
+
+
+@bp.route('/donations/<int:did>/confirm', methods=['POST'])
+@login_required
+def confirm_donation(did):
+    err = _admin_only()
+    if err:
+        return err
+    d = Donation.query.get_or_404(did)
+    d.status = 'recorded'
+    db.session.commit()
+    return jsonify({'message': 'Donation confirmed'})
+
+
+@bp.route('/donations/<int:did>', methods=['DELETE'])
+@login_required
+def delete_donation(did):
+    err = _admin_only()
+    if err:
+        return err
+    d = Donation.query.get_or_404(did)
+    db.session.delete(d)
+    db.session.commit()
+    return jsonify({'message': 'Donation removed'})

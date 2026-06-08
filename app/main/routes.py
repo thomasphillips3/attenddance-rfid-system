@@ -3,7 +3,7 @@
 from datetime import date, timedelta
 from functools import wraps
 
-from flask import redirect, render_template, url_for
+from flask import redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import desc, func
 
@@ -14,7 +14,9 @@ from app.models import (
     Attendance,
     ClassEnrollment,
     DanceClass,
+    Donation,
     Family,
+    Setting,
     Student,
     Transaction,
 )
@@ -331,6 +333,97 @@ def recital_page():
     students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
     classes = DanceClass.query.filter_by(is_active=True).order_by(DanceClass.name).all()
     return render_template('recital/manage.html', students=students, classes=classes)
+
+
+@bp.route('/donations')
+@admin_required
+def donations_page():
+    return render_template('donations/admin.html')
+
+
+def _parent_owns(student):
+    return (not current_user.is_parent) or (student.id in {s.id for s in current_user.get_children()})
+
+
+def _year_arg():
+    from datetime import date as _date
+    try:
+        return int(request.args.get('year', _date.today().year))
+    except (TypeError, ValueError):
+        return _date.today().year
+
+
+def _statement_rows(student_ids, year):
+    """Return (prior_balance, rows, total_charges, total_payments) for the year."""
+    from datetime import date as _date
+    start = _date(year, 1, 1)
+    end = _date(year, 12, 31)
+    prior = Transaction.query.filter(Transaction.student_id.in_(student_ids),
+                                     Transaction.transaction_date < start).all()
+    prior_balance = sum(float(t.amount) if t.type == 'charge' else -float(t.amount) for t in prior)
+    txns = (Transaction.query
+            .filter(Transaction.student_id.in_(student_ids),
+                    Transaction.transaction_date >= start, Transaction.transaction_date <= end)
+            .order_by(Transaction.transaction_date, Transaction.created_at).all())
+    running = prior_balance
+    rows, tc, tp = [], 0.0, 0.0
+    for t in txns:
+        amt = float(t.amount)
+        if t.type == 'charge':
+            running += amt
+            tc += amt
+        else:
+            running -= amt
+            tp += amt
+        rows.append({'t': t, 'running': running})
+    return prior_balance, rows, tc, tp
+
+
+@bp.route('/students/<int:student_id>/statement')
+@login_required
+def student_statement(student_id):
+    student = Student.query.get_or_404(student_id)
+    if not _parent_owns(student):
+        return redirect(url_for('main.parent_dashboard'))
+    year = _year_arg()
+    prior, rows, tc, tp = _statement_rows([student.id], year)
+    return render_template('statements/student.html', student=student, year=year,
+                           prior_balance=prior, rows=rows, total_charges=tc, total_payments=tp,
+                           ending_balance=prior + tc - tp)
+
+
+@bp.route('/families/<int:family_id>/statement')
+@staff_required
+def family_statement(family_id):
+    family = Family.query.get_or_404(family_id)
+    students = family.students.all()
+    year = _year_arg()
+    ids = [s.id for s in students] or [-1]
+    prior, rows, tc, tp = _statement_rows(ids, year)
+    return render_template('statements/family.html', family=family, students=students, year=year,
+                           prior_balance=prior, rows=rows, total_charges=tc, total_payments=tp,
+                           ending_balance=prior + tc - tp)
+
+
+@bp.route('/giving-statement')
+@login_required
+def giving_statement():
+    from datetime import date as _date
+    year = _year_arg()
+    email = (request.args.get('email') or '').strip()
+    if current_user.is_parent:
+        email = current_user.email  # parents only see their own
+    if not email:
+        return redirect(url_for('main.dashboard'))
+    start, end = _date(year, 1, 1), _date(year, 12, 31)
+    donations = (Donation.query
+                 .filter(Donation.donor_email == email, Donation.status == 'recorded',
+                         Donation.donation_date >= start, Donation.donation_date <= end)
+                 .order_by(Donation.donation_date).all())
+    total = sum(float(d.amount) for d in donations)
+    return render_template('statements/giving.html', email=email, year=year, donations=donations,
+                           total=total, org_name=Setting.get('donations_org_name', '') or 'LSODance Foundation',
+                           ein=Setting.get('donations_ein', ''))
 
 
 @bp.route('/waivers')

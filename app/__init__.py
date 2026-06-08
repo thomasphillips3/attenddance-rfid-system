@@ -58,6 +58,64 @@ def _process_recurring_charges():
     db.session.commit()
 
 
+def _process_auto_reminders():
+    """Send balance reminders if today matches the configured day and we haven't
+    already run this month. Driven by Settings (admin-configurable)."""
+    from datetime import date
+
+    from app import email as email_service
+    from app import sms as sms_service
+    from app.helpers import calc_balance_bulk
+    from app.models import Setting, Student
+
+    if not Setting.get_bool('reminders_auto_enabled'):
+        return
+    today = date.today()
+    try:
+        day = int(Setting.get('reminders_day_of_month', '1') or 1)
+    except ValueError:
+        day = 1
+    if today.day != day:
+        return
+    ym = today.strftime('%Y-%m')
+    if Setting.get('reminders_last_run', '') == ym:
+        return  # already ran this month
+
+    try:
+        min_bal = float(Setting.get('reminders_min_balance', '0') or 0)
+    except ValueError:
+        min_bal = 0.0
+    send_sms_too = Setting.get_bool('reminders_send_sms')
+
+    students = Student.query.filter_by(is_active=True).all()
+    balances = calc_balance_bulk([s.id for s in students])
+    email_ok = email_service.is_configured()
+    sms_ok = send_sms_too and sms_service.is_configured()
+    sent = 0
+    for s in students:
+        bal = balances[s.id]['balance']
+        if bal <= max(0.0, min_bal):
+            continue
+        body = (f"Hi, this is a friendly reminder that {s.full_name} has a balance of "
+                f"${bal:.2f} with LaShelle's School of Dance. You can pay any time in the "
+                f"parent portal. Thank you!")
+        if email_ok:
+            to = s.parent_email or s.email
+            if to:
+                try:
+                    email_service.send_email(to, "Balance reminder — LaShelle's School of Dance", body)
+                    sent += 1
+                except Exception:
+                    logger.exception("Auto-reminder email failed for %s", s.full_name)
+        if sms_ok:
+            phone = s.parent_phone or (s.family.primary_phone if s.family else None) or s.phone
+            if phone:
+                sms_service.send_sms(phone, body)
+
+    Setting.set('reminders_last_run', ym)
+    logger.info("Auto-reminders processed: %d students notified", sent)
+
+
 def create_app(config_name=None):
     """Application factory function."""
     if config_name is None:
@@ -113,6 +171,10 @@ def create_app(config_name=None):
             logger.info("Default admin user created (username: admin, password: admin123)")
 
         _process_recurring_charges()
+        try:
+            _process_auto_reminders()
+        except Exception:
+            logger.exception("Auto-reminder processing failed at startup")
 
     @app.errorhandler(404)
     def not_found_error(error):

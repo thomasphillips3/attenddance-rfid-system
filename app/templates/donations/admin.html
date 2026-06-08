@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex items-center justify-between flex-wrap gap-3">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900"><i class="fas fa-hand-holding-heart text-primary-500 mr-2"></i>Donations</h1>
+                <p class="mt-1 text-sm text-gray-600">Foundation gifts &amp; year-end giving statements</p>
+            </div>
+            <button onclick="recordDonation()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-plus mr-2"></i>Record Donation</button>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div id="msg" class="hidden mb-4 p-3 rounded-md text-sm font-medium"></div>
+        <div class="bg-white shadow rounded-lg p-4 mb-6 flex items-center justify-between flex-wrap gap-3">
+            <div class="text-sm text-gray-600">Recorded total: <span id="rec-total" class="font-bold text-gray-900">$0.00</span></div>
+            <div class="flex items-center gap-2">
+                <input id="gs-email" placeholder="donor email" class="border border-gray-300 rounded px-2 py-1 text-sm">
+                <input id="gs-year" type="number" value="2026" class="border border-gray-300 rounded px-2 py-1 text-sm w-24">
+                <button onclick="openGiving()" class="px-3 py-1 bg-gray-700 text-white rounded text-sm">Giving statement</button>
+            </div>
+        </div>
+        <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50"><tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Donor</th>
+                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Action</th>
+                </tr></thead>
+                <tbody id="don-table" class="bg-white divide-y divide-gray-100"><tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">Loading…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;m.className='mb-4 p-3 rounded-md text-sm font-medium '+(ok?'bg-green-100 text-green-800':'bg-red-100 text-red-800');m.classList.remove('hidden');setTimeout(()=>m.classList.add('hidden'),4000);}
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+async function load(){
+    const data=await (await fetch('/api/donations')).json();
+    document.getElementById('rec-total').textContent='$'+(data.recorded_total||'0.00');
+    const rows=data.donations||[];
+    const tb=document.getElementById('don-table');
+    if(!rows.length){tb.innerHTML='<tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">No donations yet.</td></tr>';return;}
+    const badge=s=>({recorded:'bg-green-100 text-green-800',pending:'bg-amber-100 text-amber-800',rejected:'bg-gray-200 text-gray-600'}[s]||'');
+    tb.innerHTML=rows.map(d=>`<tr>
+        <td class="px-4 py-3 text-sm">${new Date(d.donation_date+'T00:00').toLocaleDateString()}</td>
+        <td class="px-4 py-3 text-sm">${esc(d.donor_name||'—')}<div class="text-xs text-gray-400">${esc(d.donor_email||'')}</div></td>
+        <td class="px-4 py-3 text-sm text-right font-semibold">$${d.amount}</td>
+        <td class="px-4 py-3 text-sm capitalize">${esc(d.method||'—')}</td>
+        <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-full text-xs ${badge(d.status)}">${d.status}</span></td>
+        <td class="px-4 py-3 text-sm text-right">
+            ${d.status==='pending'?`<button onclick="confirmDon(${d.id})" class="text-xs text-green-600 hover:underline mr-2">Confirm</button>`:''}
+            <button onclick="delDon(${d.id})" class="text-xs text-red-600 hover:underline">Delete</button>
+        </td></tr>`).join('');
+}
+async function recordDonation(){
+    const donor_name=prompt('Donor name:')||'';
+    const donor_email=prompt('Donor email (for giving statement):')||'';
+    const amount=prompt('Amount ($):');if(!amount)return;
+    const method=prompt('Method (cash, check, zelle, cashapp, square, other):')||'';
+    const r=await fetch('/api/donations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({donor_name,donor_email,amount,method})});
+    const d=await r.json();msg(r.ok?'Recorded':d.error,r.ok);if(r.ok)load();
+}
+async function confirmDon(id){const r=await fetch(`/api/donations/${id}/confirm`,{method:'POST'});if(r.ok)load();}
+async function delDon(id){if(!confirm('Delete this donation?'))return;const r=await fetch(`/api/donations/${id}`,{method:'DELETE'});if(r.ok)load();}
+function openGiving(){const email=document.getElementById('gs-email').value.trim();const year=document.getElementById('gs-year').value;if(!email){msg('Enter a donor email',false);return;}window.open(`/giving-statement?email=${encodeURIComponent(email)}&year=${year}`,'_blank');}
+load();
+</script>
+{% endblock %}

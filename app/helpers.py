@@ -177,6 +177,7 @@ def student_to_dict(student) -> dict:
         'emergency_contact_name': student.emergency_contact_name,
         'emergency_contact_phone': student.emergency_contact_phone,
         'parent_email': student.parent_email,
+        'parent_phone': student.parent_phone,
         'school': student.school,
         'grade': student.grade,
         'allergies': student.allergies,
@@ -285,7 +286,7 @@ def recurring_to_dict(rc) -> dict:
 # Student fields that accept simple string-or-None values
 STUDENT_STRING_FIELDS = [
     'first_name', 'last_name', 'email', 'phone',
-    'emergency_contact_name', 'emergency_contact_phone', 'parent_email',
+    'emergency_contact_name', 'emergency_contact_phone', 'parent_email', 'parent_phone',
     'school', 'grade', 'allergies', 'special_needs',
     'height', 'weight', 'shoe_size', 'shirt_size', 'pants_size',
     'leotard_size', 'dress_size', 'waist', 'girth', 'inseam',

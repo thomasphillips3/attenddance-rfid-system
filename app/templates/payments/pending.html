@@ -19,6 +19,9 @@
                     <button onclick="sendReminders()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-amber-600 hover:bg-amber-700">
                         <i class="fas fa-bell mr-2"></i>Send Balance Reminders
                     </button>
+                    <button onclick="applyLateFees()" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                        <i class="fas fa-clock mr-2"></i>Apply Late Fees
+                    </button>
                 </div>
             </div>
         </div>
@@ -44,6 +47,15 @@
                     <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">Loading...</td></tr>
                 </tbody>
             </table>
+        </div>
+
+        <!-- Payment plans -->
+        <div class="mt-10">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-lg font-semibold text-gray-900">Payment Plans</h2>
+                <button onclick="createPlan()" class="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md shadow-sm text-xs font-medium text-white bg-primary-600 hover:bg-primary-700"><i class="fas fa-plus mr-1"></i>New Plan</button>
+            </div>
+            <div id="plans-list" class="space-y-3"><p class="text-gray-500 text-sm">Loading…</p></div>
         </div>
 
         <!-- Audit log -->
@@ -176,7 +188,71 @@ async function loadAudit() {
     }
 }
 
+async function applyLateFees() {
+    const amount = prompt('Late fee amount ($) — blank uses the Settings default:');
+    if (amount === null) return;
+    const min = prompt('Only charge students whose balance is over ($):', '0');
+    if (min === null) return;
+    if (!confirm('Apply this late fee to all qualifying students?')) return;
+    try {
+        const res = await fetch('/api/balances/apply-late-fees', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({amount: amount || undefined, min_balance: min || 0}),
+        });
+        const d = await res.json();
+        showMsg(res.ok ? d.message : (d.error || 'Error'), res.ok);
+        loadAudit();
+    } catch { showMsg('Network error', false); }
+}
+
+let PLAN_STUDENTS = [];
+async function loadPlans() {
+    const el = document.getElementById('plans-list');
+    try {
+        const data = await (await fetch('/api/payment-plans')).json();
+        const plans = data.plans || [];
+        if (!plans.length) { el.innerHTML = '<p class="text-gray-500 text-sm">No active payment plans.</p>'; return; }
+        el.innerHTML = plans.map(p => `
+            <div class="bg-white shadow rounded-lg p-4">
+                <div class="flex items-center justify-between mb-2">
+                    <div><span class="font-medium text-gray-900">${esc(p.student_name)}</span>
+                        <span class="text-sm text-gray-500 ml-2">$${p.installment_amount} × ${p.num_installments} (total $${p.total}) · ${p.paid_count}/${p.num_installments} paid</span>
+                        ${p.note ? `<div class="text-xs text-gray-400">${esc(p.note)}</div>` : ''}</div>
+                    <button onclick="endPlan(${p.id})" class="text-xs text-red-600 hover:underline">End plan</button>
+                </div>
+                <div class="flex flex-wrap gap-2">${p.installments.map(i => `
+                    <button onclick="toggleInst(${i.id})" class="px-2 py-1 rounded text-xs border ${i.paid ? 'bg-green-100 text-green-800 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'}">
+                        #${i.seq} ${new Date(i.due_date+'T00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'})} · $${i.amount}${i.paid ? ' ✓' : ''}
+                    </button>`).join('')}</div>
+            </div>`).join('');
+    } catch { el.innerHTML = '<p class="text-red-500 text-sm">Failed to load.</p>'; }
+}
+async function createPlan() {
+    if (!PLAN_STUDENTS.length) {
+        const data = await (await fetch('/api/balances')).json();
+        PLAN_STUDENTS = (data.balances || []).map(b => ({id: b.student_id, name: b.student_name, balance: b.balance}));
+    }
+    const list = PLAN_STUDENTS.map((s, i) => `${i+1}. ${s.name} (owes $${s.balance})`).join('\n');
+    const pick = prompt(`Which student? Enter number:\n${list}`);
+    const s = PLAN_STUDENTS[parseInt(pick) - 1];
+    if (!s) return;
+    const amount = prompt(`Installment amount for ${s.name} ($):`); if (!amount) return;
+    const num = prompt('Number of installments:'); if (!num) return;
+    const day = prompt('Day of month due (1-28):', '1') || '1';
+    const note = prompt('Note (optional):') || '';
+    const res = await fetch(`/api/students/${s.id}/payment-plan`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({installment_amount: amount, num_installments: num, day_of_month: day, note}),
+    });
+    const d = await res.json();
+    showMsg(res.ok ? 'Payment plan created' : (d.error || 'Error'), res.ok);
+    if (res.ok) loadPlans();
+}
+async function toggleInst(id) { const r = await fetch(`/api/payment-plan-installments/${id}/toggle-paid`, {method: 'POST'}); if (r.ok) loadPlans(); }
+async function endPlan(id) { if (!confirm('End this payment plan?')) return; const r = await fetch(`/api/payment-plans/${id}`, {method: 'DELETE'}); if (r.ok) loadPlans(); }
+
 loadPending();
 loadAudit();
+loadPlans();
 </script>
 {% endblock %}

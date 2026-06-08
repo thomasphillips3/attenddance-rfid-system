@@ -163,6 +163,10 @@
                            class="nav-item {% if request.endpoint == 'main.waivers_page' %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                             <i class="fas fa-file-signature mr-2"></i>Forms
                         </a>
+                        <a href="{{ url_for('main.donations_page') }}"
+                           class="nav-item {% if request.endpoint == 'main.donations_page' %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                            <i class="fas fa-hand-holding-heart mr-2"></i>Donations
+                        </a>
                         <a href="{{ url_for('main.locations_page') }}"
                            class="nav-item {% if request.endpoint and 'location' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                             <i class="fas fa-map-marker-alt mr-2"></i>Locations
@@ -301,6 +305,10 @@
                 <a href="{{ url_for('main.waivers_page') }}"
                    class="{% if request.endpoint == 'main.waivers_page' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-file-signature mr-2"></i>Forms
+                </a>
+                <a href="{{ url_for('main.donations_page') }}"
+                   class="{% if request.endpoint == 'main.donations_page' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
+                    <i class="fas fa-hand-holding-heart mr-2"></i>Donations
                 </a>
                 <a href="{{ url_for('main.locations_page') }}"
                    class="{% if request.endpoint and 'location' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">

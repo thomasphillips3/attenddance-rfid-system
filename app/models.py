@@ -142,6 +142,7 @@ class Student(db.Model):
     emergency_contact_name = db.Column(db.String(100))
     emergency_contact_phone = db.Column(db.String(20))
     parent_email = db.Column(db.String(120))
+    parent_phone = db.Column(db.String(20))
     
     # RFID information
     rfid_uid = db.Column(db.String(50), unique=True, index=True)
@@ -840,3 +841,66 @@ class TicketOrder(db.Model):
 
     def __repr__(self):
         return f'<TicketOrder type={self.ticket_type_id} x{self.quantity}>'
+
+
+# ── Payment plans (hardship installments) ───────────────────────────
+
+class PaymentPlan(db.Model):
+    """An agreement to pay a balance in scheduled installments."""
+    __tablename__ = 'payment_plans'
+
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    installment_amount = db.Column(db.Numeric(10, 2), nullable=False)
+    num_installments = db.Column(db.Integer, nullable=False)
+    day_of_month = db.Column(db.Integer, default=1, nullable=False)
+    note = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    student = db.relationship('Student', backref='payment_plans')
+    installments = db.relationship('PaymentPlanInstallment', backref='plan', lazy='dynamic',
+                                   cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<PaymentPlan s={self.student_id} ${self.installment_amount}x{self.num_installments}>'
+
+
+class PaymentPlanInstallment(db.Model):
+    """One scheduled installment of a payment plan."""
+    __tablename__ = 'payment_plan_installments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('payment_plans.id'), nullable=False)
+    seq = db.Column(db.Integer, nullable=False)
+    due_date = db.Column(db.Date, nullable=False)
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    paid = db.Column(db.Boolean, default=False, nullable=False)
+    paid_at = db.Column(db.DateTime)
+
+    def __repr__(self):
+        return f'<Installment plan={self.plan_id} #{self.seq} due={self.due_date}>'
+
+
+# ── Donations (501c3 Foundation) ────────────────────────────────────
+
+class Donation(db.Model):
+    """A donation to the studio's foundation, for giving statements."""
+    __tablename__ = 'donations'
+
+    id = db.Column(db.Integer, primary_key=True)
+    donor_name = db.Column(db.String(120))
+    donor_email = db.Column(db.String(120), index=True)
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    method = db.Column(db.String(20))  # zelle, cashapp, cash, check, square, other
+    note = db.Column(db.String(200))
+    status = db.Column(db.String(20), default='recorded', nullable=False)  # recorded, pending, rejected
+    parent_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # if submitted by a logged-in parent
+    donation_date = db.Column(db.Date, default=date.today, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    parent = db.relationship('User')
+
+    def __repr__(self):
+        return f'<Donation ${self.amount} {self.status}>'
