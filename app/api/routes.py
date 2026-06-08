@@ -11,6 +11,7 @@ from sqlalchemy import desc, func
 from app import db, square_service
 from app.api import bp
 from app.helpers import (
+    allocate_family_payment,
     apply_student_fields,
     attendance_to_dict,
     build_ledger,
@@ -23,16 +24,19 @@ from app.helpers import (
 )
 from app.models import (
     Attendance,
+    AuditLog,
     ClassEnrollment,
     DanceClass,
     Family,
     Location,
     Message,
     ParentStudent,
+    PendingPayment,
     RecurringCharge,
     Rule,
     RuleAcknowledgment,
     Setting,
+    SquareInvoice,
     Student,
     Transaction,
     User,
@@ -801,19 +805,34 @@ def send_student_invoice(student_id):
     } for t in charges]
 
     due = date.today() + timedelta(days=14)
+    amount_cents = int(round(bal['balance'] * 100))
     try:
         result = square_service.send_invoice(
             student=student,
-            amount_cents=int(bal['balance'] * 100),
+            amount_cents=amount_cents,
             line_items=line_items,
             due_date=due,
         )
+        # Persist so the webhook can auto-record the payment when paid
+        inv = SquareInvoice(
+            student_id=student.id,
+            invoice_id=result['invoice_id'],
+            amount_cents=amount_cents,
+            status=result.get('status', 'SENT'),
+            public_url=result.get('invoice_url', ''),
+        )
+        db.session.add(inv)
+        AuditLog.record(current_user.id, 'invoice.send',
+                        f'Square invoice ${bal["balance"]:.2f} to {student.full_name} '
+                        f'({student.parent_email or student.email})')
+        db.session.commit()
         return jsonify({
             'message': f'Invoice sent to {student.parent_email or student.email}',
             'invoice_url': result['invoice_url'],
             'invoice_id': result['invoice_id'],
         })
     except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 
@@ -1044,10 +1063,10 @@ def send_message():
         created_by=current_user.id,
     )
 
-    mail_server = current_app.config.get('MAIL_SERVER')
-    if mail_server:
+    from app import email as email_service
+    if email_service.is_configured():
         try:
-            _send_smtp(mail_server, data['subject'].strip(), data['body'].strip(), emails)
+            email_service.send_email(emails, data['subject'].strip(), data['body'].strip())
             msg.sent = True
             msg.sent_at = datetime.utcnow()
         except Exception as e:
@@ -1110,34 +1129,6 @@ def _resolve_recipient_emails(rtype: str, recipient_filter) -> set | tuple:
         if s and (s.parent_email or s.email):
             emails.add(s.parent_email or s.email)
     return emails
-
-
-def _send_smtp(mail_server: str, subject: str, body: str, emails: set):
-    """Send emails via SMTP."""
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-
-    port = current_app.config.get('MAIL_PORT', 587)
-    smtp = smtplib.SMTP(mail_server, port)
-    if current_app.config.get('MAIL_USE_TLS', True):
-        smtp.starttls()
-    username = current_app.config.get('MAIL_USERNAME')
-    password = current_app.config.get('MAIL_PASSWORD')
-    if username and password:
-        smtp.login(username, password)
-    sender = username or 'noreply@attenddance.local'
-    for email_addr in emails:
-        m = MIMEMultipart()
-        m['From'] = sender
-        m['To'] = email_addr
-        m['Subject'] = subject
-        reply_to = current_app.config.get('MAIL_REPLY_TO')
-        if reply_to:
-            m['Reply-To'] = reply_to
-        m.attach(MIMEText(body, 'plain'))
-        smtp.sendmail(sender, email_addr, m.as_string())
-    smtp.quit()
 
 
 # ── Family endpoints ────────────────────────────────────────────────
@@ -1418,96 +1409,618 @@ def deactivate_location(location_id):
 
 # ── Settings endpoints (admin only) ─────────────────────────────────
 
+# Settings editable via the payments PUT endpoint
 PAYMENT_SETTINGS_KEYS = [
-    'payments_zelle_enabled', 'payments_zelle_name',
+    'payments_zelle_enabled', 'payments_zelle_name', 'payments_zelle_memo',
     'payments_cashapp_enabled', 'payments_cashapp_tag',
     'payments_square_enabled', 'payments_square_access_token',
     'payments_square_location_id', 'payments_square_environment',
+    'payments_square_webhook_signature_key',
 ]
+
+# Secret settings: encrypted at rest, masked on read
+SECRET_SETTINGS_KEYS = {
+    'payments_square_access_token',
+    'payments_square_webhook_signature_key',
+}
+
+DEFAULT_ZELLE_MEMO = "Put your dancer's full name in the memo so we can match your payment."
+
+
+def _admin_only():
+    """Return an error response tuple if the current user isn't admin, else None."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    return None
+
+
+def _mask_secret(plaintext: str) -> str:
+    if not plaintext:
+        return ''
+    if len(plaintext) > 12:
+        return plaintext[:4] + '••••' + plaintext[-4:]
+    return '••••'
 
 
 @bp.route('/settings/payments', methods=['GET'])
 @login_required
 def get_payment_settings():
-    """Get payment configuration."""
-    if not current_user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
+    """Get payment configuration. Secrets are decrypted then masked for display."""
+    err = _admin_only()
+    if err:
+        return err
+    from app.crypto import decrypt
     settings = {}
     for key in PAYMENT_SETTINGS_KEYS:
-        val = Setting.get(key, '')
-        # Mask the Square access token for display
-        if key == 'payments_square_access_token' and val:
-            settings[key] = val[:8] + '...' + val[-4:] if len(val) > 12 else '****'
+        raw = Setting.get(key, '')
+        if key in SECRET_SETTINGS_KEYS:
+            settings[key] = _mask_secret(decrypt(raw))
         else:
-            settings[key] = val
+            settings[key] = raw
+    if not settings.get('payments_zelle_memo'):
+        settings['payments_zelle_memo'] = DEFAULT_ZELLE_MEMO
+    settings['has_zelle_qr'] = bool(Setting.get('payments_zelle_qr_data') or Setting.get('payments_zelle_qr_path'))
+    settings['zelle_qr'] = Setting.get('payments_zelle_qr_data') or Setting.get('payments_zelle_qr_path', '')
     return jsonify({'settings': settings})
 
 
 @bp.route('/settings/payments', methods=['PUT'])
 @login_required
 def update_payment_settings():
-    """Update payment configuration."""
-    if not current_user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
+    """Update payment configuration. Secrets are encrypted before storage."""
+    err = _admin_only()
+    if err:
+        return err
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
+
+    from app.crypto import encrypt
+    changed = []
     for key in PAYMENT_SETTINGS_KEYS:
-        if key in data:
-            # Don't overwrite token with the masked version
-            if key == 'payments_square_access_token' and '...' in (data[key] or ''):
+        if key not in data:
+            continue
+        val = (data[key] or '').strip()
+        if key in SECRET_SETTINGS_KEYS:
+            # Skip masked placeholders — means "leave unchanged"
+            if not val or '••••' in val:
                 continue
-            Setting.set(key, data[key].strip() if data[key] else '')
-    return jsonify({'message': 'Payment settings updated'})
+            Setting.set(key, encrypt(val))
+            changed.append(key)
+        else:
+            Setting.set(key, val)
+            changed.append(key)
+
+    if changed:
+        AuditLog.record(current_user.id, 'settings.update',
+                        'Updated payment settings: ' + ', '.join(changed))
+        db.session.commit()
+    return jsonify({'message': 'Payment settings updated', 'changed': changed})
 
 
 @bp.route('/settings/payments/zelle-qr', methods=['POST'])
 @login_required
 def upload_zelle_qr():
-    """Upload Zelle QR code image."""
-    if not current_user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
+    """Upload Zelle QR code image — stored as a data URI in the DB so it
+    survives redeploys (the filesystem on Fly is ephemeral)."""
+    import base64
+    err = _admin_only()
+    if err:
+        return err
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
     f = request.files['file']
     if not f.filename:
         return jsonify({'error': 'No file selected'}), 400
 
-    import os
-    upload_dir = os.path.join(current_app.root_path, 'static', 'uploads')
-    os.makedirs(upload_dir, exist_ok=True)
+    raw = f.read()
+    if len(raw) > 2 * 1024 * 1024:
+        return jsonify({'error': 'Image too large (max 2MB)'}), 400
 
-    # Save as zelle-qr.png (overwrite previous)
-    ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else 'png'
-    filename = f'zelle-qr.{ext}'
-    filepath = os.path.join(upload_dir, filename)
-    f.save(filepath)
+    content_type = (f.mimetype or '').lower()
+    if not content_type.startswith('image/'):
+        # Fall back to extension sniffing
+        ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
+        ext_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp'}
+        content_type = ext_map.get(ext, '')
+        if not content_type:
+            return jsonify({'error': 'File must be an image (PNG, JPG, GIF, or WebP)'}), 400
 
-    Setting.set('payments_zelle_qr_path', f'/static/uploads/{filename}')
-    return jsonify({'message': 'QR code uploaded', 'path': f'/static/uploads/{filename}'})
+    data_uri = f'data:{content_type};base64,' + base64.b64encode(raw).decode('ascii')
+    Setting.set('payments_zelle_qr_data', data_uri)
+    AuditLog.record(current_user.id, 'settings.zelle_qr', 'Uploaded Zelle QR code')
+    db.session.commit()
+    return jsonify({'message': 'QR code uploaded', 'path': data_uri})
+
+
+@bp.route('/settings/payments/zelle-qr', methods=['DELETE'])
+@login_required
+def delete_zelle_qr():
+    """Remove the stored Zelle QR code."""
+    err = _admin_only()
+    if err:
+        return err
+    Setting.set('payments_zelle_qr_data', '')
+    Setting.set('payments_zelle_qr_path', '')
+    AuditLog.record(current_user.id, 'settings.zelle_qr', 'Removed Zelle QR code')
+    db.session.commit()
+    return jsonify({'message': 'QR code removed'})
+
+
+@bp.route('/settings/payments/square-token', methods=['DELETE'])
+@login_required
+def clear_square_token():
+    """Clear the stored Square access token."""
+    err = _admin_only()
+    if err:
+        return err
+    Setting.set('payments_square_access_token', '')
+    AuditLog.record(current_user.id, 'settings.update', 'Cleared Square access token')
+    db.session.commit()
+    return jsonify({'message': 'Square access token cleared'})
+
+
+@bp.route('/settings/payments/test-square', methods=['POST'])
+@login_required
+def test_square_connection():
+    """Test the configured Square credentials against the Square API."""
+    err = _admin_only()
+    if err:
+        return err
+    ok, message = square_service.test_connection()
+    return jsonify({'ok': ok, 'message': message}), (200 if ok else 400)
 
 
 @bp.route('/payment-options', methods=['GET'])
 @login_required
 def get_payment_options():
-    """Get enabled payment options for parent portal (no sensitive data)."""
+    """Get enabled payment options for the parent portal (no sensitive data)."""
     options = []
-    if Setting.get('payments_zelle_enabled') == '1':
+    if Setting.get_bool('payments_zelle_enabled'):
         options.append({
             'type': 'zelle',
             'name': Setting.get('payments_zelle_name', 'Zelle'),
-            'qr_path': Setting.get('payments_zelle_qr_path', ''),
+            'qr': Setting.get('payments_zelle_qr_data') or Setting.get('payments_zelle_qr_path', ''),
+            'memo': Setting.get('payments_zelle_memo') or DEFAULT_ZELLE_MEMO,
         })
-    if Setting.get('payments_cashapp_enabled') == '1':
-        tag = Setting.get('payments_cashapp_tag', '')
+    if Setting.get_bool('payments_cashapp_enabled'):
+        tag = Setting.get('payments_cashapp_tag', '').lstrip('$')
         options.append({
             'type': 'cashapp',
-            'tag': tag,
-            'url': f'https://cash.app/{tag}' if tag else '',
+            'tag': f'${tag}' if tag else '',
+            'cashtag': tag,
+            'url': f'https://cash.app/${tag}' if tag else '',
         })
-    if Setting.get('payments_square_enabled') == '1':
+    if Setting.get_bool('payments_square_enabled'):
         options.append({
             'type': 'square',
-            'configured': bool(Setting.get('payments_square_access_token')),
+            'configured': square_service.is_configured(),
         })
     return jsonify({'payment_options': options})
+
+
+@bp.route('/audit-log', methods=['GET'])
+@login_required
+def get_audit_log():
+    """Recent audit entries (admin only)."""
+    err = _admin_only()
+    if err:
+        return err
+    limit = min(request.args.get('limit', 50, type=int), 200)
+    rows = AuditLog.query.order_by(desc(AuditLog.created_at)).limit(limit).all()
+    return jsonify({'entries': [{
+        'id': r.id,
+        'action': r.action,
+        'detail': r.detail,
+        'user': r.user.full_name if r.user else 'System',
+        'created_at': r.created_at.isoformat(),
+    } for r in rows]})
+
+
+# ── Pending payment (reconciliation) endpoints ──────────────────────
+
+VALID_PAYMENT_METHODS = {'zelle', 'cashapp', 'square', 'cash', 'venmo', 'other'}
+STUDIO_NAME = "LaShelle's School of Dance"
+
+
+def _parent_student_ids(user) -> set:
+    """Set of student ids a parent is linked to."""
+    return {s.id for s in user.get_children()} if user.is_parent else set()
+
+
+def _pending_to_dict(p) -> dict:
+    if p.student:
+        who = p.student.full_name
+    elif p.family:
+        who = f'{p.family.name} (family)'
+    else:
+        who = 'Unknown'
+    return {
+        'id': p.id,
+        'student_id': p.student_id,
+        'family_id': p.family_id,
+        'who': who,
+        'parent_name': p.parent.full_name if p.parent else None,
+        'amount': f'{float(p.amount):.2f}',
+        'method': p.method,
+        'reference': p.reference,
+        'note': p.note,
+        'status': p.status,
+        'admin_note': p.admin_note,
+        'created_at': p.created_at.isoformat(),
+        'reviewed_at': p.reviewed_at.isoformat() if p.reviewed_at else None,
+        'reviewed_by': p.reviewer.full_name if p.reviewer else None,
+    }
+
+
+def _send_receipt(parent_email, who, amount, method):
+    """Best-effort payment receipt email. Never raises."""
+    if not parent_email:
+        return
+    from app import email as email_service
+    if not email_service.is_configured():
+        return
+    method_label = {'zelle': 'Zelle', 'cashapp': 'Cash App', 'square': 'Square',
+                    'cash': 'cash', 'venmo': 'Venmo'}.get(method, method)
+    body = (
+        f"Hi,\n\n"
+        f"This confirms we've received and recorded your payment of ${amount:.2f} "
+        f"for {who} via {method_label}.\n\n"
+        f"You can view your balance any time in the parent portal.\n\n"
+        f"Thank you,\n{STUDIO_NAME}"
+    )
+    try:
+        email_service.send_email(parent_email, f'Payment received — {STUDIO_NAME}', body)
+    except Exception:
+        logger.exception("Failed to send payment receipt to %s", parent_email)
+
+
+@bp.route('/payments/claim', methods=['POST'])
+@login_required
+def claim_payment():
+    """A parent reports a payment they've sent externally (awaits admin confirm)."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    method = (data.get('method') or '').strip().lower()
+    if method not in VALID_PAYMENT_METHODS:
+        return jsonify({'error': f'Invalid payment method. One of: {", ".join(sorted(VALID_PAYMENT_METHODS))}'}), 400
+
+    try:
+        amount = round(float(data.get('amount')), 2)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'A valid amount is required'}), 400
+    if amount <= 0:
+        return jsonify({'error': 'Amount must be greater than zero'}), 400
+
+    student_id = data.get('student_id')
+    family_id = data.get('family_id')
+    if not student_id and not family_id:
+        return jsonify({'error': 'student_id or family_id is required'}), 400
+
+    # Authorization: parents may only claim for their own children/families
+    if current_user.is_parent:
+        my_students = _parent_student_ids(current_user)
+        if student_id and int(student_id) not in my_students:
+            return jsonify({'error': 'Not authorized for this student'}), 403
+        if family_id:
+            my_families = {Student.query.get(sid).family_id for sid in my_students}
+            if int(family_id) not in my_families:
+                return jsonify({'error': 'Not authorized for this family'}), 403
+    elif not current_user.is_staff:
+        return jsonify({'error': 'Not authorized'}), 403
+
+    p = PendingPayment(
+        student_id=int(student_id) if student_id else None,
+        family_id=int(family_id) if family_id else None,
+        parent_id=current_user.id,
+        amount=amount,
+        method=method,
+        reference=(data.get('reference') or '').strip() or None,
+        note=(data.get('note') or '').strip() or None,
+    )
+    db.session.add(p)
+    db.session.commit()
+
+    # Notify admins by email (best-effort)
+    from app import email as email_service
+    if email_service.is_configured():
+        who = p.student.full_name if p.student else (p.family.name + ' (family)' if p.family else 'a family')
+        admin_emails = {u.email for u in User.query.filter_by(role='admin', is_active=True).all() if u.email and '@' in u.email}
+        if admin_emails:
+            try:
+                email_service.send_email(
+                    admin_emails,
+                    f'New payment to confirm — {who}',
+                    f'{current_user.full_name} reported a {method} payment of ${amount:.2f} for {who}.\n\n'
+                    f'Reference: {p.reference or "(none)"}\n\nConfirm it in the Pending Payments page.',
+                )
+            except Exception:
+                logger.exception("Failed to notify admins of pending payment")
+
+    return jsonify({'message': 'Payment reported — the studio will confirm it shortly.',
+                    'pending_payment': _pending_to_dict(p)}), 201
+
+
+@bp.route('/pending-payments', methods=['GET'])
+@login_required
+def list_pending_payments():
+    err = _admin_only()
+    if err:
+        return err
+    status = request.args.get('status', 'pending').strip()
+    query = PendingPayment.query
+    if status and status != 'all':
+        query = query.filter_by(status=status)
+    rows = query.order_by(desc(PendingPayment.created_at)).limit(200).all()
+    return jsonify({'pending_payments': [_pending_to_dict(p) for p in rows]})
+
+
+@bp.route('/pending-payments/count', methods=['GET'])
+@login_required
+def pending_payments_count():
+    if not current_user.is_staff:
+        return jsonify({'count': 0})
+    return jsonify({'count': PendingPayment.query.filter_by(status='pending').count()})
+
+
+@bp.route('/pending-payments/<int:pid>/confirm', methods=['POST'])
+@login_required
+def confirm_pending_payment(pid):
+    err = _admin_only()
+    if err:
+        return err
+    p = PendingPayment.query.get_or_404(pid)
+    if p.status != 'pending':
+        return jsonify({'error': f'Already {p.status}'}), 400
+
+    data = request.get_json(silent=True) or {}
+    category = (data.get('category') or 'tuition').strip()
+    amount = float(p.amount)
+
+    # Determine per-student allocation
+    if p.student_id:
+        allocations = [(p.student_id, amount)]
+        receipt_email = p.student.parent_email or p.student.email
+        who = p.student.full_name
+    else:
+        students = p.family.students.filter_by(is_active=True).all()
+        allocations = allocate_family_payment([s.id for s in students], amount)
+        if not allocations:
+            # Nobody owed and no students — record against first student if any
+            if students:
+                allocations = [(students[0].id, amount)]
+            else:
+                return jsonify({'error': 'Family has no active students to credit'}), 400
+        receipt_email = p.family.primary_email or (students[0].parent_email if students else None)
+        who = f'{p.family.name} (family)'
+
+    method_label = p.method
+    desc_ref = f' (ref: {p.reference})' if p.reference else ''
+    first_txn = None
+    for sid, portion in allocations:
+        t = Transaction(
+            student_id=sid,
+            type='payment',
+            amount=portion,
+            category=category,
+            payment_method=method_label,
+            description=f'Online payment via {method_label}{desc_ref}',
+            transaction_date=date.today(),
+            created_by=current_user.id,
+        )
+        db.session.add(t)
+        if first_txn is None:
+            db.session.flush()
+            first_txn = t
+
+    p.status = 'confirmed'
+    p.reviewed_at = datetime.utcnow()
+    p.reviewed_by = current_user.id
+    p.transaction_id = first_txn.id if first_txn else None
+    if data.get('admin_note'):
+        p.admin_note = data['admin_note'].strip()
+
+    AuditLog.record(current_user.id, 'payment.confirm',
+                    f'Confirmed ${amount:.2f} {method_label} for {who}')
+    db.session.commit()
+
+    _send_receipt(receipt_email, who, amount, p.method)
+    return jsonify({'message': f'Payment of ${amount:.2f} confirmed', 'pending_payment': _pending_to_dict(p)})
+
+
+@bp.route('/pending-payments/<int:pid>/reject', methods=['POST'])
+@login_required
+def reject_pending_payment(pid):
+    err = _admin_only()
+    if err:
+        return err
+    p = PendingPayment.query.get_or_404(pid)
+    if p.status != 'pending':
+        return jsonify({'error': f'Already {p.status}'}), 400
+    data = request.get_json(silent=True) or {}
+    p.status = 'rejected'
+    p.admin_note = (data.get('admin_note') or '').strip() or None
+    p.reviewed_at = datetime.utcnow()
+    p.reviewed_by = current_user.id
+    who = p.student.full_name if p.student else (p.family.name + ' (family)' if p.family else 'unknown')
+    AuditLog.record(current_user.id, 'payment.reject',
+                    f'Rejected ${float(p.amount):.2f} {p.method} for {who}')
+    db.session.commit()
+    return jsonify({'message': 'Payment claim rejected', 'pending_payment': _pending_to_dict(p)})
+
+
+@bp.route('/my-payments', methods=['GET'])
+@login_required
+def my_payments():
+    """A parent's own pending claims + recent confirmed payments across children."""
+    if not current_user.is_parent:
+        return jsonify({'pending': [], 'history': []})
+
+    student_ids = list(_parent_student_ids(current_user))
+    pending = (PendingPayment.query
+               .filter_by(parent_id=current_user.id)
+               .order_by(desc(PendingPayment.created_at)).limit(50).all())
+
+    history = []
+    if student_ids:
+        txns = (Transaction.query
+                .filter(Transaction.student_id.in_(student_ids), Transaction.type == 'payment')
+                .order_by(desc(Transaction.transaction_date), desc(Transaction.created_at))
+                .limit(50).all())
+        history = [transaction_to_dict(t) for t in txns]
+
+    return jsonify({
+        'pending': [_pending_to_dict(p) for p in pending],
+        'history': history,
+    })
+
+
+# ── Balance reminder emails ─────────────────────────────────────────
+
+def _reminder_body(name, balance):
+    return (
+        f"Hi,\n\n"
+        f"This is a friendly reminder that {name} has an outstanding balance of "
+        f"${balance:.2f} with {STUDIO_NAME}.\n\n"
+        f"You can pay any time through the parent portal. Thank you!\n\n"
+        f"{STUDIO_NAME}"
+    )
+
+
+@bp.route('/balances/send-reminders', methods=['POST'])
+@login_required
+def send_balance_reminders():
+    """Email every student with an outstanding balance a reminder."""
+    err = _admin_only()
+    if err:
+        return err
+    from app import email as email_service
+    if not email_service.is_configured():
+        return jsonify({'error': 'Email (SMTP) is not configured'}), 400
+
+    students = Student.query.filter_by(is_active=True).all()
+    balances = calc_balance_bulk([s.id for s in students])
+    sent, skipped = 0, 0
+    for s in students:
+        bal = balances[s.id]['balance']
+        if bal <= 0:
+            continue
+        to = s.parent_email or s.email
+        if not to:
+            skipped += 1
+            continue
+        try:
+            email_service.send_email(to, f'Balance reminder — {STUDIO_NAME}',
+                                     _reminder_body(s.full_name, bal))
+            sent += 1
+        except Exception:
+            logger.exception("Failed to send reminder for %s", s.full_name)
+            skipped += 1
+
+    AuditLog.record(current_user.id, 'reminders.send', f'Sent {sent} balance reminders ({skipped} skipped)')
+    db.session.commit()
+    return jsonify({'message': f'Sent {sent} reminder(s), skipped {skipped}', 'sent': sent, 'skipped': skipped})
+
+
+@bp.route('/students/<int:student_id>/send-reminder', methods=['POST'])
+@login_required
+def send_student_reminder(student_id):
+    err = _admin_only()
+    if err:
+        return err
+    from app import email as email_service
+    if not email_service.is_configured():
+        return jsonify({'error': 'Email (SMTP) is not configured'}), 400
+    student = Student.query.get_or_404(student_id)
+    bal = calc_balance(student_id)['balance']
+    if bal <= 0:
+        return jsonify({'error': 'No outstanding balance'}), 400
+    to = student.parent_email or student.email
+    if not to:
+        return jsonify({'error': 'No email on file for this student'}), 400
+    try:
+        email_service.send_email(to, f'Balance reminder — {STUDIO_NAME}',
+                                 _reminder_body(student.full_name, bal))
+    except Exception as e:
+        return jsonify({'error': f'Send failed: {e}'}), 500
+    AuditLog.record(current_user.id, 'reminders.send', f'Sent reminder to {student.full_name}')
+    db.session.commit()
+    return jsonify({'message': f'Reminder sent to {to}'})
+
+
+# ── Square webhook (auto-reconcile online invoice payments) ──────────
+
+@bp.route('/webhooks/square', methods=['POST'])
+def square_webhook():
+    """Receive Square invoice payment events and auto-record the payment.
+
+    No login (Square calls this). Verified via HMAC signature when a signature
+    key is configured.
+    """
+    import base64
+    import hashlib
+    import hmac
+    import json
+
+    raw_body = request.get_data()
+
+    # Verify signature if a key is configured
+    from app.crypto import decrypt
+    sig_key = decrypt(Setting.get('payments_square_webhook_signature_key', ''))
+    if sig_key:
+        provided = request.headers.get('x-square-hmacsha256-signature', '')
+        mac = hmac.new(sig_key.encode('utf-8'), (request.url + raw_body.decode('utf-8')).encode('utf-8'),
+                       hashlib.sha256)
+        expected = base64.b64encode(mac.digest()).decode('ascii')
+        if not hmac.compare_digest(expected, provided):
+            logger.warning("Square webhook signature mismatch")
+            return jsonify({'error': 'Invalid signature'}), 403
+    else:
+        logger.warning("Square webhook received but no signature key configured — skipping verification")
+
+    try:
+        event = json.loads(raw_body or b'{}')
+    except ValueError:
+        return jsonify({'error': 'Invalid JSON'}), 400
+
+    event_type = event.get('type', '')
+    invoice = (event.get('data', {}).get('object', {}) or {}).get('invoice', {})
+    invoice_id = invoice.get('id')
+    status = invoice.get('status', '')
+
+    if not invoice_id or status not in ('PAID', 'PARTIALLY_PAID'):
+        return jsonify({'status': 'ignored'}), 200
+
+    rec = SquareInvoice.query.filter_by(invoice_id=invoice_id).first()
+    if not rec:
+        logger.info("Square webhook for unknown invoice %s", invoice_id)
+        return jsonify({'status': 'unknown_invoice'}), 200
+    if rec.paid_at:
+        return jsonify({'status': 'already_recorded'}), 200
+
+    student = Student.query.get(rec.student_id)
+    if not student:
+        return jsonify({'status': 'unknown_student'}), 200
+
+    amount = rec.amount_cents / 100.0
+    t = Transaction(
+        student_id=student.id,
+        type='payment',
+        amount=amount,
+        category='tuition',
+        payment_method='square',
+        description=f'Square invoice {invoice_id} ({event_type})',
+        transaction_date=date.today(),
+        created_by=None,
+    )
+    db.session.add(t)
+    rec.status = status
+    rec.paid_at = datetime.utcnow()
+    AuditLog.record(None, 'payment.square_webhook',
+                    f'Auto-recorded ${amount:.2f} for {student.full_name} (invoice {invoice_id})')
+    db.session.commit()
+
+    _send_receipt(student.parent_email or student.email, student.full_name, amount, 'square')
+    return jsonify({'status': 'recorded'}), 200

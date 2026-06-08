@@ -1,136 +1,186 @@
-"""
-Square payment integration for AttenDANCE.
+"""Square payment integration for AttenDANCE.
+
 Creates invoices via the Square Invoices API so parents can pay online.
+Targets the modern Square Python SDK (squareup >= 40), where the client is
+``square.Square`` and calls return typed response objects (raising ``ApiError``
+on failure) rather than the old ``Client`` / ``result.is_success()`` style.
+
+Credentials come from Settings (DB, decrypted) first, falling back to env vars.
 """
 
 import uuid
+
 from flask import current_app
 
-def _get_client():
-    """Get a configured Square API client, or None if not configured."""
-    token = current_app.config.get('SQUARE_ACCESS_TOKEN')
+
+def get_access_token():
+    """Square access token — from Settings (decrypted) first, env as fallback."""
+    from app.crypto import decrypt
+    from app.models import Setting
+    stored = Setting.get('payments_square_access_token', '')
+    if stored:
+        return decrypt(stored)
+    return current_app.config.get('SQUARE_ACCESS_TOKEN')
+
+
+def get_location_id():
+    """Square location id — from Settings first, env as fallback."""
+    from app.models import Setting
+    return Setting.get('payments_square_location_id', '') or current_app.config.get('SQUARE_LOCATION_ID')
+
+
+def get_environment():
+    """Square environment (sandbox/production) — Settings first, env as fallback."""
+    from app.models import Setting
+    return (Setting.get('payments_square_environment', '')
+            or current_app.config.get('SQUARE_ENVIRONMENT', 'sandbox'))
+
+
+def _client():
+    """Build a configured Square client, or None if no token is set."""
+    token = get_access_token()
     if not token:
         return None
-    from square.client import Client
-    return Client(
-        access_token=token,
-        environment=current_app.config.get('SQUARE_ENVIRONMENT', 'sandbox'),
-    )
+    from square import Square
+    from square.environment import SquareEnvironment
+    env = SquareEnvironment.PRODUCTION if get_environment() == 'production' else SquareEnvironment.SANDBOX
+    return Square(token=token, environment=env)
+
 
 def is_configured():
-    """Check if Square credentials are set."""
-    return bool(current_app.config.get('SQUARE_ACCESS_TOKEN') and
-                current_app.config.get('SQUARE_LOCATION_ID'))
+    """Check if Square credentials are set (token + location)."""
+    return bool(get_access_token() and get_location_id())
+
+
+def _error_detail(exc):
+    """Pull a human-readable message out of a Square ApiError."""
+    body = getattr(exc, 'body', None)
+    if isinstance(body, dict):
+        errors = body.get('errors') or []
+        if errors and isinstance(errors[0], dict):
+            return errors[0].get('detail') or errors[0].get('code') or str(body)
+        return str(body)
+    if isinstance(body, list) and body:
+        first = body[0]
+        if isinstance(first, dict):
+            return first.get('detail') or first.get('code') or str(first)
+    return str(body) if body else str(exc)
+
+
+def test_connection():
+    """Verify the configured Square credentials work.
+
+    Returns (ok: bool, message: str).
+    """
+    client = _client()
+    if not client:
+        return False, "No access token configured."
+    location_id = get_location_id()
+    if not location_id:
+        return False, "No location ID configured."
+    from square.core.api_error import ApiError
+    try:
+        resp = client.locations.get(location_id=location_id)
+        name = resp.location.name if getattr(resp, 'location', None) else location_id
+        return True, f"Connected to '{name}' ({get_environment()})."
+    except ApiError as e:
+        return False, f"Square rejected the credentials: {_error_detail(e)}"
+    except Exception as e:  # noqa: BLE001 — surface any SDK/network error to the admin
+        return False, f"Connection failed: {e}"
+
 
 def _find_or_create_customer(client, email, name):
-    """Find existing Square customer by email or create one."""
-    result = client.customers.search_customers(body={
-        'query': {
-            'filter': {
-                'email_address': {'exact': email}
-            }
-        }
-    })
-    if result.is_success() and result.body.get('customers'):
-        return result.body['customers'][0]['id']
+    """Find an existing Square customer by email, or create one. Returns its id."""
+    resp = client.customers.search(query={'filter': {'email_address': {'exact': email}}})
+    customers = getattr(resp, 'customers', None) or []
+    if customers:
+        return customers[0].id
 
     parts = name.split(' ', 1)
-    result = client.customers.create_customer(body={
-        'idempotency_key': str(uuid.uuid4()),
-        'given_name': parts[0],
-        'family_name': parts[1] if len(parts) > 1 else '',
-        'email_address': email,
-    })
-    if result.is_success():
-        return result.body['customer']['id']
-    raise Exception(f"Failed to create Square customer: {result.errors}")
+    created = client.customers.create(
+        idempotency_key=str(uuid.uuid4()),
+        given_name=parts[0],
+        family_name=parts[1] if len(parts) > 1 else '',
+        email_address=email,
+    )
+    return created.customer.id
+
 
 def send_invoice(student, amount_cents, line_items, due_date):
-    """
-    Create and publish a Square invoice for a student's outstanding balance.
+    """Create and publish a Square invoice for a student's outstanding balance.
 
     Args:
-        student: Student model instance (needs parent_email and full_name)
-        amount_cents: Total amount in cents (e.g. 15000 for $150.00)
-        line_items: List of dicts with 'name' and 'amount_cents'
-        due_date: date object for payment due date
+        student: Student model instance (needs parent_email/email and full_name).
+        amount_cents: Total amount in cents (unused directly — line items drive it).
+        line_items: list of dicts with 'name' and 'amount_cents'.
+        due_date: date object for the payment due date.
 
     Returns:
-        dict with invoice_id, invoice_url, status
+        dict with invoice_id, invoice_url, status.
     """
-    client = _get_client()
+    client = _client()
     if not client:
-        raise Exception("Square is not configured. Set SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID.")
+        raise Exception("Square is not configured. Set the access token and location ID in Settings.")
 
-    location_id = current_app.config['SQUARE_LOCATION_ID']
+    location_id = get_location_id()
     email = student.parent_email or student.email
     if not email:
         raise Exception(f"No email address for {student.full_name}. Add a parent email or student email first.")
 
-    customer_id = _find_or_create_customer(client, email, student.full_name)
+    from square.core.api_error import ApiError
+    try:
+        customer_id = _find_or_create_customer(client, email, student.full_name)
 
-    order_line_items = []
-    for item in line_items:
-        order_line_items.append({
+        order_line_items = [{
             'name': item['name'],
             'quantity': '1',
-            'base_price_money': {
-                'amount': item['amount_cents'],
-                'currency': 'USD',
+            'base_price_money': {'amount': item['amount_cents'], 'currency': 'USD'},
+        } for item in line_items]
+
+        order_resp = client.orders.create(
+            order={
+                'location_id': location_id,
+                'customer_id': customer_id,
+                'line_items': order_line_items,
             },
-        })
+            idempotency_key=str(uuid.uuid4()),
+        )
+        order_id = order_resp.order.id
 
-    order_result = client.orders.create_order(body={
-        'order': {
-            'location_id': location_id,
-            'customer_id': customer_id,
-            'line_items': order_line_items,
-        },
-        'idempotency_key': str(uuid.uuid4()),
-    })
-    if not order_result.is_success():
-        raise Exception(f"Failed to create Square order: {order_result.errors}")
-    order_id = order_result.body['order']['id']
-
-    invoice_result = client.invoices.create_invoice(body={
-        'invoice': {
-            'location_id': location_id,
-            'order_id': order_id,
-            'primary_recipient': {'customer_id': customer_id},
-            'payment_requests': [{
-                'request_type': 'BALANCE',
-                'due_date': due_date.isoformat(),
-                'automatic_payment_source': 'NONE',
-            }],
-            'delivery_method': 'EMAIL',
-            'accepted_payment_methods': {
-                'card': True,
-                'square_gift_card': False,
-                'bank_account': True,
-                'buy_now_pay_later': False,
-                'cash_app_pay': True,
+        invoice_resp = client.invoices.create(
+            invoice={
+                'location_id': location_id,
+                'order_id': order_id,
+                'primary_recipient': {'customer_id': customer_id},
+                'payment_requests': [{
+                    'request_type': 'BALANCE',
+                    'due_date': due_date.isoformat(),
+                    'automatic_payment_source': 'NONE',
+                }],
+                'delivery_method': 'EMAIL',
+                'accepted_payment_methods': {
+                    'card': True,
+                    'square_gift_card': False,
+                    'bank_account': True,
+                    'buy_now_pay_later': False,
+                    'cash_app_pay': True,
+                },
+                'title': f"LaShelle's School of Dance - {student.full_name}",
             },
-            'title': f"LaShelle's School of Dance - {student.full_name}",
-        },
-        'idempotency_key': str(uuid.uuid4()),
-    })
-    if not invoice_result.is_success():
-        raise Exception(f"Failed to create Square invoice: {invoice_result.errors}")
+            idempotency_key=str(uuid.uuid4()),
+        )
+        invoice = invoice_resp.invoice
 
-    invoice = invoice_result.body['invoice']
-    invoice_id = invoice['id']
-    version = invoice['version']
-
-    publish_result = client.invoices.publish_invoice(
-        invoice_id=invoice_id,
-        body={'version': version, 'idempotency_key': str(uuid.uuid4())},
-    )
-    if not publish_result.is_success():
-        raise Exception(f"Failed to publish Square invoice: {publish_result.errors}")
-
-    published = publish_result.body['invoice']
-    return {
-        'invoice_id': published['id'],
-        'invoice_url': published.get('public_url', ''),
-        'status': published['status'],
-    }
+        publish_resp = client.invoices.publish(
+            invoice_id=invoice.id,
+            version=invoice.version,
+            idempotency_key=str(uuid.uuid4()),
+        )
+        published = publish_resp.invoice
+        return {
+            'invoice_id': published.id,
+            'invoice_url': getattr(published, 'public_url', '') or '',
+            'status': published.status,
+        }
+    except ApiError as e:
+        raise Exception(f"Square error: {_error_detail(e)}") from e

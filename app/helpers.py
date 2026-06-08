@@ -118,6 +118,50 @@ def build_ledger(txns: list) -> dict:
     }
 
 
+def allocate_family_payment(student_ids: list[int], amount: float) -> list[tuple[int, float]]:
+    """Split a lump family payment across children by outstanding balance.
+
+    Children with the largest balances are paid down first; each is capped at
+    its own balance. Any leftover (an overpayment) is appended to the first
+    student as a credit so the full amount is always accounted for.
+
+    Returns a list of (student_id, amount) tuples, amounts rounded to cents.
+    """
+    if not student_ids or amount <= 0:
+        return []
+
+    balances = calc_balance_bulk(student_ids)
+    # Order by balance descending; only those who actually owe
+    owing = sorted(
+        ((sid, balances[sid]['balance']) for sid in student_ids if balances[sid]['balance'] > 0),
+        key=lambda x: x[1], reverse=True,
+    )
+
+    remaining = round(amount, 2)
+    allocations: list[tuple[int, float]] = []
+    for sid, bal in owing:
+        if remaining <= 0:
+            break
+        portion = round(min(bal, remaining), 2)
+        if portion <= 0:
+            continue
+        allocations.append((sid, portion))
+        remaining = round(remaining - portion, 2)
+
+    # Leftover overpayment (or nobody owed) → credit the first student
+    if remaining > 0:
+        target = allocations[0][0] if allocations else student_ids[0]
+        # Merge into existing allocation if present
+        for i, (sid, amt) in enumerate(allocations):
+            if sid == target:
+                allocations[i] = (sid, round(amt + remaining, 2))
+                break
+        else:
+            allocations.append((target, remaining))
+
+    return allocations
+
+
 # --- Serializers ---
 
 def student_to_dict(student) -> dict:

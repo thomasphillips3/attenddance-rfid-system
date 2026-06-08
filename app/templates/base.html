@@ -133,6 +133,15 @@
                            class="nav-item {% if request.endpoint and 'transaction' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                             <i class="fas fa-dollar-sign mr-2"></i>Payments
                         </a>
+                        {% if current_user.is_admin %}
+                        <a href="{{ url_for('main.pending_payments_page') }}"
+                           class="nav-item {% if request.endpoint == 'main.pending_payments_page' %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                            <i class="fas fa-clock mr-2"></i>Pending
+                            {% if pending_payment_count %}
+                            <span class="ml-1.5 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full">{{ pending_payment_count }}</span>
+                            {% endif %}
+                        </a>
+                        {% endif %}
                         <a href="{{ url_for('main.rules_admin') }}"
                            class="nav-item {% if request.endpoint and 'rules' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                             <i class="fas fa-gavel mr-2"></i>Rules
@@ -251,6 +260,15 @@
                    class="{% if request.endpoint and 'transaction' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-dollar-sign mr-2"></i>Payments
                 </a>
+                {% if current_user.is_admin %}
+                <a href="{{ url_for('main.pending_payments_page') }}"
+                   class="{% if request.endpoint == 'main.pending_payments_page' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
+                    <i class="fas fa-clock mr-2"></i>Pending Payments
+                    {% if pending_payment_count %}
+                    <span class="ml-1.5 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full">{{ pending_payment_count }}</span>
+                    {% endif %}
+                </a>
+                {% endif %}
                 <a href="{{ url_for('main.rules_admin') }}"
                    class="{% if request.endpoint and 'rules' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-gavel mr-2"></i>Rules

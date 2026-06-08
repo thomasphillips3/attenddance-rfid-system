@@ -30,6 +30,11 @@
                     <input type="text" id="zelle-name" placeholder="LASHELLE S SCHOOL OF DANCE" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
                 </div>
                 <div>
+                    <label class="block text-sm font-medium text-gray-700">Memo instruction shown to parents</label>
+                    <input type="text" id="zelle-memo" placeholder="Put your dancer's full name in the memo so we can match your payment." class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    <p class="mt-1 text-xs text-gray-500">Helps you reconcile which payment belongs to which dancer.</p>
+                </div>
+                <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">QR Code Image</label>
                     <div class="flex items-start space-x-4">
                         <div id="qr-preview" class="w-32 h-32 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-gray-50 overflow-hidden">
@@ -40,7 +45,10 @@
                             <button type="button" onclick="document.getElementById('qr-file').click()" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
                                 <i class="fas fa-upload mr-2"></i>Upload QR Code
                             </button>
-                            <p class="mt-1 text-xs text-gray-500">PNG or JPG, shown to parents</p>
+                            <button type="button" id="qr-remove" onclick="removeQR()" class="hidden ml-2 inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-red-600 bg-white hover:bg-red-50">
+                                <i class="fas fa-trash mr-2"></i>Remove
+                            </button>
+                            <p class="mt-1 text-xs text-gray-500">PNG or JPG, max 2MB. Shown to parents.</p>
                         </div>
                     </div>
                 </div>
@@ -66,6 +74,7 @@
                         <span class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">$</span>
                         <input type="text" id="cashapp-tag" placeholder="Lashellesdance" class="flex-1 block w-full border border-gray-300 rounded-none rounded-r-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
                     </div>
+                    <p class="mt-1 text-xs text-gray-500">Parents are deep-linked to <code>cash.app/$tag</code> with the amount prefilled.</p>
                 </div>
             </div>
         </div>
@@ -85,8 +94,11 @@
             <div class="px-6 py-4 space-y-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Access Token</label>
-                    <input type="password" id="square-token" placeholder="Enter your Square access token" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                    <p class="mt-1 text-xs text-gray-500">From <a href="https://developer.squareup.com/apps" target="_blank" class="text-primary-600 hover:underline">Square Developer Dashboard</a></p>
+                    <input type="password" id="square-token" autocomplete="off" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    <div class="mt-1 flex items-center justify-between">
+                        <p class="text-xs text-gray-500">From <a href="https://developer.squareup.com/apps" target="_blank" class="text-primary-600 hover:underline">Square Developer Dashboard</a>. Stored encrypted.</p>
+                        <button type="button" id="token-clear" onclick="clearToken()" class="hidden text-xs text-red-600 hover:underline">Clear token</button>
+                    </div>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Location ID</label>
@@ -99,6 +111,26 @@
                         <option value="production">Production (live)</option>
                     </select>
                 </div>
+                <div>
+                    <button type="button" onclick="testSquare()" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                        <i class="fas fa-plug mr-2"></i>Test Connection
+                    </button>
+                    <span id="square-test-result" class="ml-3 text-sm"></span>
+                    <p class="mt-1 text-xs text-gray-500">Save first, then test.</p>
+                </div>
+
+                <details class="border-t border-gray-100 pt-3">
+                    <summary class="text-sm font-medium text-gray-700 cursor-pointer">Advanced: auto-reconcile webhook</summary>
+                    <div class="mt-3 space-y-2">
+                        <p class="text-xs text-gray-500">In Square Dashboard → Webhooks, add this URL and subscribe to <code>invoice.payment_made</code>. Then paste the signature key below so paid invoices auto-record.</p>
+                        <div class="flex items-center gap-2">
+                            <input type="text" id="webhook-url" readonly class="flex-1 block w-full border border-gray-200 bg-gray-50 rounded-md px-3 py-2 text-xs font-mono text-gray-600">
+                            <button type="button" onclick="copyWebhook()" class="px-2 py-2 border border-gray-300 rounded-md text-xs text-gray-600 hover:bg-gray-50"><i class="fas fa-copy"></i></button>
+                        </div>
+                        <label class="block text-sm font-medium text-gray-700">Webhook Signature Key</label>
+                        <input type="password" id="square-webhook-key" autocomplete="off" class="block w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                </details>
             </div>
         </div>
 
@@ -113,6 +145,28 @@
 
 {% block extra_js %}
 <script>
+let hasToken = false, hasWebhookKey = false;
+
+function showMsg(text, ok) {
+    const m = document.getElementById('status-msg');
+    m.textContent = text;
+    m.className = 'mb-4 p-3 rounded-md text-sm font-medium ' + (ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800');
+    m.classList.remove('hidden');
+    setTimeout(() => m.classList.add('hidden'), 3500);
+}
+
+function renderQR(dataOrPath) {
+    const prev = document.getElementById('qr-preview');
+    const removeBtn = document.getElementById('qr-remove');
+    if (dataOrPath) {
+        prev.innerHTML = `<img src="${dataOrPath}" class="w-full h-full object-contain">`;
+        removeBtn.classList.remove('hidden');
+    } else {
+        prev.innerHTML = '<span class="text-gray-400 text-xs text-center px-2">No QR uploaded</span>';
+        removeBtn.classList.add('hidden');
+    }
+}
+
 async function loadSettings() {
     try {
         const res = await fetch('/api/settings/payments');
@@ -120,19 +174,27 @@ async function loadSettings() {
         const s = data.settings;
         document.getElementById('zelle-enabled').checked = s.payments_zelle_enabled === '1';
         document.getElementById('zelle-name').value = s.payments_zelle_name || '';
+        document.getElementById('zelle-memo').value = s.payments_zelle_memo || '';
         document.getElementById('cashapp-enabled').checked = s.payments_cashapp_enabled === '1';
         document.getElementById('cashapp-tag').value = (s.payments_cashapp_tag || '').replace(/^\$/, '');
         document.getElementById('square-enabled').checked = s.payments_square_enabled === '1';
-        document.getElementById('square-token').value = s.payments_square_access_token || '';
         document.getElementById('square-location').value = s.payments_square_location_id || '';
         document.getElementById('square-env').value = s.payments_square_environment || 'sandbox';
 
-        // Load QR preview
-        const qrPath = await fetch('/api/payment-options').then(r => r.json());
-        const zelleOpt = (qrPath.payment_options || []).find(o => o.type === 'zelle');
-        if (zelleOpt && zelleOpt.qr_path) {
-            document.getElementById('qr-preview').innerHTML = `<img src="${zelleOpt.qr_path}" class="w-full h-full object-contain">`;
-        }
+        // Secrets: never prefill the field; show placeholder + clear button when set
+        hasToken = !!s.payments_square_access_token;
+        const tokenField = document.getElementById('square-token');
+        tokenField.value = '';
+        tokenField.placeholder = hasToken ? (s.payments_square_access_token + '  (leave blank to keep)') : 'Enter your Square access token';
+        document.getElementById('token-clear').classList.toggle('hidden', !hasToken);
+
+        hasWebhookKey = !!s.payments_square_webhook_signature_key;
+        const wk = document.getElementById('square-webhook-key');
+        wk.value = '';
+        wk.placeholder = hasWebhookKey ? 'Key saved (leave blank to keep)' : 'Paste signature key';
+
+        renderQR(s.zelle_qr || '');
+        document.getElementById('webhook-url').value = window.location.origin + '/api/webhooks/square';
     } catch (err) {
         console.error('Failed to load settings:', err);
     }
@@ -143,32 +205,28 @@ async function saveSettings() {
     const body = {
         payments_zelle_enabled: document.getElementById('zelle-enabled').checked ? '1' : '0',
         payments_zelle_name: document.getElementById('zelle-name').value.trim(),
+        payments_zelle_memo: document.getElementById('zelle-memo').value.trim(),
         payments_cashapp_enabled: document.getElementById('cashapp-enabled').checked ? '1' : '0',
-        payments_cashapp_tag: tag.startsWith('$') ? tag : (tag ? '$' + tag : ''),
+        payments_cashapp_tag: tag.replace(/^\$/, ''),
         payments_square_enabled: document.getElementById('square-enabled').checked ? '1' : '0',
-        payments_square_access_token: document.getElementById('square-token').value.trim(),
         payments_square_location_id: document.getElementById('square-location').value.trim(),
         payments_square_environment: document.getElementById('square-env').value,
     };
+    // Only send secrets if the admin typed a new value
+    const token = document.getElementById('square-token').value.trim();
+    if (token) body.payments_square_access_token = token;
+    const wkey = document.getElementById('square-webhook-key').value.trim();
+    if (wkey) body.payments_square_webhook_signature_key = wkey;
+
     try {
         const res = await fetch('/api/settings/payments', {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(body),
+            method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
         });
-        const msg = document.getElementById('status-msg');
-        if (res.ok) {
-            msg.textContent = 'Settings saved!';
-            msg.className = 'mb-4 p-3 rounded-md text-sm font-medium bg-green-100 text-green-800';
-        } else {
-            const d = await res.json();
-            msg.textContent = d.error || 'Error saving';
-            msg.className = 'mb-4 p-3 rounded-md text-sm font-medium bg-red-100 text-red-800';
-        }
-        msg.classList.remove('hidden');
-        setTimeout(() => msg.classList.add('hidden'), 3000);
+        const d = await res.json();
+        showMsg(res.ok ? 'Settings saved!' : (d.error || 'Error saving'), res.ok);
+        if (res.ok) loadSettings();
     } catch (err) {
-        alert('Network error');
+        showMsg('Network error', false);
     }
 }
 
@@ -178,16 +236,48 @@ async function uploadQR() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-        const res = await fetch('/api/settings/payments/zelle-qr', { method: 'POST', body: formData });
+        const res = await fetch('/api/settings/payments/zelle-qr', {method: 'POST', body: formData});
         const data = await res.json();
-        if (res.ok) {
-            document.getElementById('qr-preview').innerHTML = `<img src="${data.path}" class="w-full h-full object-contain">`;
-        } else {
-            alert(data.error || 'Upload failed');
-        }
-    } catch (err) {
-        alert('Network error');
-    }
+        if (res.ok) { renderQR(data.path); showMsg('QR code uploaded', true); }
+        else showMsg(data.error || 'Upload failed', false);
+    } catch (err) { showMsg('Network error', false); }
+}
+
+async function removeQR() {
+    if (!confirm('Remove the QR code?')) return;
+    try {
+        const res = await fetch('/api/settings/payments/zelle-qr', {method: 'DELETE'});
+        const d = await res.json();
+        if (res.ok) { renderQR(''); showMsg('QR code removed', true); }
+        else showMsg(d.error || 'Error', false);
+    } catch { showMsg('Network error', false); }
+}
+
+async function clearToken() {
+    if (!confirm('Clear the saved Square access token?')) return;
+    try {
+        const res = await fetch('/api/settings/payments/square-token', {method: 'DELETE'});
+        const d = await res.json();
+        showMsg(res.ok ? d.message : (d.error || 'Error'), res.ok);
+        if (res.ok) loadSettings();
+    } catch { showMsg('Network error', false); }
+}
+
+async function testSquare() {
+    const el = document.getElementById('square-test-result');
+    el.textContent = 'Testing…';
+    el.className = 'ml-3 text-sm text-gray-500';
+    try {
+        const res = await fetch('/api/settings/payments/test-square', {method: 'POST'});
+        const d = await res.json();
+        el.textContent = d.message;
+        el.className = 'ml-3 text-sm ' + (d.ok ? 'text-green-600' : 'text-red-600');
+    } catch { el.textContent = 'Network error'; el.className = 'ml-3 text-sm text-red-600'; }
+}
+
+function copyWebhook() {
+    const f = document.getElementById('webhook-url');
+    navigator.clipboard.writeText(f.value).then(() => showMsg('Webhook URL copied', true));
 }
 
 loadSettings();

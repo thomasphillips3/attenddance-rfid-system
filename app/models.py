@@ -491,6 +491,13 @@ class Setting(db.Model):
         return row.value if row and row.value else default
 
     @staticmethod
+    def get_bool(key: str, default: bool = False) -> bool:
+        row = Setting.query.filter_by(key=key).first()
+        if not row or row.value is None or row.value == '':
+            return default
+        return row.value == '1'
+
+    @staticmethod
     def set(key: str, value: str):
         from app import db as _db
         row = Setting.query.filter_by(key=key).first()
@@ -502,3 +509,78 @@ class Setting(db.Model):
 
     def __repr__(self):
         return f'<Setting {self.key}>'
+
+
+class PendingPayment(db.Model):
+    """A payment a parent claims to have sent externally (Zelle/Cash App/etc),
+    awaiting admin confirmation before it becomes a real Transaction."""
+    __tablename__ = 'pending_payments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    # Either a single student OR a whole family (one of these is set)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'))
+    family_id = db.Column(db.Integer, db.ForeignKey('families.id'))
+    parent_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    method = db.Column(db.String(20), nullable=False)  # zelle, cashapp, square, cash, other
+    reference = db.Column(db.String(120))  # confirmation # / memo the parent entered
+    note = db.Column(db.Text)  # optional parent note
+
+    status = db.Column(db.String(20), default='pending', nullable=False)  # pending, confirmed, rejected
+    admin_note = db.Column(db.Text)  # reason on reject / note on confirm
+    transaction_id = db.Column(db.Integer, db.ForeignKey('transactions.id'))  # link once confirmed
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    reviewed_at = db.Column(db.DateTime)
+    reviewed_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+
+    student = db.relationship('Student', backref='pending_payments')
+    family = db.relationship('Family', backref='pending_payments')
+    parent = db.relationship('User', foreign_keys=[parent_id], backref='claimed_payments')
+    reviewer = db.relationship('User', foreign_keys=[reviewed_by])
+    transaction = db.relationship('Transaction', backref='pending_payment')
+
+    def __repr__(self):
+        return f'<PendingPayment ${self.amount} {self.method} {self.status}>'
+
+
+class SquareInvoice(db.Model):
+    """Tracks Square invoices we've sent so the webhook can auto-record payment."""
+    __tablename__ = 'square_invoices'
+
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    invoice_id = db.Column(db.String(120), unique=True, index=True, nullable=False)
+    amount_cents = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(30), default='SENT', nullable=False)
+    public_url = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    paid_at = db.Column(db.DateTime)
+
+    student = db.relationship('Student', backref='square_invoices')
+
+    def __repr__(self):
+        return f'<SquareInvoice {self.invoice_id} {self.status}>'
+
+
+class AuditLog(db.Model):
+    """Audit trail for sensitive admin actions (settings changes, payment review)."""
+    __tablename__ = 'audit_logs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    action = db.Column(db.String(60), nullable=False)  # e.g. settings.update, payment.confirm
+    detail = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    user = db.relationship('User', backref='audit_logs')
+
+    @staticmethod
+    def record(user_id, action: str, detail: str = ''):
+        """Add an audit entry. Does NOT commit — caller commits with their txn."""
+        from app import db as _db
+        _db.session.add(AuditLog(user_id=user_id, action=action, detail=detail))
+
+    def __repr__(self):
+        return f'<AuditLog {self.action} by {self.user_id}>'

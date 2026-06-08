@@ -113,6 +113,7 @@ def parent_dashboard():
         return redirect(url_for('main.dashboard'))
     children = current_user.get_children()
     child_data = []
+    family_groups = {}  # family_id -> {name, balance, member_ids, member_names}
     for child in children:
         bal = calc_balance(child.id)
         recent_att = Attendance.query.filter_by(student_id=child.id).order_by(
@@ -124,7 +125,19 @@ def parent_dashboard():
             'total_payments': bal['total_payments'],
             'recent_attendance': recent_att,
         })
-    return render_template('parent/dashboard.html', children=child_data)
+        if child.family_id:
+            g = family_groups.setdefault(child.family_id, {
+                'family_id': child.family_id,
+                'name': child.family.name if child.family else 'Family',
+                'balance': 0.0,
+                'members': [],
+            })
+            g['balance'] += bal['balance']
+            g['members'].append(child.full_name)
+
+    # Only offer combined pay when a family has 2+ of this parent's children and owes money
+    families = [g for g in family_groups.values() if len(g['members']) > 1 and g['balance'] > 0]
+    return render_template('parent/dashboard.html', children=child_data, families=families)
 
 
 @bp.route('/transactions')
@@ -297,3 +310,9 @@ def locations_page():
 @admin_required
 def settings_page():
     return render_template('settings/payments.html')
+
+
+@bp.route('/pending-payments')
+@admin_required
+def pending_payments_page():
+    return render_template('payments/pending.html')

@@ -132,4 +132,16 @@ def create_app(config_name=None):
             'APP_VERSION': app.config['APP_VERSION'],
         }
 
+    @app.context_processor
+    def inject_pending_count():
+        """Expose the count of pending payments for the staff nav badge."""
+        from flask_login import current_user
+        if not current_user.is_authenticated or not getattr(current_user, 'is_staff', False):
+            return {'pending_payment_count': 0}
+        try:
+            from app.models import PendingPayment
+            return {'pending_payment_count': PendingPayment.query.filter_by(status='pending').count()}
+        except Exception:
+            return {'pending_payment_count': 0}
+
     return app
