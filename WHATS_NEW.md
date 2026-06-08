@@ -1,66 +1,38 @@
-# What's New in AttenDANCE — and How to Finish Setup
+# What's New in AttenDANCE
 
-Hi Wilkanda! Your studio system got a big upgrade. It now does just about everything Jackrabbit did — billing, the parent portal, recital and costume tracking, the company, registration, and more — all in one place built for LaShelle's.
+Hey Wilkanda!
 
-Here's a plain-English tour of what's new, then a short checklist to get it fully switched on.
+Big update — your system now does basically everything Jackrabbit did, built for LaShelle's. Billing, the parent portal, recital and costumes, the company, registration, all of it in one spot.
 
-**Where to sign in:** https://attenddance.fly.dev — use your admin login. (First thing: open **Your Profile** from the menu in the top-right and change your password.)
+Sign in at https://attenddance.fly.dev with your admin login. First thing: hit **Your Profile** (top-right menu) and change your password.
 
----
+## What you can do now
 
-## What's new
+**Money stuff.** Parents pay right from their portal — Zelle, Cash App, or a Square card invoice — and they see exactly what they owe. When someone pays you by Zelle or Cash App, they tap "I sent a payment" and it shows up in your **Pending Payments** inbox. One click to confirm and their balance updates. No more tracking who paid in your head. You've also got family payment splitting, payment plans for folks who need to spread it out, late fees when you want them (never automatic), monthly balance reminders, year-end statements, and donation receipts for the Foundation.
 
-### Getting paid — and keeping track of it
-- **Parents can pay from their portal** with Zelle, Cash App, or a Square card invoice. They see exactly what they owe.
-- **"I sent a payment" → you confirm.** When a parent pays you by Zelle or Cash App, they tap a button to tell the system. It lands in your **Pending Payments** page (the bell shows how many are waiting). You confirm with one click and their balance updates — no more guessing who paid.
-- **Family payments** split automatically across siblings.
-- **Payment plans** for families who need to spread a balance out.
-- **Late fees** you can apply when you choose (never automatic).
-- **Balance reminders** — send a gentle "you have a balance" nudge to everyone who owes, by email and/or text. Can run automatically each month once email/text are turned on (see checklist).
-- **Year-end statements** parents can print for their records, plus **donation receipts** for the Foundation.
+**Recital & costumes.** Track costumes per class, store each dancer's size, charge the costume fee to everyone at once, and see who's paid. Sell and count recital tickets too.
 
-### Recital & costumes
-- Track **costumes** per class, store each dancer's **size**, charge the costume fee to everyone at once, and see who's paid.
-- Sell and count **recital tickets** by type (Adult/Child), with running totals.
+**The Company.** Run LSODance Company rosters, online auditions families sign up for, and performance schedules with call times — all of it shows up in the parent portal.
 
-### The Company
-- Manage **LSODance Company** rosters, run **auditions** parents sign up for online, and schedule **performances** with call times — all visible to families in their portal.
+**Forms & families.** Parents sign waivers, photo release, and medical forms online, and you can see who still hasn't. Mark skills and print certificates. Parents request makeups, you schedule 'em.
 
-### Families & forms
-- **Digital waivers** — liability, photo release, medical authorization — signed by parents online, with a clear view of who still needs to sign.
-- **Skills & certificates** — mark what each dancer has learned and print a Certificate of Achievement.
-- **Makeup classes** — parents request, you schedule.
+**Growing the studio.** Share a sign-up link and families register themselves — you approve with one click. Waitlists for full classes. A leads list to track new families from "just asking" to enrolled. A weekly calendar. And an Insights page that shows who's active, who's slipping, and your enrollment trends.
 
-### Growing the studio
-- **Online registration** — share a link, families sign up themselves, and you approve them with one click (turn this on for enrollment season — see checklist).
-- **Waitlists** for full classes.
-- **Leads & trials** — track prospective families from first contact to enrolled.
-- **Weekly calendar** view of every class.
-- **Insights** — see active vs. at-risk dancers, enrollment and attendance trends.
+Works on your phone too — add it to your home screen and it acts like an app.
 
-### On your phone
-- Add the site to your home screen and it works like an app.
+## A few things only you can turn on
 
----
+All that's already live. These last few need your accounts, but it's all in **Settings** (the gear, top-right) — no tech stuff.
 
-## Finish-setup checklist
+1. **Drop in your Zelle QR code.** Settings → Zelle → Upload. Your Zelle name and Cash App ($Lashellesdance) are already in there. This is the one thing parents need to Zelle you today.
+2. **Square** (if you want card payments) — paste your token and location ID, then hit Test Connection.
+3. **Email** — receipts and reminders save, but they won't actually go out till we connect your studio email. Shoot me those details and I'll handle it, takes a minute.
+4. **Texts** (optional) — if you want reminders by text too, we'll set that up together.
+5. **Open registration** when it's enrollment season — go to **Enroll**, flip it on, and share the public link on Facebook/IG. Turn it back off when you're done.
 
-Everything above is live. A few things only **you** can switch on, because they need your accounts. None require any technical work — it's all in **Settings** (the gear in the top-right menu).
+Log in as parent-demo anytime to see exactly what families see.
 
-1. **Upload your Zelle QR code.** Settings → Zelle → Upload. (Your Zelle name and Cash App `$Lashellesdance` are already set.) This is the one thing parents need to pay you by Zelle today.
+That's it. Anything feels off or you want it working different, just lmk — this is built for how y'all run things.
 
-2. **Square (optional, for card payments).** In Settings → Square, paste your Square access token and location ID, then click **Test Connection**. Until then, card invoices stay off.
-
-3. **Email (for receipts, reminders, and message blasts to actually send).** Right now those are saved but not auto-emailed until email is connected. Send me your studio email details and I'll plug them in — it's a one-time thing.
-
-4. **Text messages (optional).** If you want reminders/alerts by text, we'll set up a texting account (Twilio) together.
-
-5. **Open registration when it's time.** Go to **Enroll** and flip "Registration open." Your public sign-up link is on that same page — share it on Facebook/Instagram. Turn it off again after enrollment season.
-
----
-
-## A couple of notes
-- The **demo parent login** (parent-demo) is there so you can see exactly what families see.
-- Reminders, receipts, and email blasts **save** even before email is connected — you just won't see them auto-send until step 3.
-
-Anything confusing, or something you want changed? Just tell me — this is built for you, so it should work the way you run the studio.
+Peace,
+Thomas
