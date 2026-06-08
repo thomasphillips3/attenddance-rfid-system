@@ -15,4 +15,6 @@ ENV FLASK_PORT=8080
 
 EXPOSE 8080
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--timeout", "120", "run:app"]
+# Single worker + threads: fits the 256MB Fly machine (2 workers OOM'd) and
+# avoids two processes racing on db.create_all()/migrations against SQLite.
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "4", "--worker-class", "gthread", "--timeout", "120", "run:app"]
