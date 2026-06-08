@@ -359,6 +359,52 @@ def calendar_page():
     return render_template('calendar/view.html')
 
 
+@bp.route('/skills')
+@admin_required
+def skills_page():
+    students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
+    classes = DanceClass.query.filter_by(is_active=True).order_by(DanceClass.name).all()
+    return render_template('skills/manage.html', students=students, classes=classes)
+
+
+@bp.route('/students/<int:student_id>/certificate')
+@login_required
+def student_certificate(student_id):
+    student = Student.query.get_or_404(student_id)
+    if current_user.is_parent and student.id not in {s.id for s in current_user.get_children()}:
+        return redirect(url_for('main.parent_dashboard'))
+    from app.models import Skill, StudentSkill
+    achieved_ids = {a.skill_id for a in StudentSkill.query.filter_by(student_id=student_id).all()}
+    skills = Skill.query.filter(Skill.id.in_(achieved_ids)).order_by(Skill.category, Skill.display_order).all() if achieved_ids else []
+    return render_template('skills/certificate.html', student=student, skills=skills)
+
+
+@bp.route('/makeups')
+@admin_required
+def makeups_page():
+    students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
+    classes = DanceClass.query.filter_by(is_active=True).order_by(DanceClass.name).all()
+    return render_template('makeups/manage.html', students=students, classes=classes)
+
+
+@bp.route('/leads')
+@admin_required
+def leads_page():
+    return render_template('leads/manage.html')
+
+
+@bp.route('/timeclock')
+@staff_required
+def timeclock_page():
+    return render_template('timeclock/view.html')
+
+
+@bp.route('/analytics')
+@admin_required
+def analytics_page():
+    return render_template('analytics/dashboard.html')
+
+
 def _parent_owns(student):
     return (not current_user.is_parent) or (student.id in {s.id for s in current_user.get_children()})
 

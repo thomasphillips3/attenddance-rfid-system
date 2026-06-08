@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block extra_head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>{% endblock %}
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <h1 class="text-3xl font-bold text-gray-900"><i class="fas fa-chart-line text-primary-500 mr-2"></i>Retention &amp; Insights</h1>
+            <p class="mt-1 text-sm text-gray-600">Enrollment, attendance trends, and dancers who may be slipping away</p>
+        </div>
+    </div>
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div id="cards" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8"></div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <div class="bg-white shadow rounded-lg p-5"><h2 class="font-semibold text-gray-900 mb-3">New Enrollments (12 mo)</h2><canvas id="enrollChart" height="140"></canvas></div>
+            <div class="bg-white shadow rounded-lg p-5"><h2 class="font-semibold text-gray-900 mb-3">Attendance (6 mo)</h2><canvas id="attChart" height="140"></canvas></div>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="bg-white shadow rounded-lg p-5">
+                <h2 class="font-semibold text-gray-900 mb-3">Students per Class</h2>
+                <div id="perClass" class="space-y-2 text-sm text-gray-500">Loading…</div>
+            </div>
+            <div class="bg-white shadow rounded-lg p-5">
+                <h2 class="font-semibold text-amber-700 mb-3"><i class="fas fa-triangle-exclamation mr-1"></i>At Risk <span class="text-xs text-gray-400">(no attendance in 30 days)</span></h2>
+                <div id="atRisk" class="text-sm text-gray-500">Loading…</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function card(label,val,color){return `<div class="bg-white shadow rounded-lg p-4 text-center"><div class="text-3xl font-bold ${color}">${val}</div><div class="text-xs text-gray-500 uppercase tracking-wider mt-1">${label}</div></div>`;}
+
+async function load(){
+    const d=await (await fetch('/api/analytics/retention')).json();
+    document.getElementById('cards').innerHTML =
+        card('Active dancers', d.active, 'text-gray-900') +
+        card('New this month', d.new_this_month, 'text-green-600') +
+        card('At risk', d.at_risk_count, 'text-amber-600') +
+        card('Inactive', d.inactive, 'text-gray-400');
+
+    new Chart(document.getElementById('enrollChart'), {
+        type:'bar',
+        data:{labels:d.enroll_by_month.map(x=>x.month),datasets:[{label:'New dancers',data:d.enroll_by_month.map(x=>x.count),backgroundColor:'#6366f1'}]},
+        options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}
+    });
+    new Chart(document.getElementById('attChart'), {
+        type:'line',
+        data:{labels:d.attendance_by_month.map(x=>x.month),datasets:[{label:'Check-ins',data:d.attendance_by_month.map(x=>x.count),borderColor:'#8b5cf6',backgroundColor:'rgba(139,92,246,.15)',fill:true,tension:.3}]},
+        options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}
+    });
+
+    const pc=document.getElementById('perClass');
+    const max=Math.max(1,...d.students_per_class.map(c=>c.count));
+    pc.innerHTML = d.students_per_class.length ? d.students_per_class.map(c=>`
+        <div><div class="flex justify-between"><span>${esc(c.name)}</span><span class="text-gray-500">${c.count}</span></div>
+        <div class="h-2 bg-gray-100 rounded"><div class="h-2 bg-primary-500 rounded" style="width:${Math.round(c.count/max*100)}%"></div></div></div>`).join('') : '<p>No classes.</p>';
+
+    const ar=document.getElementById('atRisk');
+    ar.innerHTML = d.at_risk.length ? `<div class="flex flex-wrap gap-2">${d.at_risk.map(n=>`<span class="bg-amber-50 border border-amber-200 rounded-full px-3 py-1">${esc(n)}</span>`).join('')}</div>${d.at_risk_count>d.at_risk.length?`<p class="text-xs text-gray-400 mt-2">+${d.at_risk_count-d.at_risk.length} more</p>`:''}` : '<p class="text-green-600">Everyone has checked in recently. 🎉</p>';
+}
+load();
+</script>
+{% endblock %}

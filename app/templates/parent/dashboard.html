@@ -112,6 +112,14 @@
                        class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
                         <i class="fas fa-file-invoice mr-2"></i>Statement
                     </a>
+                    <a href="{{ url_for('main.student_certificate', student_id=child.student.id) }}"
+                       class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        <i class="fas fa-award mr-2"></i>Progress
+                    </a>
+                    <button onclick="requestMakeup({{ child.student.id }}, '{{ child.student.full_name|e }}')"
+                       class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        <i class="fas fa-rotate mr-2"></i>Request Makeup
+                    </button>
                 </div>
 
                 <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Recent Attendance</h3>
@@ -157,6 +165,14 @@
                 <div id="company-costumes"></div>
                 <div id="company-auditions"></div>
             </div>
+        </div>
+
+        <!-- Makeup classes -->
+        <div id="makeups-card" class="bg-white rounded-lg shadow-lg mb-8 overflow-hidden hidden">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-rotate mr-2 text-gray-400"></i>Makeup Classes</h2>
+            </div>
+            <div class="p-6"><div id="makeups-list" class="space-y-2 text-sm"></div></div>
         </div>
 
         <!-- Payment history & pending claims -->
@@ -536,12 +552,46 @@ async function openDonate() {
     } catch { toast('Network error', false); }
 }
 
+async function requestMakeup(studentId, name) {
+    const missed_date = prompt(`What date did ${name} miss? (YYYY-MM-DD)`);
+    if (missed_date === null) return;
+    const note = prompt('Anything to add? (which class, preferred makeup time)') || '';
+    try {
+        const res = await fetch('/api/makeups', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({student_id: studentId, missed_date, note}),
+        });
+        const d = await res.json();
+        toast(res.ok ? 'Makeup request sent — the studio will schedule it.' : (d.error || 'Error'), res.ok);
+        if (res.ok) loadMakeups();
+    } catch { toast('Network error', false); }
+}
+
+async function loadMakeups() {
+    const card = document.getElementById('makeups-card');
+    const el = document.getElementById('makeups-list');
+    if (!el) return;
+    try {
+        const data = await (await fetch('/api/my-makeups')).json();
+        const rows = data.makeups || [];
+        if (!rows.length) return;
+        card.classList.remove('hidden');
+        const badge = s => ({requested:'bg-amber-100 text-amber-800',scheduled:'bg-blue-100 text-blue-800',completed:'bg-green-100 text-green-800',cancelled:'bg-gray-200 text-gray-600'}[s]||'');
+        el.innerHTML = rows.map(m => `
+            <div class="flex items-center justify-between border border-gray-100 rounded px-3 py-2">
+                <span>${esc(m.student_name)}${m.missed_date ? ' · missed '+m.missed_date : ''}${m.makeup_date ? ' · makeup '+m.makeup_date : ''}${m.makeup_class ? ' ('+esc(m.makeup_class)+')' : ''}</span>
+                <span class="px-2 py-0.5 rounded-full text-xs ${badge(m.status)}">${m.status}</span>
+            </div>`).join('');
+    } catch {}
+}
+
 (async function init() {
     await loadPayOptions();
     loadMyPayments();
     loadCompany();
     loadFormsBadges();
     loadDonate();
+    loadMakeups();
 })();
 </script>
 {% endblock %}

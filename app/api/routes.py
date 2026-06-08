@@ -35,7 +35,9 @@ from app.models import (
     DanceClass,
     Donation,
     Family,
+    Lead,
     Location,
+    MakeupClass,
     Message,
     ParentStudent,
     PaymentPlan,
@@ -49,10 +51,13 @@ from app.models import (
     Rule,
     RuleAcknowledgment,
     Setting,
+    Skill,
     SquareInvoice,
     Student,
+    StudentSkill,
     TicketOrder,
     TicketType,
+    TimeClockEntry,
     Transaction,
     User,
     WaitlistEntry,
@@ -3565,3 +3570,419 @@ def remove_waitlist(wid):
     w.status = 'removed'
     db.session.commit()
     return jsonify({'message': 'Removed from waitlist'})
+
+
+# ── Skills & progress ───────────────────────────────────────────────
+
+@bp.route('/skills', methods=['GET'])
+@login_required
+def list_skills():
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    q = Skill.query.filter_by(is_active=True)
+    class_id = request.args.get('class_id', type=int)
+    if class_id:
+        q = q.filter_by(class_id=class_id)
+    rows = q.order_by(Skill.display_order, Skill.id).all()
+    return jsonify({'skills': [{
+        'id': s.id, 'name': s.name, 'category': s.category,
+        'class_id': s.class_id, 'class_name': s.dance_class.name if s.dance_class else None,
+        'achieved_count': s.achievements.count(),
+    } for s in rows]})
+
+
+@bp.route('/skills', methods=['POST'])
+@login_required
+def create_skill():
+    err = _admin_only()
+    if err:
+        return err
+    data = request.get_json() or {}
+    if not data.get('name'):
+        return jsonify({'error': 'name is required'}), 400
+    s = Skill(name=data['name'].strip(), category=(data.get('category') or '').strip() or None,
+              class_id=int(data['class_id']) if data.get('class_id') else None,
+              display_order=int(data.get('display_order', 0)))
+    db.session.add(s)
+    db.session.commit()
+    return jsonify({'id': s.id, 'name': s.name}), 201
+
+
+@bp.route('/skills/<int:sid>', methods=['DELETE'])
+@login_required
+def delete_skill(sid):
+    err = _admin_only()
+    if err:
+        return err
+    s = Skill.query.get_or_404(sid)
+    s.is_active = False
+    db.session.commit()
+    return jsonify({'message': f'{s.name} archived'})
+
+
+@bp.route('/students/<int:student_id>/skills', methods=['GET'])
+@login_required
+def get_student_skills(student_id):
+    if current_user.is_parent and student_id not in _parent_student_ids(current_user):
+        return jsonify({'error': 'Not authorized'}), 403
+    Student.query.get_or_404(student_id)
+    achieved = {a.skill_id: a for a in StudentSkill.query.filter_by(student_id=student_id).all()}
+    skills = Skill.query.filter_by(is_active=True).order_by(Skill.category, Skill.display_order, Skill.id).all()
+    return jsonify({'skills': [{
+        'id': s.id, 'name': s.name, 'category': s.category,
+        'achieved': s.id in achieved,
+        'achieved_at': achieved[s.id].achieved_at.isoformat() if s.id in achieved else None,
+    } for s in skills]})
+
+
+@bp.route('/students/<int:student_id>/skills/<int:skill_id>/toggle', methods=['POST'])
+@login_required
+def toggle_student_skill(student_id, skill_id):
+    err = _admin_only()
+    if err:
+        return err
+    Student.query.get_or_404(student_id)
+    Skill.query.get_or_404(skill_id)
+    existing = StudentSkill.query.filter_by(student_id=student_id, skill_id=skill_id).first()
+    if existing:
+        db.session.delete(existing)
+        achieved = False
+    else:
+        db.session.add(StudentSkill(student_id=student_id, skill_id=skill_id, awarded_by=current_user.id))
+        achieved = True
+    db.session.commit()
+    return jsonify({'achieved': achieved})
+
+
+# ── Makeup classes ──────────────────────────────────────────────────
+
+def _makeup_to_dict(m):
+    return {
+        'id': m.id,
+        'student_id': m.student_id,
+        'student_name': m.student.full_name,
+        'missed_class': m.missed_class.name if m.missed_class else None,
+        'missed_date': m.missed_date.isoformat() if m.missed_date else None,
+        'makeup_class': m.makeup_class.name if m.makeup_class else None,
+        'makeup_date': m.makeup_date.isoformat() if m.makeup_date else None,
+        'status': m.status,
+        'note': m.note,
+        'created_at': m.created_at.isoformat(),
+    }
+
+
+@bp.route('/makeups', methods=['GET'])
+@login_required
+def list_makeups():
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    q = MakeupClass.query
+    status = request.args.get('status', '').strip()
+    if status:
+        q = q.filter_by(status=status)
+    rows = q.order_by(desc(MakeupClass.created_at)).limit(200).all()
+    return jsonify({'makeups': [_makeup_to_dict(m) for m in rows]})
+
+
+def _parse_date(v):
+    if not v:
+        return None
+    try:
+        return datetime.strptime(v, '%Y-%m-%d').date()
+    except ValueError:
+        return None
+
+
+@bp.route('/makeups', methods=['POST'])
+@login_required
+def create_makeup():
+    data = request.get_json() or {}
+    student_id = data.get('student_id')
+    if not student_id:
+        return jsonify({'error': 'student_id is required'}), 400
+    if current_user.is_parent and int(student_id) not in _parent_student_ids(current_user):
+        return jsonify({'error': 'Not authorized for this student'}), 403
+    m = MakeupClass(
+        student_id=int(student_id),
+        missed_class_id=int(data['missed_class_id']) if data.get('missed_class_id') else None,
+        missed_date=_parse_date(data.get('missed_date')),
+        makeup_class_id=int(data['makeup_class_id']) if data.get('makeup_class_id') else None,
+        makeup_date=_parse_date(data.get('makeup_date')),
+        status='requested' if current_user.is_parent else (data.get('status') or 'scheduled'),
+        note=(data.get('note') or '').strip() or None,
+        requested_by=current_user.id,
+    )
+    db.session.add(m)
+    db.session.commit()
+    return jsonify(_makeup_to_dict(m)), 201
+
+
+@bp.route('/makeups/<int:mid>', methods=['PUT'])
+@login_required
+def update_makeup(mid):
+    err = _admin_only()
+    if err:
+        return err
+    m = MakeupClass.query.get_or_404(mid)
+    data = request.get_json() or {}
+    if 'status' in data and data['status'] in ('requested', 'scheduled', 'completed', 'cancelled'):
+        m.status = data['status']
+    if 'makeup_class_id' in data:
+        m.makeup_class_id = int(data['makeup_class_id']) if data['makeup_class_id'] else None
+    if 'makeup_date' in data:
+        m.makeup_date = _parse_date(data['makeup_date'])
+    if 'note' in data:
+        m.note = (data['note'] or '').strip() or None
+    db.session.commit()
+    return jsonify(_makeup_to_dict(m))
+
+
+@bp.route('/makeups/<int:mid>', methods=['DELETE'])
+@login_required
+def delete_makeup(mid):
+    err = _admin_only()
+    if err:
+        return err
+    m = MakeupClass.query.get_or_404(mid)
+    db.session.delete(m)
+    db.session.commit()
+    return jsonify({'message': 'Removed'})
+
+
+@bp.route('/my-makeups', methods=['GET'])
+@login_required
+def my_makeups():
+    if not current_user.is_parent:
+        return jsonify({'makeups': []})
+    ids = _parent_student_ids(current_user)
+    if not ids:
+        return jsonify({'makeups': []})
+    rows = MakeupClass.query.filter(MakeupClass.student_id.in_(ids)).order_by(desc(MakeupClass.created_at)).all()
+    return jsonify({'makeups': [_makeup_to_dict(m) for m in rows]})
+
+
+# ── Leads / trial pipeline ──────────────────────────────────────────
+
+def _lead_to_dict(l):
+    return {
+        'id': l.id, 'name': l.name, 'email': l.email, 'phone': l.phone,
+        'interest': l.interest, 'source': l.source, 'status': l.status,
+        'trial_date': l.trial_date.isoformat() if l.trial_date else None,
+        'note': l.note, 'created_at': l.created_at.isoformat(),
+    }
+
+
+@bp.route('/leads', methods=['GET'])
+@login_required
+def list_leads():
+    err = _admin_only()
+    if err:
+        return err
+    q = Lead.query
+    status = request.args.get('status', '').strip()
+    if status and status != 'all':
+        q = q.filter_by(status=status)
+    rows = q.order_by(desc(Lead.created_at)).limit(300).all()
+    return jsonify({'leads': [_lead_to_dict(l) for l in rows]})
+
+
+@bp.route('/leads', methods=['POST'])
+@login_required
+def create_lead():
+    err = _admin_only()
+    if err:
+        return err
+    data = request.get_json() or {}
+    if not data.get('name'):
+        return jsonify({'error': 'name is required'}), 400
+    l = Lead(name=data['name'].strip(), email=(data.get('email') or '').strip() or None,
+             phone=(data.get('phone') or '').strip() or None,
+             interest=(data.get('interest') or '').strip() or None,
+             source=(data.get('source') or '').strip() or None,
+             trial_date=_parse_date(data.get('trial_date')),
+             note=(data.get('note') or '').strip() or None)
+    db.session.add(l)
+    db.session.commit()
+    return jsonify(_lead_to_dict(l)), 201
+
+
+@bp.route('/leads/<int:lid>', methods=['PUT'])
+@login_required
+def update_lead(lid):
+    err = _admin_only()
+    if err:
+        return err
+    l = Lead.query.get_or_404(lid)
+    data = request.get_json() or {}
+    for f in ('name', 'email', 'phone', 'interest', 'source', 'note'):
+        if f in data:
+            setattr(l, f, (data[f] or '').strip() or None)
+    if 'status' in data and data['status'] in ('new', 'contacted', 'trial_scheduled', 'converted', 'lost'):
+        l.status = data['status']
+    if 'trial_date' in data:
+        l.trial_date = _parse_date(data['trial_date'])
+    db.session.commit()
+    return jsonify(_lead_to_dict(l))
+
+
+@bp.route('/leads/<int:lid>', methods=['DELETE'])
+@login_required
+def delete_lead(lid):
+    err = _admin_only()
+    if err:
+        return err
+    db.session.delete(Lead.query.get_or_404(lid))
+    db.session.commit()
+    return jsonify({'message': 'Lead removed'})
+
+
+@bp.route('/leads/<int:lid>/convert', methods=['POST'])
+@login_required
+def convert_lead(lid):
+    """Create a Family + Student from a lead and mark it converted."""
+    err = _admin_only()
+    if err:
+        return err
+    l = Lead.query.get_or_404(lid)
+    parts = l.name.split(' ', 1)
+    fam = Family(name=f'{l.name} Family', primary_email=l.email, primary_phone=l.phone)
+    db.session.add(fam)
+    db.session.flush()
+    student = Student(first_name=parts[0], last_name=parts[1] if len(parts) > 1 else '',
+                      family_id=fam.id, parent_email=l.email, parent_phone=l.phone)
+    db.session.add(student)
+    l.status = 'converted'
+    AuditLog.record(current_user.id, 'lead.convert', f'Converted lead {l.name} to a student')
+    db.session.commit()
+    return jsonify({'message': f'Created {student.full_name} from lead'})
+
+
+# ── Staff time clock ────────────────────────────────────────────────
+
+@bp.route('/timeclock/me', methods=['GET'])
+@login_required
+def timeclock_me():
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    open_entry = TimeClockEntry.query.filter_by(user_id=current_user.id, clock_out=None).first()
+    recent = (TimeClockEntry.query.filter_by(user_id=current_user.id)
+              .order_by(desc(TimeClockEntry.clock_in)).limit(20).all())
+    return jsonify({
+        'open': bool(open_entry),
+        'open_since': open_entry.clock_in.isoformat() if open_entry else None,
+        'entries': [{
+            'id': e.id, 'clock_in': e.clock_in.isoformat(),
+            'clock_out': e.clock_out.isoformat() if e.clock_out else None, 'hours': e.hours,
+        } for e in recent],
+    })
+
+
+@bp.route('/timeclock/clock-in', methods=['POST'])
+@login_required
+def clock_in():
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    if TimeClockEntry.query.filter_by(user_id=current_user.id, clock_out=None).first():
+        return jsonify({'error': "You're already clocked in"}), 400
+    e = TimeClockEntry(user_id=current_user.id)
+    db.session.add(e)
+    db.session.commit()
+    return jsonify({'message': 'Clocked in', 'clock_in': e.clock_in.isoformat()}), 201
+
+
+@bp.route('/timeclock/clock-out', methods=['POST'])
+@login_required
+def clock_out():
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    e = TimeClockEntry.query.filter_by(user_id=current_user.id, clock_out=None).first()
+    if not e:
+        return jsonify({'error': "You're not clocked in"}), 400
+    e.clock_out = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'message': f'Clocked out — {e.hours} hrs', 'hours': e.hours})
+
+
+@bp.route('/timeclock/report', methods=['GET'])
+@login_required
+def timeclock_report():
+    err = _admin_only()
+    if err:
+        return err
+    start = _parse_date(request.args.get('start')) or (date.today() - timedelta(days=30))
+    end = _parse_date(request.args.get('end')) or date.today()
+    entries = (TimeClockEntry.query
+               .filter(TimeClockEntry.clock_in >= datetime.combine(start, datetime.min.time()),
+                       TimeClockEntry.clock_in <= datetime.combine(end, datetime.max.time()),
+                       TimeClockEntry.clock_out.isnot(None))
+               .all())
+    by_user = {}
+    for e in entries:
+        by_user.setdefault(e.user_id, {'name': e.user.full_name, 'hours': 0.0, 'shifts': 0})
+        by_user[e.user_id]['hours'] += e.hours or 0
+        by_user[e.user_id]['shifts'] += 1
+    report = sorted(by_user.values(), key=lambda x: -x['hours'])
+    for r in report:
+        r['hours'] = round(r['hours'], 2)
+    return jsonify({'start': start.isoformat(), 'end': end.isoformat(), 'report': report,
+                    'total_hours': round(sum(r['hours'] for r in report), 2)})
+
+
+# ── Retention / analytics dashboard ─────────────────────────────────
+
+@bp.route('/analytics/retention', methods=['GET'])
+@login_required
+def analytics_retention():
+    err = _admin_only()
+    if err:
+        return err
+    today = date.today()
+    month_start = today.replace(day=1)
+    cutoff_30 = datetime.utcnow() - timedelta(days=30)
+
+    active = Student.query.filter_by(is_active=True).count()
+    inactive = Student.query.filter_by(is_active=False).count()
+    new_this_month = Student.query.filter(Student.enrollment_date >= month_start).count()
+
+    # At-risk: active students with no attendance in the last 30 days
+    active_students = Student.query.filter_by(is_active=True).all()
+    recent_att_ids = {row[0] for row in db.session.query(Attendance.student_id)
+                      .filter(Attendance.check_in_time >= cutoff_30).distinct().all()}
+    at_risk = [s.full_name for s in active_students if s.id not in recent_att_ids]
+
+    # Enrollment by month (last 12 months) using enrollment_date
+    enroll_by_month = []
+    for i in range(11, -1, -1):
+        m = month_start
+        # step back i months
+        year = m.year + (m.month - 1 - i) // 12
+        month = (m.month - 1 - i) % 12 + 1
+        ms = date(year, month, 1)
+        me = date(year + (month // 12), (month % 12) + 1, 1)
+        count = Student.query.filter(Student.enrollment_date >= ms, Student.enrollment_date < me).count()
+        enroll_by_month.append({'month': ms.strftime('%b %y'), 'count': count})
+
+    # Attendance by month (last 6 months)
+    att_by_month = []
+    for i in range(5, -1, -1):
+        year = month_start.year + (month_start.month - 1 - i) // 12
+        month = (month_start.month - 1 - i) % 12 + 1
+        ms = date(year, month, 1)
+        me = date(year + (month // 12), (month % 12) + 1, 1)
+        count = Attendance.query.filter(func.date(Attendance.check_in_time) >= ms,
+                                        func.date(Attendance.check_in_time) < me).count()
+        att_by_month.append({'month': ms.strftime('%b %y'), 'count': count})
+
+    # Students per class (top 10 active classes by enrollment)
+    per_class = []
+    for cls in DanceClass.query.filter_by(is_active=True).all():
+        per_class.append({'name': cls.name, 'count': cls.enrolled_students_count})
+    per_class = sorted(per_class, key=lambda x: -x['count'])[:10]
+
+    return jsonify({
+        'active': active, 'inactive': inactive, 'new_this_month': new_this_month,
+        'at_risk_count': len(at_risk), 'at_risk': at_risk[:50],
+        'enroll_by_month': enroll_by_month,
+        'attendance_by_month': att_by_month,
+        'students_per_class': per_class,
+    })

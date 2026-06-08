@@ -950,3 +950,117 @@ class WaitlistEntry(db.Model):
 
     def __repr__(self):
         return f'<WaitlistEntry c={self.class_id} s={self.student_id} {self.status}>'
+
+
+# ── Skills & progress ───────────────────────────────────────────────
+
+class Skill(db.Model):
+    """A skill or level a dancer can achieve (optionally scoped to a class)."""
+    __tablename__ = 'skills'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    category = db.Column(db.String(60))  # e.g. Ballet, Level 1, Technique
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'))
+    display_order = db.Column(db.Integer, default=0, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    dance_class = db.relationship('DanceClass')
+    achievements = db.relationship('StudentSkill', backref='skill', lazy='dynamic')
+
+    def __repr__(self):
+        return f'<Skill {self.name}>'
+
+
+class StudentSkill(db.Model):
+    """Record of a student achieving a skill."""
+    __tablename__ = 'student_skills'
+
+    id = db.Column(db.Integer, primary_key=True)
+    skill_id = db.Column(db.Integer, db.ForeignKey('skills.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    achieved_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    note = db.Column(db.String(200))
+    awarded_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+
+    student = db.relationship('Student', backref='skill_achievements')
+
+    __table_args__ = (
+        db.UniqueConstraint('skill_id', 'student_id', name='unique_student_skill'),
+    )
+
+    def __repr__(self):
+        return f'<StudentSkill skill={self.skill_id} student={self.student_id}>'
+
+
+# ── Makeup classes ──────────────────────────────────────────────────
+
+class MakeupClass(db.Model):
+    """A makeup session for a missed class."""
+    __tablename__ = 'makeup_classes'
+
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    missed_class_id = db.Column(db.Integer, db.ForeignKey('classes.id'))
+    missed_date = db.Column(db.Date)
+    makeup_class_id = db.Column(db.Integer, db.ForeignKey('classes.id'))
+    makeup_date = db.Column(db.Date)
+    status = db.Column(db.String(20), default='requested', nullable=False)  # requested, scheduled, completed, cancelled
+    note = db.Column(db.String(200))
+    requested_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    student = db.relationship('Student', backref='makeups')
+    missed_class = db.relationship('DanceClass', foreign_keys=[missed_class_id])
+    makeup_class = db.relationship('DanceClass', foreign_keys=[makeup_class_id])
+
+    def __repr__(self):
+        return f'<MakeupClass s={self.student_id} {self.status}>'
+
+
+# ── Leads / trial pipeline ──────────────────────────────────────────
+
+class Lead(db.Model):
+    """A prospective family / trial-class lead."""
+    __tablename__ = 'leads'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(120))
+    phone = db.Column(db.String(20))
+    interest = db.Column(db.String(120))  # style/class/age they asked about
+    source = db.Column(db.String(60))  # walk-in, referral, instagram, website...
+    status = db.Column(db.String(20), default='new', nullable=False)  # new, contacted, trial_scheduled, converted, lost
+    trial_date = db.Column(db.Date)
+    note = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<Lead {self.name} {self.status}>'
+
+
+# ── Staff time clock ────────────────────────────────────────────────
+
+class TimeClockEntry(db.Model):
+    """A staff clock-in/out record for payroll hours."""
+    __tablename__ = 'time_clock_entries'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    clock_in = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    clock_out = db.Column(db.DateTime)
+    note = db.Column(db.String(200))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    user = db.relationship('User', backref='time_entries')
+
+    @property
+    def hours(self):
+        if not self.clock_out:
+            return None
+        return round((self.clock_out - self.clock_in).total_seconds() / 3600, 2)
+
+    def __repr__(self):
+        return f'<TimeClockEntry u={self.user_id} in={self.clock_in}>'

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="min-h-full">
+    <div class="bg-white shadow">
+        <div class="max-w-5xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <h1 class="text-3xl font-bold text-gray-900"><i class="fas fa-business-time text-primary-500 mr-2"></i>Time Clock</h1>
+            <p class="mt-1 text-sm text-gray-600">Clock in and out; hours roll up for payroll</p>
+        </div>
+    </div>
+    <div class="max-w-5xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div id="msg" class="hidden mb-4 p-3 rounded-md text-sm font-medium"></div>
+
+        <div class="bg-white shadow rounded-lg p-6 mb-6 text-center">
+            <div id="status" class="text-lg text-gray-700 mb-3">Loading…</div>
+            <button id="clock-btn" onclick="toggleClock()" class="px-6 py-3 rounded-lg text-white font-medium hidden"></button>
+        </div>
+
+        <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">My Recent Shifts</h2>
+        <div class="bg-white shadow rounded-lg overflow-hidden mb-8">
+            <table class="min-w-full text-sm"><tbody id="my-entries"><tr><td class="px-4 py-3 text-gray-500">Loading…</td></tr></tbody></table>
+        </div>
+
+        {% if current_user.is_admin %}
+        <div class="flex items-center justify-between mb-2">
+            <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Payroll Hours</h2>
+            <div class="flex items-center gap-2 text-sm">
+                <input type="date" id="r-start" class="border border-gray-300 rounded px-2 py-1">
+                <input type="date" id="r-end" class="border border-gray-300 rounded px-2 py-1">
+                <button onclick="loadReport()" class="px-3 py-1 bg-primary-600 text-white rounded">Run</button>
+            </div>
+        </div>
+        <div class="bg-white shadow rounded-lg overflow-hidden">
+            <table class="min-w-full text-sm">
+                <thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left text-xs text-gray-500 uppercase">Staff</th><th class="px-4 py-2 text-right text-xs text-gray-500 uppercase">Shifts</th><th class="px-4 py-2 text-right text-xs text-gray-500 uppercase">Hours</th></tr></thead>
+                <tbody id="report"><tr><td colspan="3" class="px-4 py-3 text-gray-400 text-center">Pick a date range and Run.</td></tr></tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;m.className='mb-4 p-3 rounded-md text-sm font-medium '+(ok?'bg-green-100 text-green-800':'bg-red-100 text-red-800');m.classList.remove('hidden');setTimeout(()=>m.classList.add('hidden'),3500);}
+function fmt(iso){return iso?new Date(iso).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'—';}
+
+let isOpen=false;
+async function loadMe(){
+    const d=await (await fetch('/api/timeclock/me')).json();
+    isOpen=d.open;
+    const st=document.getElementById('status'), btn=document.getElementById('clock-btn');
+    btn.classList.remove('hidden');
+    if(isOpen){
+        st.innerHTML=`<i class="fas fa-circle text-green-500 text-xs mr-1"></i>Clocked in since <strong>${fmt(d.open_since)}</strong>`;
+        btn.textContent='Clock Out'; btn.className='px-6 py-3 rounded-lg text-white font-medium bg-red-600 hover:bg-red-700';
+    } else {
+        st.innerHTML='<i class="fas fa-circle text-gray-300 text-xs mr-1"></i>Not clocked in';
+        btn.textContent='Clock In'; btn.className='px-6 py-3 rounded-lg text-white font-medium bg-green-600 hover:bg-green-700';
+    }
+    const tb=document.getElementById('my-entries');
+    tb.innerHTML=(d.entries||[]).map(e=>`<tr class="border-b border-gray-100">
+        <td class="px-4 py-2">${fmt(e.clock_in)}</td><td class="px-4 py-2">${fmt(e.clock_out)}</td>
+        <td class="px-4 py-2 text-right">${e.hours!=null?e.hours+' hrs':'<span class="text-green-600">open</span>'}</td></tr>`).join('')
+        || '<tr><td class="px-4 py-3 text-gray-500">No shifts yet.</td></tr>';
+}
+async function toggleClock(){
+    const r=await fetch('/api/timeclock/'+(isOpen?'clock-out':'clock-in'),{method:'POST'});
+    const d=await r.json();msg(r.ok?d.message:d.error,r.ok);if(r.ok)loadMe();
+}
+async function loadReport(){
+    const s=document.getElementById('r-start').value, e=document.getElementById('r-end').value;
+    const d=await (await fetch(`/api/timeclock/report?start=${s}&end=${e}`)).json();
+    const tb=document.getElementById('report');
+    tb.innerHTML=(d.report||[]).map(r=>`<tr class="border-b border-gray-100"><td class="px-4 py-2">${r.name}</td><td class="px-4 py-2 text-right">${r.shifts}</td><td class="px-4 py-2 text-right font-medium">${r.hours}</td></tr>`).join('')
+        + `<tr class="font-bold"><td class="px-4 py-2">Total</td><td></td><td class="px-4 py-2 text-right">${d.total_hours||0} hrs</td></tr>`;
+}
+loadMe();
+</script>
+{% endblock %}

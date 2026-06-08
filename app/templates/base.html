@@ -121,6 +121,10 @@
                            class="nav-item {% if request.endpoint == 'main.calendar_page' %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                             <i class="fas fa-calendar-week mr-2"></i>Calendar
                         </a>
+                        <a href="{{ url_for('main.timeclock_page') }}"
+                           class="nav-item {% if request.endpoint == 'main.timeclock_page' %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                            <i class="fas fa-business-time mr-2"></i>Time Clock
+                        </a>
                         <a href="{{ url_for('main.attendance') }}"
                            class="nav-item {% if request.endpoint and 'attendance' in request.endpoint and 'take' not in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                             <i class="fas fa-check-circle mr-2"></i>Attendance
@@ -228,6 +232,11 @@
                                 <i class="fas fa-user mr-2"></i>Your Profile
                             </a>
                             {% if current_user.is_admin %}
+                            <a href="{{ url_for('main.skills_page') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><i class="fas fa-medal mr-2"></i>Skills</a>
+                            <a href="{{ url_for('main.makeups_page') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><i class="fas fa-rotate mr-2"></i>Makeups</a>
+                            <a href="{{ url_for('main.leads_page') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><i class="fas fa-user-tag mr-2"></i>Leads &amp; Trials</a>
+                            <a href="{{ url_for('main.analytics_page') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><i class="fas fa-chart-line mr-2"></i>Insights</a>
+                            <div class="border-t border-gray-100 my-1"></div>
                             <a href="{{ url_for('main.settings_page') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                 <i class="fas fa-cog mr-2"></i>Settings
                             </a>
@@ -275,6 +284,16 @@
                    class="{% if request.endpoint == 'main.calendar_page' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-calendar-week mr-2"></i>Calendar
                 </a>
+                <a href="{{ url_for('main.timeclock_page') }}"
+                   class="{% if request.endpoint == 'main.timeclock_page' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
+                    <i class="fas fa-business-time mr-2"></i>Time Clock
+                </a>
+                {% if current_user.is_admin %}
+                <a href="{{ url_for('main.skills_page') }}" class="border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800 block pl-3 pr-4 py-2 border-l-4 text-base font-medium"><i class="fas fa-medal mr-2"></i>Skills</a>
+                <a href="{{ url_for('main.makeups_page') }}" class="border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800 block pl-3 pr-4 py-2 border-l-4 text-base font-medium"><i class="fas fa-rotate mr-2"></i>Makeups</a>
+                <a href="{{ url_for('main.leads_page') }}" class="border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800 block pl-3 pr-4 py-2 border-l-4 text-base font-medium"><i class="fas fa-user-tag mr-2"></i>Leads</a>
+                <a href="{{ url_for('main.analytics_page') }}" class="border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800 block pl-3 pr-4 py-2 border-l-4 text-base font-medium"><i class="fas fa-chart-line mr-2"></i>Insights</a>
+                {% endif %}
                 <a href="{{ url_for('main.attendance') }}"
                    class="{% if request.endpoint and 'attendance' in request.endpoint and 'take' not in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-check-circle mr-2"></i>Attendance
