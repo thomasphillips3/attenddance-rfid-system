@@ -150,6 +150,7 @@
             <div class="p-6 space-y-6">
                 <div id="company-memberships"></div>
                 <div id="company-performances"></div>
+                <div id="company-costumes"></div>
                 <div id="company-auditions"></div>
             </div>
         </div>
@@ -399,13 +400,33 @@ async function signupAudition(auditionId, studentId, btn) {
     } catch { toast('Network error', false); }
 }
 
+window.PERF_TYPES = {};
+
+async function requestTickets(pid) {
+    const sel = document.getElementById('tt-sel-' + pid);
+    const qty = document.getElementById('tt-qty-' + pid);
+    if (!sel || !sel.value) { toast('Pick a ticket type', false); return; }
+    try {
+        const res = await fetch(`/api/performances/${pid}/ticket-orders`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ticket_type_id: sel.value, quantity: qty.value || 1}),
+        });
+        const d = await res.json();
+        toast(res.ok ? 'Ticket request sent — the studio will confirm.' : (d.error || 'Error'), res.ok);
+    } catch { toast('Network error', false); }
+}
+
 async function loadCompany() {
     try {
-        const data = await (await fetch('/api/my-company')).json();
+        const [data, costData] = await Promise.all([
+            (await fetch('/api/my-company')).json(),
+            (await fetch('/api/my-costumes')).json(),
+        ]);
         const memberships = data.memberships || [];
         const perfs = data.performances || [];
         const auditions = data.open_auditions || [];
-        if (!memberships.length && !perfs.length && !auditions.length) return;
+        const costumes = costData.costumes || [];
+        if (!memberships.length && !perfs.length && !auditions.length && !costumes.length) return;
         document.getElementById('company-card').classList.remove('hidden');
 
         const mEl = document.getElementById('company-memberships');
@@ -419,11 +440,29 @@ async function loadCompany() {
         const pEl = document.getElementById('company-performances');
         pEl.innerHTML = perfs.length ? `
             <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Upcoming Performances</h3>
-            <div class="space-y-2">${perfs.map(p => `
-                <div class="border border-gray-200 rounded-lg p-3">
+            <div class="space-y-2">${perfs.map(p => {
+                const tickets = (p.ticket_types || []).length ? `
+                    <div class="mt-2 flex items-center gap-2 flex-wrap text-sm">
+                        <span class="text-gray-500">Tickets:</span>
+                        <select id="tt-sel-${p.id}" class="border border-gray-300 rounded px-2 py-1 text-sm">${p.ticket_types.map(t => `<option value="${t.id}">${esc(t.name)} — $${t.price}</option>`).join('')}</select>
+                        <input id="tt-qty-${p.id}" type="number" min="1" value="1" class="border border-gray-300 rounded px-2 py-1 text-sm w-16">
+                        <button onclick="requestTickets(${p.id})" class="px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700">Request</button>
+                    </div>` : '';
+                return `<div class="border border-gray-200 rounded-lg p-3">
                     <div class="font-medium text-gray-900">${esc(p.title)} <span class="text-xs text-amber-600 ml-1">${esc(p.group_name)}</span></div>
                     <div class="text-sm text-gray-500">${p.performance_date ? new Date(p.performance_date+'T00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD'}${p.call_time ? ' · call '+esc(p.call_time) : ''}${p.venue ? ' · '+esc(p.venue) : ''}</div>
                     ${p.description ? `<div class="text-xs text-gray-400 mt-1">${esc(p.description)}</div>` : ''}
+                    ${tickets}
+                </div>`;
+            }).join('')}</div>` : '';
+
+        const cEl = document.getElementById('company-costumes');
+        cEl.innerHTML = costumes.length ? `
+            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Costumes</h3>
+            <div class="space-y-1">${costumes.map(c => `
+                <div class="flex items-center justify-between text-sm border border-gray-100 rounded px-3 py-2">
+                    <span>${esc(c.student_name)} — ${esc(c.costume_name)}${c.size ? ' <span class="text-gray-400">(size '+esc(c.size)+')</span>' : ''}</span>
+                    <span>${c.charged ? (c.paid ? '<span class="text-green-700">Paid</span>' : '<span class="text-amber-600">$'+c.fee+' due</span>') : '<span class="text-gray-400">$'+c.fee+'</span>'}</span>
                 </div>`).join('')}</div>` : '';
 
         const aEl = document.getElementById('company-auditions');

@@ -29,6 +29,8 @@ from app.models import (
     AuditLog,
     ClassEnrollment,
     CompanyMembership,
+    Costume,
+    CostumeAssignment,
     DanceClass,
     Family,
     Location,
@@ -44,6 +46,8 @@ from app.models import (
     Setting,
     SquareInvoice,
     Student,
+    TicketOrder,
+    TicketType,
     Transaction,
     User,
     WaiverSignature,
@@ -2057,6 +2061,9 @@ def _performance_to_dict(p):
         'venue': p.venue,
         'description': p.description,
         'assignment_count': p.assignments.count(),
+        'ticket_types': [{
+            'id': t.id, 'name': t.name, 'price': f'{float(t.price):.2f}',
+        } for t in p.ticket_types],
     }
 
 
@@ -2641,3 +2648,369 @@ def sign_waiver(student_id, template_id):
         db.session.add(sig)
     db.session.commit()
     return jsonify({'message': 'Signed', 'consent': consent})
+
+
+# ── Recital: costumes ───────────────────────────────────────────────
+
+COSTUME_SIZE_FIELDS = [
+    'leotard_size', 'dress_size', 'shirt_size', 'pants_size', 'shoe_size',
+    'height', 'weight', 'girth', 'waist', 'hips', 'inseam',
+]
+
+
+def _costume_to_dict(c):
+    assigns = c.assignments.all()
+    return {
+        'id': c.id,
+        'name': c.name,
+        'class_id': c.class_id,
+        'class_name': c.dance_class.name if c.dance_class else None,
+        'group_id': c.group_id,
+        'group_name': c.group.name if c.group else None,
+        'vendor': c.vendor,
+        'fee': f'{float(c.fee):.2f}',
+        'notes': c.notes,
+        'assigned_count': len(assigns),
+        'charged_count': sum(1 for a in assigns if a.charged),
+        'paid_count': sum(1 for a in assigns if a.paid),
+    }
+
+
+@bp.route('/costumes', methods=['GET'])
+@login_required
+def list_costumes():
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    rows = Costume.query.filter_by(is_active=True).order_by(Costume.created_at.desc()).all()
+    return jsonify({'costumes': [_costume_to_dict(c) for c in rows]})
+
+
+@bp.route('/costumes', methods=['POST'])
+@login_required
+def create_costume():
+    err = _admin_only()
+    if err:
+        return err
+    data = request.get_json() or {}
+    if not data.get('name'):
+        return jsonify({'error': 'name is required'}), 400
+    c = Costume(
+        name=data['name'].strip(),
+        class_id=int(data['class_id']) if data.get('class_id') else None,
+        group_id=int(data['group_id']) if data.get('group_id') else None,
+        vendor=(data.get('vendor') or '').strip() or None,
+        fee=data.get('fee') or 0,
+        notes=(data.get('notes') or '').strip() or None,
+    )
+    db.session.add(c)
+    db.session.commit()
+    return jsonify(_costume_to_dict(c)), 201
+
+
+@bp.route('/costumes/<int:cid>', methods=['PUT'])
+@login_required
+def update_costume(cid):
+    err = _admin_only()
+    if err:
+        return err
+    c = Costume.query.get_or_404(cid)
+    data = request.get_json() or {}
+    if 'name' in data and data['name'].strip():
+        c.name = data['name'].strip()
+    if 'vendor' in data:
+        c.vendor = (data['vendor'] or '').strip() or None
+    if 'fee' in data:
+        c.fee = data['fee'] or 0
+    if 'class_id' in data:
+        c.class_id = int(data['class_id']) if data['class_id'] else None
+    if 'group_id' in data:
+        c.group_id = int(data['group_id']) if data['group_id'] else None
+    if 'notes' in data:
+        c.notes = (data['notes'] or '').strip() or None
+    db.session.commit()
+    return jsonify(_costume_to_dict(c))
+
+
+@bp.route('/costumes/<int:cid>', methods=['DELETE'])
+@login_required
+def delete_costume(cid):
+    err = _admin_only()
+    if err:
+        return err
+    c = Costume.query.get_or_404(cid)
+    c.is_active = False
+    db.session.commit()
+    return jsonify({'message': f'{c.name} archived'})
+
+
+@bp.route('/costumes/<int:cid>/assignments', methods=['GET'])
+@login_required
+def list_costume_assignments(cid):
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    c = Costume.query.get_or_404(cid)
+    out = []
+    for a in c.assignments.all():
+        s = a.student
+        out.append({
+            'id': a.id,
+            'student_id': a.student_id,
+            'student_name': s.full_name,
+            'size': a.size,
+            'charged': a.charged,
+            'paid': a.paid,
+            'measurements': {f: getattr(s, f) for f in COSTUME_SIZE_FIELDS if getattr(s, f)},
+        })
+    out.sort(key=lambda x: x['student_name'])
+    return jsonify({'assignments': out})
+
+
+@bp.route('/costumes/<int:cid>/assignments', methods=['POST'])
+@login_required
+def add_costume_assignment(cid):
+    err = _admin_only()
+    if err:
+        return err
+    c = Costume.query.get_or_404(cid)
+    data = request.get_json() or {}
+
+    # Bulk: assign everyone in the linked class or group
+    if data.get('assign_all'):
+        student_ids = []
+        if c.class_id:
+            student_ids = [e.student_id for e in ClassEnrollment.query.filter_by(class_id=c.class_id, is_active=True).all()]
+        elif c.group_id:
+            student_ids = [m.student_id for m in CompanyMembership.query.filter_by(group_id=c.group_id, is_active=True).all()]
+        if not student_ids:
+            return jsonify({'error': 'No class/company linked, or it has no members'}), 400
+        added = 0
+        for sid in student_ids:
+            if not CostumeAssignment.query.filter_by(costume_id=cid, student_id=sid).first():
+                db.session.add(CostumeAssignment(costume_id=cid, student_id=sid))
+                added += 1
+        db.session.commit()
+        return jsonify({'message': f'Assigned {added} dancers'}), 201
+
+    if not data.get('student_id'):
+        return jsonify({'error': 'student_id is required'}), 400
+    if CostumeAssignment.query.filter_by(costume_id=cid, student_id=data['student_id']).first():
+        return jsonify({'error': 'Already assigned'}), 400
+    a = CostumeAssignment(costume_id=cid, student_id=int(data['student_id']),
+                          size=(data.get('size') or '').strip() or None)
+    db.session.add(a)
+    db.session.commit()
+    return jsonify({'message': 'Assigned', 'id': a.id}), 201
+
+
+@bp.route('/costume-assignments/<int:aid>', methods=['PUT'])
+@login_required
+def update_costume_assignment(aid):
+    err = _admin_only()
+    if err:
+        return err
+    a = CostumeAssignment.query.get_or_404(aid)
+    data = request.get_json() or {}
+    if 'size' in data:
+        a.size = (data['size'] or '').strip() or None
+    if 'paid' in data:
+        a.paid = bool(data['paid'])
+        a.paid_at = datetime.utcnow() if a.paid else None
+    db.session.commit()
+    return jsonify({'message': 'Updated'})
+
+
+@bp.route('/costume-assignments/<int:aid>', methods=['DELETE'])
+@login_required
+def delete_costume_assignment(aid):
+    err = _admin_only()
+    if err:
+        return err
+    a = CostumeAssignment.query.get_or_404(aid)
+    db.session.delete(a)
+    db.session.commit()
+    return jsonify({'message': 'Removed'})
+
+
+@bp.route('/costumes/<int:cid>/charge', methods=['POST'])
+@login_required
+def charge_costume(cid):
+    """Post the costume fee as a 'costumes' charge to each assigned, not-yet-charged dancer."""
+    err = _admin_only()
+    if err:
+        return err
+    c = Costume.query.get_or_404(cid)
+    fee = float(c.fee)
+    if fee <= 0:
+        return jsonify({'error': 'Set a costume fee greater than $0 first'}), 400
+    charged = 0
+    for a in c.assignments.filter_by(charged=False).all():
+        t = Transaction(
+            student_id=a.student_id,
+            type='charge',
+            amount=fee,
+            category='costumes',
+            payment_method='n/a',
+            description=f'Costume: {c.name}',
+            transaction_date=date.today(),
+            created_by=current_user.id,
+        )
+        db.session.add(t)
+        db.session.flush()
+        a.charged = True
+        a.transaction_id = t.id
+        charged += 1
+    AuditLog.record(current_user.id, 'costume.charge', f'Charged ${fee:.2f} for "{c.name}" to {charged} dancers')
+    db.session.commit()
+    return jsonify({'message': f'Charged {charged} dancers ${fee:.2f} each', 'count': charged})
+
+
+@bp.route('/my-costumes', methods=['GET'])
+@login_required
+def my_costumes():
+    """A parent's children's costume assignments."""
+    if not current_user.is_parent:
+        return jsonify({'costumes': []})
+    student_ids = _parent_student_ids(current_user)
+    if not student_ids:
+        return jsonify({'costumes': []})
+    rows = (CostumeAssignment.query
+            .filter(CostumeAssignment.student_id.in_(student_ids)).all())
+    out = [{
+        'student_name': a.student.full_name,
+        'costume_name': a.costume.name,
+        'size': a.size,
+        'fee': f'{float(a.costume.fee):.2f}',
+        'charged': a.charged,
+        'paid': a.paid,
+    } for a in rows if a.costume.is_active]
+    return jsonify({'costumes': out})
+
+
+# ── Recital: tickets ────────────────────────────────────────────────
+
+@bp.route('/performances/<int:pid>/ticket-types', methods=['GET'])
+@login_required
+def list_ticket_types(pid):
+    Performance.query.get_or_404(pid)
+    types = TicketType.query.filter_by(performance_id=pid).all()
+    return jsonify({'ticket_types': [{
+        'id': t.id, 'name': t.name, 'price': f'{float(t.price):.2f}',
+    } for t in types]})
+
+
+@bp.route('/performances/<int:pid>/ticket-types', methods=['POST'])
+@login_required
+def create_ticket_type(pid):
+    err = _admin_only()
+    if err:
+        return err
+    Performance.query.get_or_404(pid)
+    data = request.get_json() or {}
+    if not data.get('name'):
+        return jsonify({'error': 'name is required'}), 400
+    t = TicketType(performance_id=pid, name=data['name'].strip(), price=data.get('price') or 0)
+    db.session.add(t)
+    db.session.commit()
+    return jsonify({'id': t.id, 'name': t.name, 'price': f'{float(t.price):.2f}'}), 201
+
+
+@bp.route('/ticket-types/<int:tid>', methods=['DELETE'])
+@login_required
+def delete_ticket_type(tid):
+    err = _admin_only()
+    if err:
+        return err
+    t = TicketType.query.get_or_404(tid)
+    TicketOrder.query.filter_by(ticket_type_id=tid).delete()
+    db.session.delete(t)
+    db.session.commit()
+    return jsonify({'message': 'Ticket type removed'})
+
+
+@bp.route('/performances/<int:pid>/ticket-orders', methods=['GET'])
+@login_required
+def list_ticket_orders(pid):
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    Performance.query.get_or_404(pid)
+    type_ids = [t.id for t in TicketType.query.filter_by(performance_id=pid).all()]
+    orders = (TicketOrder.query.filter(TicketOrder.ticket_type_id.in_(type_ids)).order_by(desc(TicketOrder.created_at)).all()
+              if type_ids else [])
+    total_qty = sum(o.quantity for o in orders)
+    revenue = sum(float(o.amount) for o in orders if o.paid)
+    pending = sum(float(o.amount) for o in orders if not o.paid)
+    return jsonify({
+        'orders': [{
+            'id': o.id,
+            'type_name': o.ticket_type.name,
+            'buyer': (o.parent.full_name if o.parent else None) or (o.student.full_name if o.student else 'Walk-up'),
+            'quantity': o.quantity,
+            'amount': f'{float(o.amount):.2f}',
+            'paid': o.paid,
+            'note': o.note,
+            'created_at': o.created_at.isoformat(),
+        } for o in orders],
+        'summary': {'total_tickets': total_qty, 'revenue': f'{revenue:.2f}', 'pending': f'{pending:.2f}'},
+    })
+
+
+@bp.route('/performances/<int:pid>/ticket-orders', methods=['POST'])
+@login_required
+def create_ticket_order(pid):
+    """Record a ticket order. Admin can mark paid; parents create an unpaid request."""
+    Performance.query.get_or_404(pid)
+    data = request.get_json() or {}
+    tt = TicketType.query.filter_by(id=data.get('ticket_type_id'), performance_id=pid).first()
+    if not tt:
+        return jsonify({'error': 'Invalid ticket type'}), 400
+    try:
+        qty = max(1, int(data.get('quantity', 1)))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid quantity'}), 400
+
+    student_id = data.get('student_id')
+    if current_user.is_parent:
+        if student_id and int(student_id) not in _parent_student_ids(current_user):
+            return jsonify({'error': 'Not authorized for this student'}), 403
+        paid = False  # parent requests are unpaid until the studio confirms
+    else:
+        paid = bool(data.get('paid', False))
+
+    o = TicketOrder(
+        ticket_type_id=tt.id,
+        parent_id=current_user.id if current_user.is_parent else None,
+        student_id=int(student_id) if student_id else None,
+        quantity=qty,
+        amount=round(float(tt.price) * qty, 2),
+        paid=paid,
+        paid_at=datetime.utcnow() if paid else None,
+        note=(data.get('note') or '').strip() or None,
+    )
+    db.session.add(o)
+    db.session.commit()
+    return jsonify({'message': f'{qty} × {tt.name} recorded', 'id': o.id}), 201
+
+
+@bp.route('/ticket-orders/<int:oid>/toggle-paid', methods=['POST'])
+@login_required
+def toggle_ticket_paid(oid):
+    err = _admin_only()
+    if err:
+        return err
+    o = TicketOrder.query.get_or_404(oid)
+    o.paid = not o.paid
+    o.paid_at = datetime.utcnow() if o.paid else None
+    db.session.commit()
+    return jsonify({'message': 'Paid' if o.paid else 'Marked unpaid', 'paid': o.paid})
+
+
+@bp.route('/ticket-orders/<int:oid>', methods=['DELETE'])
+@login_required
+def delete_ticket_order(oid):
+    err = _admin_only()
+    if err:
+        return err
+    o = TicketOrder.query.get_or_404(oid)
+    db.session.delete(o)
+    db.session.commit()
+    return jsonify({'message': 'Order removed'})

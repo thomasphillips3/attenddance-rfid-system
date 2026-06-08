@@ -751,3 +751,92 @@ class WaiverSignature(db.Model):
 
     def __repr__(self):
         return f'<WaiverSignature t={self.template_id} s={self.student_id} consent={self.consent}>'
+
+
+# ── Recital & costumes ──────────────────────────────────────────────
+
+class Costume(db.Model):
+    """A recital costume tied to a class or company, with a fee and sizing."""
+    __tablename__ = 'costumes'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(150), nullable=False)
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'))
+    group_id = db.Column(db.Integer, db.ForeignKey('performance_groups.id'))
+    vendor = db.Column(db.String(120))
+    fee = db.Column(db.Numeric(10, 2), default=0, nullable=False)
+    notes = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    dance_class = db.relationship('DanceClass')
+    group = db.relationship('PerformanceGroup')
+    assignments = db.relationship('CostumeAssignment', backref='costume', lazy='dynamic')
+
+    def __repr__(self):
+        return f'<Costume {self.name}>'
+
+
+class CostumeAssignment(db.Model):
+    """A costume assigned to a student, with size and payment tracking."""
+    __tablename__ = 'costume_assignments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    costume_id = db.Column(db.Integer, db.ForeignKey('costumes.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    size = db.Column(db.String(40))
+    notes = db.Column(db.String(200))
+    charged = db.Column(db.Boolean, default=False, nullable=False)  # fee posted to ledger
+    transaction_id = db.Column(db.Integer, db.ForeignKey('transactions.id'))
+    paid = db.Column(db.Boolean, default=False, nullable=False)  # studio-tracked paid flag
+    paid_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    student = db.relationship('Student', backref='costume_assignments')
+    transaction = db.relationship('Transaction')
+
+    __table_args__ = (
+        db.UniqueConstraint('costume_id', 'student_id', name='unique_costume_assignment'),
+    )
+
+    def __repr__(self):
+        return f'<CostumeAssignment c={self.costume_id} s={self.student_id}>'
+
+
+class TicketType(db.Model):
+    """A ticket tier for a performance (e.g. Adult $15, Child $10)."""
+    __tablename__ = 'ticket_types'
+
+    id = db.Column(db.Integer, primary_key=True)
+    performance_id = db.Column(db.Integer, db.ForeignKey('performances.id'), nullable=False)
+    name = db.Column(db.String(80), nullable=False)
+    price = db.Column(db.Numeric(10, 2), default=0, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    performance = db.relationship('Performance', backref='ticket_types')
+    orders = db.relationship('TicketOrder', backref='ticket_type', lazy='dynamic')
+
+    def __repr__(self):
+        return f'<TicketType {self.name} ${self.price}>'
+
+
+class TicketOrder(db.Model):
+    """An order/sale of tickets for a performance."""
+    __tablename__ = 'ticket_orders'
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_type_id = db.Column(db.Integer, db.ForeignKey('ticket_types.id'), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # who ordered (null if walk-up)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'))  # associated dancer (optional)
+    quantity = db.Column(db.Integer, default=1, nullable=False)
+    amount = db.Column(db.Numeric(10, 2), default=0, nullable=False)  # snapshot of qty * price
+    paid = db.Column(db.Boolean, default=False, nullable=False)
+    paid_at = db.Column(db.DateTime)
+    note = db.Column(db.String(200))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    parent = db.relationship('User')
+    student = db.relationship('Student')
+
+    def __repr__(self):
+        return f'<TicketOrder type={self.ticket_type_id} x{self.quantity}>'

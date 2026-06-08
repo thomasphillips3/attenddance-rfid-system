@@ -325,6 +325,14 @@ def company_page():
     return render_template('company/manage.html', students=students)
 
 
+@bp.route('/recital')
+@admin_required
+def recital_page():
+    students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
+    classes = DanceClass.query.filter_by(is_active=True).order_by(DanceClass.name).all()
+    return render_template('recital/manage.html', students=students, classes=classes)
+
+
 @bp.route('/waivers')
 @admin_required
 def waivers_page():

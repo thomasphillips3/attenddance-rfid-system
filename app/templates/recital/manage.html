@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-full" x-data="{ tab: 'costumes' }">
+    <div class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <h1 class="text-3xl font-bold text-gray-900"><i class="fas fa-mask text-primary-500 mr-2"></i>Recital</h1>
+            <p class="mt-1 text-sm text-gray-600">Costumes, sizing &amp; fees, and ticket sales</p>
+            <div class="mt-4 flex gap-2 border-b border-gray-200">
+                <button @click="tab='costumes'" :class="tab==='costumes' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500'" class="px-4 py-2 border-b-2 text-sm font-medium">Costumes</button>
+                <button @click="tab='tickets'" :class="tab==='tickets' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500'" class="px-4 py-2 border-b-2 text-sm font-medium">Tickets</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div id="msg" class="hidden mb-4 p-3 rounded-md text-sm font-medium"></div>
+
+        <!-- COSTUMES -->
+        <div x-show="tab==='costumes'">
+            <div class="flex justify-end mb-3">
+                <button onclick="createCostume()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-plus mr-2"></i>New Costume</button>
+            </div>
+            <div id="costumes-list" class="space-y-4"><p class="text-gray-500">Loading…</p></div>
+        </div>
+
+        <!-- TICKETS -->
+        <div x-show="tab==='tickets'" style="display:none">
+            <p class="text-sm text-gray-600 mb-3">Ticket tiers and sales are tracked per performance. Create performances under <a href="{{ url_for('main.company_page') }}" class="text-primary-600 hover:underline">Company → Performances</a>.</p>
+            <div id="tickets-list" class="space-y-4"><p class="text-gray-500">Loading…</p></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const STUDENTS = [{% for s in students %}{id:{{ s.id }}, name:"{{ s.full_name|e }}"},{% endfor %}];
+const CLASSES = [{% for c in classes %}{id:{{ c.id }}, name:"{{ c.name|e }}"},{% endfor %}];
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function msg(t, ok){const m=document.getElementById('msg');m.textContent=t;m.className='mb-4 p-3 rounded-md text-sm font-medium '+(ok?'bg-green-100 text-green-800':'bg-red-100 text-red-800');m.classList.remove('hidden');setTimeout(()=>m.classList.add('hidden'),4000);}
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function studentPicker(id){return `<select id="${id}" class="border border-gray-300 rounded px-2 py-1 text-sm"><option value="">Pick a student…</option>${STUDENTS.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>`;}
+async function jpost(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});}
+async function jput(u,b){return fetch(u,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});}
+
+/* ---------- Costumes ---------- */
+async function loadCostumes(){
+    const el=document.getElementById('costumes-list');
+    const data=await (await fetch('/api/costumes')).json();
+    const cs=data.costumes||[];
+    if(!cs.length){el.innerHTML='<p class="text-gray-500">No costumes yet.</p>';return;}
+    el.innerHTML=cs.map(c=>`
+        <div class="bg-white shadow rounded-lg overflow-hidden">
+            <div class="px-5 py-3 border-b flex items-center justify-between flex-wrap gap-2">
+                <div><span class="font-semibold text-gray-900">${esc(c.name)}</span>
+                    <span class="text-xs text-gray-500 ml-2">$${c.fee}</span>
+                    ${c.class_name?`<span class="text-xs text-primary-600 ml-2">${esc(c.class_name)}</span>`:''}
+                    ${c.group_name?`<span class="text-xs text-amber-600 ml-2">${esc(c.group_name)}</span>`:''}
+                    ${c.vendor?`<span class="text-xs text-gray-400 ml-2">${esc(c.vendor)}</span>`:''}
+                    <p class="text-xs text-gray-500">${c.assigned_count} assigned · ${c.charged_count} charged · ${c.paid_count} paid</p></div>
+                <div class="flex gap-3 items-center">
+                    <button onclick="chargeCostume(${c.id})" class="px-3 py-1 bg-green-600 text-white rounded text-xs">Charge fee</button>
+                    <button onclick="deleteCostume(${c.id},'${esc(c.name)}')" class="text-xs text-red-600 hover:underline">Archive</button>
+                </div>
+            </div>
+            <div class="px-5 py-3">
+                <div id="cassign-${c.id}" class="text-sm text-gray-500 mb-3">Loading roster…</div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    ${studentPicker('caddmem-'+c.id)}
+                    <input id="csize-${c.id}" placeholder="Size" class="border border-gray-300 rounded px-2 py-1 text-sm w-24">
+                    <button onclick="assignCostume(${c.id})" class="px-3 py-1 bg-primary-600 text-white rounded text-sm">Add dancer</button>
+                    <button onclick="assignAllCostume(${c.id})" class="px-3 py-1 bg-amber-500 text-white rounded text-sm">Add whole class/company</button>
+                </div>
+            </div>
+        </div>`).join('');
+    cs.forEach(c=>loadCostumeRoster(c.id));
+}
+async function loadCostumeRoster(cid){
+    const el=document.getElementById('cassign-'+cid);
+    const data=await (await fetch(`/api/costumes/${cid}/assignments`)).json();
+    const a=data.assignments||[];
+    if(!a.length){el.innerHTML='<span class="text-gray-400">No dancers assigned.</span>';return;}
+    el.innerHTML=`<table class="min-w-full text-sm"><thead><tr class="text-xs text-gray-500 uppercase">
+        <th class="text-left py-1">Dancer</th><th class="text-left py-1">Their sizes on file</th><th class="text-left py-1">Costume size</th><th class="py-1">Charged</th><th class="py-1">Paid</th><th></th></tr></thead><tbody>${
+        a.map(x=>{
+            const meas=Object.entries(x.measurements||{}).map(([k,v])=>`${k.replace('_size','').replace('_',' ')}: ${esc(v)}`).join(', ');
+            return `<tr class="border-b border-gray-100">
+                <td class="py-1 pr-3">${esc(x.student_name)}</td>
+                <td class="py-1 pr-3 text-xs text-gray-500">${meas||'—'}</td>
+                <td class="py-1 pr-3"><input value="${esc(x.size||'')}" onchange="setSize(${x.id},this.value,${cid})" class="border border-gray-200 rounded px-2 py-0.5 text-sm w-24" placeholder="size"></td>
+                <td class="py-1 text-center">${x.charged?'<span class="text-green-600">✓</span>':'<span class="text-gray-300">—</span>'}</td>
+                <td class="py-1 text-center"><input type="checkbox" ${x.paid?'checked':''} onchange="setPaid(${x.id},this.checked,${cid})"></td>
+                <td class="py-1 text-right"><button onclick="removeCostumeAssign(${x.id},${cid})" class="text-red-500 hover:text-red-700">&times;</button></td>
+            </tr>`;
+        }).join('')}</tbody></table>`;
+}
+async function createCostume(){
+    const name=prompt('Costume name (e.g. Ballet — Red Tutu):');if(!name)return;
+    const fee=prompt('Costume fee ($):','0')||'0';
+    const vendor=prompt('Vendor (optional):')||'';
+    let class_id='';
+    if(CLASSES.length){const list=CLASSES.map((c,i)=>`${i+1}. ${c.name}`).join('\n');const pick=prompt(`Link to a class? Enter number (blank = none):\n${list}`);if(pick&&CLASSES[parseInt(pick)-1])class_id=CLASSES[parseInt(pick)-1].id;}
+    const r=await jpost('/api/costumes',{name,fee,vendor,class_id});
+    msg(r.ok?'Costume created':'Error',r.ok);if(r.ok)loadCostumes();
+}
+async function deleteCostume(id,name){if(!confirm(`Archive "${name}"?`))return;const r=await fetch(`/api/costumes/${id}`,{method:'DELETE'});if(r.ok)loadCostumes();}
+async function assignCostume(cid){const sid=document.getElementById('caddmem-'+cid).value;if(!sid){msg('Pick a student',false);return;}const size=document.getElementById('csize-'+cid).value.trim();const r=await jpost(`/api/costumes/${cid}/assignments`,{student_id:sid,size});if(r.ok){loadCostumeRoster(cid);loadCostumes();}else msg((await r.json()).error||'Error',false);}
+async function assignAllCostume(cid){if(!confirm('Assign this costume to everyone in the linked class/company?'))return;const r=await jpost(`/api/costumes/${cid}/assignments`,{assign_all:true});const d=await r.json();msg(r.ok?d.message:d.error,r.ok);if(r.ok){loadCostumeRoster(cid);loadCostumes();}}
+async function setSize(aid,size,cid){await jput(`/api/costume-assignments/${aid}`,{size});}
+async function setPaid(aid,paid,cid){const r=await jput(`/api/costume-assignments/${aid}`,{paid});if(r.ok)loadCostumes();}
+async function removeCostumeAssign(aid,cid){const r=await fetch(`/api/costume-assignments/${aid}`,{method:'DELETE'});if(r.ok){loadCostumeRoster(cid);loadCostumes();}}
+async function chargeCostume(cid){if(!confirm('Post the costume fee as a charge to all assigned dancers not yet charged?'))return;const r=await jpost(`/api/costumes/${cid}/charge`);const d=await r.json();msg(r.ok?d.message:d.error,r.ok);if(r.ok)loadCostumes();}
+
+/* ---------- Tickets ---------- */
+async function loadTickets(){
+    const el=document.getElementById('tickets-list');
+    const data=await (await fetch('/api/performance/performances')).json();
+    const perfs=data.performances||[];
+    if(!perfs.length){el.innerHTML='<p class="text-gray-500">No performances yet.</p>';return;}
+    el.innerHTML=perfs.map(p=>`
+        <div class="bg-white shadow rounded-lg overflow-hidden">
+            <div class="px-5 py-3 border-b">
+                <span class="font-semibold text-gray-900">${esc(p.title)}</span>
+                <span class="text-xs text-gray-500 ml-2">${p.performance_date?new Date(p.performance_date+'T00:00').toLocaleDateString():'No date'}</span>
+                <span id="tsummary-${p.id}" class="text-xs text-gray-500 ml-2"></span>
+            </div>
+            <div class="px-5 py-3">
+                <div id="ttypes-${p.id}" class="mb-3 text-sm"></div>
+                <div class="flex items-center gap-2 flex-wrap mb-3">
+                    <input id="ttname-${p.id}" placeholder="Tier name (e.g. Adult)" class="border border-gray-300 rounded px-2 py-1 text-sm">
+                    <input id="ttprice-${p.id}" type="number" step="0.01" placeholder="Price" class="border border-gray-300 rounded px-2 py-1 text-sm w-24">
+                    <button onclick="addType(${p.id})" class="px-3 py-1 bg-primary-600 text-white rounded text-sm">Add tier</button>
+                </div>
+                <div id="torders-${p.id}" class="text-sm text-gray-500">Loading orders…</div>
+            </div>
+        </div>`).join('');
+    perfs.forEach(p=>{loadTypes(p.id);loadOrders(p.id);});
+}
+async function loadTypes(pid){
+    const el=document.getElementById('ttypes-'+pid);
+    const data=await (await fetch(`/api/performances/${pid}/ticket-types`)).json();
+    const types=data.ticket_types||[];
+    el.innerHTML=types.length?types.map(t=>`<span class="inline-flex items-center bg-gray-100 rounded-full px-3 py-1 mr-2 mb-1">${esc(t.name)} — $${t.price}
+        <button onclick="delType(${t.id},${pid})" class="ml-2 text-red-500 hover:text-red-700">&times;</button></span>`).join(''):'<span class="text-gray-400">No tiers yet.</span>';
+    // also fill the "record sale" form
+    window['_types_'+pid]=types;
+    renderSaleForm(pid);
+}
+function renderSaleForm(pid){
+    const types=window['_types_'+pid]||[];
+    const el=document.getElementById('torders-'+pid);
+    if(el && !document.getElementById('saleform-'+pid) && types.length){
+        // sale form injected above orders table via loadOrders
+    }
+}
+async function addType(pid){const name=document.getElementById('ttname-'+pid).value.trim();const price=document.getElementById('ttprice-'+pid).value||'0';if(!name){msg('Tier name required',false);return;}const r=await jpost(`/api/performances/${pid}/ticket-types`,{name,price});if(r.ok){document.getElementById('ttname-'+pid).value='';document.getElementById('ttprice-'+pid).value='';loadTypes(pid);loadOrders(pid);}else msg((await r.json()).error,false);}
+async function delType(id,pid){if(!confirm('Remove this tier and its orders?'))return;const r=await fetch(`/api/ticket-types/${id}`,{method:'DELETE'});if(r.ok){loadTypes(pid);loadOrders(pid);}}
+async function loadOrders(pid){
+    const el=document.getElementById('torders-'+pid);
+    const data=await (await fetch(`/api/performances/${pid}/ticket-orders`)).json();
+    const orders=data.orders||[]; const s=data.summary||{};
+    document.getElementById('tsummary-'+pid).textContent=`· ${s.total_tickets||0} tickets · $${s.revenue||'0.00'} collected${s.pending&&s.pending!=='0.00'?' · $'+s.pending+' pending':''}`;
+    const types=window['_types_'+pid]||[];
+    const saleForm=types.length?`<div class="flex items-center gap-2 flex-wrap mb-3" id="saleform-${pid}">
+        <select id="solds-${pid}" class="border border-gray-300 rounded px-2 py-1 text-sm">${types.map(t=>`<option value="${t.id}">${esc(t.name)} ($${t.price})</option>`).join('')}</select>
+        <input id="soldq-${pid}" type="number" min="1" value="1" class="border border-gray-300 rounded px-2 py-1 text-sm w-16">
+        <input id="soldn-${pid}" placeholder="Buyer name (optional)" class="border border-gray-300 rounded px-2 py-1 text-sm">
+        <label class="text-sm"><input type="checkbox" id="soldp-${pid}" checked> paid</label>
+        <button onclick="recordSale(${pid})" class="px-3 py-1 bg-green-600 text-white rounded text-sm">Record sale</button>
+    </div>`:'';
+    const rows=orders.length?`<table class="min-w-full text-sm"><tbody>${orders.map(o=>`<tr class="border-b border-gray-100">
+        <td class="py-1 pr-3">${o.quantity} × ${esc(o.type_name)}</td>
+        <td class="py-1 pr-3 text-gray-500">${esc(o.buyer)}</td>
+        <td class="py-1 pr-3 text-right">$${o.amount}</td>
+        <td class="py-1 pr-3 text-center"><button onclick="togglePaid(${o.id},${pid})" class="px-2 py-0.5 rounded text-xs ${o.paid?'bg-green-100 text-green-800':'bg-amber-100 text-amber-800'}">${o.paid?'Paid':'Unpaid'}</button></td>
+        <td class="py-1 text-right"><button onclick="delOrder(${o.id},${pid})" class="text-red-500 hover:text-red-700">&times;</button></td>
+    </tr>`).join('')}</tbody></table>`:'<span class="text-gray-400">No sales yet.</span>';
+    el.innerHTML=saleForm+rows;
+}
+async function recordSale(pid){const ticket_type_id=document.getElementById('solds-'+pid).value;const quantity=document.getElementById('soldq-'+pid).value||1;const note=document.getElementById('soldn-'+pid).value.trim();const paid=document.getElementById('soldp-'+pid).checked;const r=await jpost(`/api/performances/${pid}/ticket-orders`,{ticket_type_id,quantity,note,paid});const d=await r.json();msg(r.ok?d.message:d.error,r.ok);if(r.ok)loadOrders(pid);}
+async function togglePaid(oid,pid){const r=await jpost(`/api/ticket-orders/${oid}/toggle-paid`);if(r.ok)loadOrders(pid);}
+async function delOrder(oid,pid){const r=await fetch(`/api/ticket-orders/${oid}`,{method:'DELETE'});if(r.ok)loadOrders(pid);}
+
+loadCostumes(); loadTickets();
+</script>
+{% endblock %}
