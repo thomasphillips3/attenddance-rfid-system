@@ -46,6 +46,11 @@ from app.models import (
     Performance,
     PerformanceAssignment,
     PerformanceGroup,
+    Recital,
+    RecitalAd,
+    RecitalAward,
+    RecitalCast,
+    RecitalNumber,
     RecurringCharge,
     Registration,
     Rule,
@@ -3985,4 +3990,724 @@ def analytics_retention():
         'enroll_by_month': enroll_by_month,
         'attendance_by_month': att_by_month,
         'students_per_class': per_class,
+    })
+
+
+# ── Recital hub (annual show organizer) ─────────────────────────────
+
+def _staff_guard():
+    """403 unless the current user is staff (admin or teacher), else None."""
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    return None
+
+
+def _recital_to_dict(r, detail=False):
+    d = {
+        'id': r.id, 'year': r.year, 'title': r.title, 'theme': r.theme,
+        'recital_date': r.recital_date.isoformat() if r.recital_date else None,
+        'show_times': r.show_times, 'venue': r.venue,
+        'is_active': r.is_active, 'is_locked': r.is_locked,
+        'number_count': r.numbers.count(),
+        'award_count': r.awards.count(),
+        'ad_count': r.ads.count(),
+    }
+    if detail:
+        d.update({
+            'director_note': r.director_note,
+            'acknowledgments': r.acknowledgments,
+            'ad_pricing_note': r.ad_pricing_note,
+            'has_cover': bool(r.cover_image_data),
+        })
+    return d
+
+
+def _number_to_dict(n, with_cast=True):
+    cast = n.cast.all()
+    d = {
+        'id': n.id, 'recital_id': n.recital_id, 'order_index': n.order_index,
+        'title': n.title,
+        'class_id': n.class_id, 'class_name': n.dance_class.name if n.dance_class else None,
+        'group_id': n.group_id, 'group_name': n.group.name if n.group else None,
+        'style': n.style, 'act': n.act,
+        'song_title': n.song_title, 'song_artist': n.song_artist,
+        'music_url': n.music_url, 'music_notes': n.music_notes,
+        'choreographer': n.choreographer, 'choreo_notes': n.choreo_notes,
+        'choreo_url': n.choreo_url, 'formation_notes': n.formation_notes,
+        'duration': n.duration, 'props': n.props,
+        'is_finale': n.is_finale, 'notes': n.notes,
+        'cast_count': len(cast),
+        'has_music': bool(n.music_url or n.song_title),
+        'has_choreo': bool(n.choreo_notes or n.choreo_url or n.formation_notes),
+    }
+    if with_cast:
+        rows = [{
+            'id': c.id, 'student_id': c.student_id,
+            'student_name': c.student.full_name, 'part': c.part,
+        } for c in cast]
+        rows.sort(key=lambda x: (x['part'] or '￿', x['student_name']))
+        d['cast'] = rows
+    return d
+
+
+def _award_to_dict(a):
+    return {
+        'id': a.id, 'recital_id': a.recital_id, 'title': a.title,
+        'category': a.category, 'student_id': a.student_id,
+        'student_name': a.student.full_name if a.student else None,
+        'recipient_text': a.recipient_text, 'description': a.description,
+        'order_index': a.order_index,
+    }
+
+
+def _ad_to_dict(a, with_image=False):
+    d = {
+        'id': a.id, 'recital_id': a.recital_id, 'advertiser': a.advertiser,
+        'size': a.size, 'price': f'{float(a.price):.2f}', 'content': a.content,
+        'contact_name': a.contact_name, 'contact_email': a.contact_email,
+        'student_id': a.student_id,
+        'student_name': a.student.full_name if a.student else None,
+        'status': a.status, 'paid': a.paid, 'order_index': a.order_index,
+        'has_image': bool(a.image_data),
+    }
+    if with_image:
+        d['image_data'] = a.image_data
+    return d
+
+
+# Recitals ----------------------------------------------------------
+
+@bp.route('/recitals', methods=['GET'])
+@login_required
+def list_recitals():
+    err = _staff_guard()
+    if err:
+        return err
+    rows = Recital.query.order_by(Recital.year.desc(), Recital.created_at.desc()).all()
+    return jsonify({'recitals': [_recital_to_dict(r) for r in rows]})
+
+
+@bp.route('/recitals/<int:rid>', methods=['GET'])
+@login_required
+def get_recital(rid):
+    err = _staff_guard()
+    if err:
+        return err
+    r = Recital.query.get_or_404(rid)
+    numbers = r.numbers.order_by(RecitalNumber.order_index).all()
+    awards = r.awards.order_by(RecitalAward.order_index, RecitalAward.id).all()
+    ads = r.ads.order_by(RecitalAd.order_index, RecitalAd.id).all()
+    perfs = r.performances.order_by(Performance.performance_date).all()
+    return jsonify({
+        'recital': _recital_to_dict(r, detail=True),
+        'numbers': [_number_to_dict(n) for n in numbers],
+        'awards': [_award_to_dict(a) for a in awards],
+        'ads': [_ad_to_dict(a) for a in ads],
+        'performances': [_performance_to_dict(p) for p in perfs],
+    })
+
+
+@bp.route('/recitals', methods=['POST'])
+@login_required
+def create_recital():
+    err = _admin_only()
+    if err:
+        return err
+    data = request.get_json() or {}
+    if not data.get('title'):
+        return jsonify({'error': 'title is required'}), 400
+    try:
+        year = int(data.get('year') or date.today().year)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'year must be a number'}), 400
+    r = Recital(
+        year=year,
+        title=data['title'].strip(),
+        theme=(data.get('theme') or '').strip() or None,
+        recital_date=(datetime.strptime(data['recital_date'], '%Y-%m-%d').date()
+                      if data.get('recital_date') else None),
+        show_times=(data.get('show_times') or '').strip() or None,
+        venue=(data.get('venue') or '').strip() or None,
+    )
+    # First recital created becomes active automatically
+    if Recital.query.count() == 0:
+        r.is_active = True
+    db.session.add(r)
+    AuditLog.record(current_user.id, 'recital.create', f'Created recital {r.year}: {r.title}')
+    db.session.commit()
+    return jsonify(_recital_to_dict(r, detail=True)), 201
+
+
+@bp.route('/recitals/<int:rid>', methods=['PUT'])
+@login_required
+def update_recital(rid):
+    err = _admin_only()
+    if err:
+        return err
+    r = Recital.query.get_or_404(rid)
+    data = request.get_json() or {}
+    if 'title' in data and data['title'].strip():
+        r.title = data['title'].strip()
+    if 'year' in data and data['year']:
+        try:
+            r.year = int(data['year'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'year must be a number'}), 400
+    if 'theme' in data:
+        r.theme = (data['theme'] or '').strip() or None
+    if 'recital_date' in data:
+        r.recital_date = (datetime.strptime(data['recital_date'], '%Y-%m-%d').date()
+                          if data['recital_date'] else None)
+    if 'show_times' in data:
+        r.show_times = (data['show_times'] or '').strip() or None
+    if 'venue' in data:
+        r.venue = (data['venue'] or '').strip() or None
+    if 'director_note' in data:
+        r.director_note = (data['director_note'] or '').strip() or None
+    if 'acknowledgments' in data:
+        r.acknowledgments = (data['acknowledgments'] or '').strip() or None
+    if 'ad_pricing_note' in data:
+        r.ad_pricing_note = (data['ad_pricing_note'] or '').strip() or None
+    if 'is_locked' in data:
+        r.is_locked = bool(data['is_locked'])
+    db.session.commit()
+    return jsonify(_recital_to_dict(r, detail=True))
+
+
+@bp.route('/recitals/<int:rid>/activate', methods=['POST'])
+@login_required
+def activate_recital(rid):
+    err = _admin_only()
+    if err:
+        return err
+    r = Recital.query.get_or_404(rid)
+    Recital.query.update({Recital.is_active: False})
+    r.is_active = True
+    AuditLog.record(current_user.id, 'recital.activate', f'Set active recital: {r.year} {r.title}')
+    db.session.commit()
+    return jsonify(_recital_to_dict(r, detail=True))
+
+
+@bp.route('/recitals/<int:rid>', methods=['DELETE'])
+@login_required
+def delete_recital(rid):
+    err = _admin_only()
+    if err:
+        return err
+    r = Recital.query.get_or_404(rid)
+    # Detach any linked performances so their FK doesn't dangle
+    for p in r.performances.all():
+        p.recital_id = None
+    AuditLog.record(current_user.id, 'recital.delete', f'Deleted recital {r.year}: {r.title}')
+    db.session.delete(r)
+    db.session.commit()
+    return jsonify({'message': 'Recital deleted'})
+
+
+@bp.route('/recitals/<int:rid>/cover', methods=['GET'])
+@login_required
+def get_recital_cover(rid):
+    err = _staff_guard()
+    if err:
+        return err
+    r = Recital.query.get_or_404(rid)
+    return jsonify({'image_data': r.cover_image_data or ''})
+
+
+@bp.route('/recitals/<int:rid>/cover', methods=['POST'])
+@login_required
+def upload_recital_cover(rid):
+    import base64
+    err = _admin_only()
+    if err:
+        return err
+    r = Recital.query.get_or_404(rid)
+    data_uri = _image_data_uri_from_request()
+    if isinstance(data_uri, tuple):
+        return data_uri  # error response
+    r.cover_image_data = data_uri
+    AuditLog.record(current_user.id, 'recital.cover', f'Updated cover for recital {r.id}')
+    db.session.commit()
+    return jsonify({'message': 'Cover updated', 'has_cover': True})
+
+
+def _image_data_uri_from_request(max_mb=2):
+    """Shared multipart image -> data-URI helper (mirrors the Zelle QR upload)."""
+    import base64
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'error': 'No file selected'}), 400
+    raw = f.read()
+    if len(raw) > max_mb * 1024 * 1024:
+        return jsonify({'error': f'Image too large (max {max_mb}MB)'}), 400
+    content_type = (f.mimetype or '').lower()
+    if not content_type.startswith('image/'):
+        ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
+        ext_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+                   'gif': 'image/gif', 'webp': 'image/webp'}
+        content_type = ext_map.get(ext, '')
+        if not content_type:
+            return jsonify({'error': 'File must be an image (PNG, JPG, GIF, or WebP)'}), 400
+    return f'data:{content_type};base64,' + base64.b64encode(raw).decode('ascii')
+
+
+# Recital numbers (show order + music/choreography) — any staff -------
+
+@bp.route('/recitals/<int:rid>/numbers', methods=['GET'])
+@login_required
+def list_recital_numbers(rid):
+    err = _staff_guard()
+    if err:
+        return err
+    r = Recital.query.get_or_404(rid)
+    numbers = r.numbers.order_by(RecitalNumber.order_index).all()
+    return jsonify({'numbers': [_number_to_dict(n) for n in numbers]})
+
+
+@bp.route('/recitals/<int:rid>/numbers', methods=['POST'])
+@login_required
+def create_recital_number(rid):
+    err = _staff_guard()
+    if err:
+        return err
+    r = Recital.query.get_or_404(rid)
+    data = request.get_json() or {}
+    if not data.get('title'):
+        return jsonify({'error': 'title is required'}), 400
+    last = r.numbers.order_by(RecitalNumber.order_index.desc()).first()
+    n = RecitalNumber(
+        recital_id=r.id,
+        order_index=(last.order_index + 1) if last else 1,
+        title=data['title'].strip(),
+        class_id=int(data['class_id']) if data.get('class_id') else None,
+        group_id=int(data['group_id']) if data.get('group_id') else None,
+        style=(data.get('style') or '').strip() or None,
+        act=(data.get('act') or '').strip() or None,
+    )
+    db.session.add(n)
+    db.session.commit()
+    return jsonify(_number_to_dict(n)), 201
+
+
+NUMBER_TEXT_FIELDS = [
+    'title', 'style', 'act', 'song_title', 'song_artist', 'music_url',
+    'music_notes', 'choreographer', 'choreo_notes', 'choreo_url',
+    'formation_notes', 'duration', 'props', 'notes',
+]
+
+
+@bp.route('/recital-numbers/<int:nid>', methods=['PUT'])
+@login_required
+def update_recital_number(nid):
+    err = _staff_guard()
+    if err:
+        return err
+    n = RecitalNumber.query.get_or_404(nid)
+    data = request.get_json() or {}
+    for field in NUMBER_TEXT_FIELDS:
+        if field in data:
+            val = (data[field] or '').strip()
+            if field == 'title' and not val:
+                continue  # never blank the title
+            setattr(n, field, val or None)
+    if 'class_id' in data:
+        n.class_id = int(data['class_id']) if data['class_id'] else None
+    if 'group_id' in data:
+        n.group_id = int(data['group_id']) if data['group_id'] else None
+    if 'is_finale' in data:
+        n.is_finale = bool(data['is_finale'])
+    db.session.commit()
+    return jsonify(_number_to_dict(n))
+
+
+@bp.route('/recital-numbers/<int:nid>', methods=['DELETE'])
+@login_required
+def delete_recital_number(nid):
+    err = _staff_guard()
+    if err:
+        return err
+    n = RecitalNumber.query.get_or_404(nid)
+    db.session.delete(n)
+    db.session.commit()
+    return jsonify({'message': 'Number removed'})
+
+
+@bp.route('/recitals/<int:rid>/numbers/reorder', methods=['POST'])
+@login_required
+def reorder_recital_numbers(rid):
+    err = _staff_guard()
+    if err:
+        return err
+    r = Recital.query.get_or_404(rid)
+    data = request.get_json() or {}
+    order = data.get('order') or []
+    by_id = {n.id: n for n in r.numbers.all()}
+    pos = 0
+    for nid in order:
+        n = by_id.get(int(nid))
+        if n:
+            pos += 1
+            n.order_index = pos
+    db.session.commit()
+    return jsonify({'message': 'Reordered', 'count': pos})
+
+
+# Cast --------------------------------------------------------------
+
+@bp.route('/recital-numbers/<int:nid>/cast', methods=['GET'])
+@login_required
+def list_recital_cast(nid):
+    err = _staff_guard()
+    if err:
+        return err
+    n = RecitalNumber.query.get_or_404(nid)
+    return jsonify(_number_to_dict(n))
+
+
+@bp.route('/recital-numbers/<int:nid>/cast', methods=['POST'])
+@login_required
+def add_recital_cast(nid):
+    err = _staff_guard()
+    if err:
+        return err
+    n = RecitalNumber.query.get_or_404(nid)
+    data = request.get_json() or {}
+
+    def _add(sid, part=None):
+        if not RecitalCast.query.filter_by(number_id=nid, student_id=sid).first():
+            db.session.add(RecitalCast(number_id=nid, student_id=sid, part=part))
+            return 1
+        return 0
+
+    # Fill cast from the number's linked class/group
+    if data.get('fill_from_class'):
+        sids = []
+        if n.class_id:
+            sids = [e.student_id for e in ClassEnrollment.query.filter_by(class_id=n.class_id, is_active=True).all()]
+        elif n.group_id:
+            sids = [m.student_id for m in CompanyMembership.query.filter_by(group_id=n.group_id, is_active=True).all()]
+        if not sids:
+            return jsonify({'error': 'Link a class or group to this number first'}), 400
+        added = sum(_add(s) for s in sids)
+        db.session.commit()
+        return jsonify({'message': f'Added {added} dancers', 'number': _number_to_dict(n)}), 201
+
+    if data.get('student_ids'):
+        added = sum(_add(int(s)) for s in data['student_ids'])
+        db.session.commit()
+        return jsonify({'message': f'Added {added} dancers', 'number': _number_to_dict(n)}), 201
+
+    if not data.get('student_id'):
+        return jsonify({'error': 'student_id is required'}), 400
+    added = _add(int(data['student_id']), (data.get('part') or '').strip() or None)
+    if not added:
+        return jsonify({'error': 'Dancer already in this number'}), 400
+    db.session.commit()
+    return jsonify({'message': 'Added', 'number': _number_to_dict(n)}), 201
+
+
+@bp.route('/recital-cast/<int:cid>', methods=['PUT'])
+@login_required
+def update_recital_cast(cid):
+    err = _staff_guard()
+    if err:
+        return err
+    c = RecitalCast.query.get_or_404(cid)
+    data = request.get_json() or {}
+    if 'part' in data:
+        c.part = (data['part'] or '').strip() or None
+    db.session.commit()
+    return jsonify({'message': 'Updated'})
+
+
+@bp.route('/recital-cast/<int:cid>', methods=['DELETE'])
+@login_required
+def delete_recital_cast(cid):
+    err = _staff_guard()
+    if err:
+        return err
+    c = RecitalCast.query.get_or_404(cid)
+    db.session.delete(c)
+    db.session.commit()
+    return jsonify({'message': 'Removed'})
+
+
+# Awards (admin) ----------------------------------------------------
+
+@bp.route('/recitals/<int:rid>/awards', methods=['GET'])
+@login_required
+def list_recital_awards(rid):
+    err = _staff_guard()
+    if err:
+        return err
+    r = Recital.query.get_or_404(rid)
+    rows = r.awards.order_by(RecitalAward.order_index, RecitalAward.id).all()
+    return jsonify({'awards': [_award_to_dict(a) for a in rows]})
+
+
+@bp.route('/recitals/<int:rid>/awards', methods=['POST'])
+@login_required
+def create_recital_award(rid):
+    err = _admin_only()
+    if err:
+        return err
+    r = Recital.query.get_or_404(rid)
+    data = request.get_json() or {}
+    if not data.get('title'):
+        return jsonify({'error': 'title is required'}), 400
+    last = r.awards.order_by(RecitalAward.order_index.desc()).first()
+    a = RecitalAward(
+        recital_id=r.id,
+        title=data['title'].strip(),
+        category=(data.get('category') or '').strip() or None,
+        student_id=int(data['student_id']) if data.get('student_id') else None,
+        recipient_text=(data.get('recipient_text') or '').strip() or None,
+        description=(data.get('description') or '').strip() or None,
+        order_index=(last.order_index + 1) if last else 1,
+    )
+    db.session.add(a)
+    db.session.commit()
+    return jsonify(_award_to_dict(a)), 201
+
+
+@bp.route('/recital-awards/<int:aid>', methods=['PUT'])
+@login_required
+def update_recital_award(aid):
+    err = _admin_only()
+    if err:
+        return err
+    a = RecitalAward.query.get_or_404(aid)
+    data = request.get_json() or {}
+    if 'title' in data and data['title'].strip():
+        a.title = data['title'].strip()
+    if 'category' in data:
+        a.category = (data['category'] or '').strip() or None
+    if 'student_id' in data:
+        a.student_id = int(data['student_id']) if data['student_id'] else None
+    if 'recipient_text' in data:
+        a.recipient_text = (data['recipient_text'] or '').strip() or None
+    if 'description' in data:
+        a.description = (data['description'] or '').strip() or None
+    if 'order_index' in data:
+        try:
+            a.order_index = int(data['order_index'])
+        except (TypeError, ValueError):
+            pass
+    db.session.commit()
+    return jsonify(_award_to_dict(a))
+
+
+@bp.route('/recital-awards/<int:aid>', methods=['DELETE'])
+@login_required
+def delete_recital_award(aid):
+    err = _admin_only()
+    if err:
+        return err
+    a = RecitalAward.query.get_or_404(aid)
+    db.session.delete(a)
+    db.session.commit()
+    return jsonify({'message': 'Award removed'})
+
+
+# Booklet ads (admin) -----------------------------------------------
+
+AD_SIZES = {'full_page', 'half_page', 'quarter_page', 'business_card', 'shout_out'}
+
+
+@bp.route('/recitals/<int:rid>/ads', methods=['GET'])
+@login_required
+def list_recital_ads(rid):
+    err = _staff_guard()
+    if err:
+        return err
+    r = Recital.query.get_or_404(rid)
+    rows = r.ads.order_by(RecitalAd.order_index, RecitalAd.id).all()
+    return jsonify({'ads': [_ad_to_dict(a) for a in rows]})
+
+
+@bp.route('/recitals/<int:rid>/ads', methods=['POST'])
+@login_required
+def create_recital_ad(rid):
+    err = _admin_only()
+    if err:
+        return err
+    r = Recital.query.get_or_404(rid)
+    data = request.get_json() or {}
+    if not data.get('advertiser'):
+        return jsonify({'error': 'advertiser is required'}), 400
+    size = (data.get('size') or 'shout_out').strip()
+    if size not in AD_SIZES:
+        size = 'shout_out'
+    last = r.ads.order_by(RecitalAd.order_index.desc()).first()
+    a = RecitalAd(
+        recital_id=r.id,
+        advertiser=data['advertiser'].strip(),
+        size=size,
+        price=data.get('price') or 0,
+        content=(data.get('content') or '').strip() or None,
+        contact_name=(data.get('contact_name') or '').strip() or None,
+        contact_email=(data.get('contact_email') or '').strip() or None,
+        student_id=int(data['student_id']) if data.get('student_id') else None,
+        status=(data.get('status') or 'submitted').strip(),
+        paid=bool(data.get('paid')),
+        order_index=(last.order_index + 1) if last else 1,
+    )
+    if a.paid:
+        a.paid_at = datetime.utcnow()
+    db.session.add(a)
+    db.session.commit()
+    return jsonify(_ad_to_dict(a)), 201
+
+
+@bp.route('/recital-ads/<int:aid>', methods=['PUT'])
+@login_required
+def update_recital_ad(aid):
+    err = _admin_only()
+    if err:
+        return err
+    a = RecitalAd.query.get_or_404(aid)
+    data = request.get_json() or {}
+    if 'advertiser' in data and data['advertiser'].strip():
+        a.advertiser = data['advertiser'].strip()
+    if 'size' in data and data['size'] in AD_SIZES:
+        a.size = data['size']
+    if 'price' in data:
+        a.price = data['price'] or 0
+    if 'content' in data:
+        a.content = (data['content'] or '').strip() or None
+    if 'contact_name' in data:
+        a.contact_name = (data['contact_name'] or '').strip() or None
+    if 'contact_email' in data:
+        a.contact_email = (data['contact_email'] or '').strip() or None
+    if 'student_id' in data:
+        a.student_id = int(data['student_id']) if data['student_id'] else None
+    if 'status' in data:
+        a.status = (data['status'] or 'submitted').strip()
+    if 'order_index' in data:
+        try:
+            a.order_index = int(data['order_index'])
+        except (TypeError, ValueError):
+            pass
+    if 'paid' in data:
+        a.paid = bool(data['paid'])
+        a.paid_at = datetime.utcnow() if a.paid else None
+    db.session.commit()
+    return jsonify(_ad_to_dict(a))
+
+
+@bp.route('/recital-ads/<int:aid>/image', methods=['GET'])
+@login_required
+def get_recital_ad_image(aid):
+    """Serve a booklet ad's uploaded image as raw bytes (for <img src>)."""
+    import base64
+    from flask import Response
+    err = _staff_guard()
+    if err:
+        return err
+    a = RecitalAd.query.get_or_404(aid)
+    if not a.image_data or ',' not in a.image_data:
+        return jsonify({'error': 'No image'}), 404
+    header, b64 = a.image_data.split(',', 1)
+    mime = 'image/png'
+    if header.startswith('data:') and ';' in header:
+        mime = header[5:header.index(';')]
+    try:
+        raw = base64.b64decode(b64)
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Bad image data'}), 500
+    return Response(raw, mimetype=mime)
+
+
+@bp.route('/recital-ads/<int:aid>/image', methods=['POST'])
+@login_required
+def upload_recital_ad_image(aid):
+    err = _admin_only()
+    if err:
+        return err
+    a = RecitalAd.query.get_or_404(aid)
+    data_uri = _image_data_uri_from_request()
+    if isinstance(data_uri, tuple):
+        return data_uri  # error response
+    a.image_data = data_uri
+    AuditLog.record(current_user.id, 'recital.ad_image', f'Uploaded ad image for "{a.advertiser}"')
+    db.session.commit()
+    return jsonify({'message': 'Ad image uploaded', 'has_image': True})
+
+
+@bp.route('/recital-ads/<int:aid>/image', methods=['DELETE'])
+@login_required
+def delete_recital_ad_image(aid):
+    err = _admin_only()
+    if err:
+        return err
+    a = RecitalAd.query.get_or_404(aid)
+    a.image_data = None
+    db.session.commit()
+    return jsonify({'message': 'Ad image removed'})
+
+
+@bp.route('/recital-ads/<int:aid>', methods=['DELETE'])
+@login_required
+def delete_recital_ad(aid):
+    err = _admin_only()
+    if err:
+        return err
+    a = RecitalAd.query.get_or_404(aid)
+    db.session.delete(a)
+    db.session.commit()
+    return jsonify({'message': 'Ad removed'})
+
+
+# Link existing show dates (Performances) to the recital ------------
+
+@bp.route('/recitals/<int:rid>/link-performance', methods=['POST'])
+@login_required
+def link_performance(rid):
+    err = _admin_only()
+    if err:
+        return err
+    Recital.query.get_or_404(rid)
+    data = request.get_json() or {}
+    pid = data.get('performance_id')
+    if not pid:
+        return jsonify({'error': 'performance_id is required'}), 400
+    p = Performance.query.get_or_404(int(pid))
+    p.recital_id = None if data.get('unlink') else rid
+    db.session.commit()
+    return jsonify({'message': 'Unlinked' if data.get('unlink') else 'Linked'})
+
+
+# Parent-facing read-only recital view ------------------------------
+
+@bp.route('/my-recital', methods=['GET'])
+@login_required
+def my_recital():
+    """The active recital's program, with the parent's own dancers highlighted."""
+    if not current_user.is_parent:
+        return jsonify({'recital': None})
+    r = Recital.query.filter_by(is_active=True).first()
+    if not r:
+        return jsonify({'recital': None})
+    student_ids = _parent_student_ids(current_user)
+    numbers = r.numbers.order_by(RecitalNumber.order_index).all()
+    program, my_count = [], 0
+    for n in numbers:
+        mine = [{'student_name': c.student.full_name, 'part': c.part}
+                for c in n.cast.all() if c.student_id in student_ids]
+        if mine:
+            my_count += 1
+        program.append({
+            'order_index': n.order_index, 'title': n.title, 'style': n.style,
+            'act': n.act, 'is_finale': n.is_finale, 'my_dancers': mine,
+        })
+    return jsonify({
+        'recital': {
+            'title': r.title, 'theme': r.theme,
+            'recital_date': r.recital_date.isoformat() if r.recital_date else None,
+            'show_times': r.show_times, 'venue': r.venue,
+        },
+        'program': program,
+        'my_number_count': my_count,
     })

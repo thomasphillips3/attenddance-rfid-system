@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-3xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+
+    <div class="flex justify-between items-center mb-4 print:hidden">
+        <a href="{{ url_for('main.recital_hub_page') }}" class="text-sm text-gray-600 hover:underline"><i class="fas fa-arrow-left mr-1"></i>Back to hub</a>
+        <button onclick="window.print()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-print mr-2"></i>Print / Save PDF</button>
+    </div>
+
+    <div class="bg-white shadow rounded-lg print:shadow-none">
+
+        <!-- COVER -->
+        <section class="text-center px-8 py-16 break-after-page">
+            {% if recital.cover_image_data %}
+            <img src="{{ recital.cover_image_data }}" alt="cover" class="mx-auto mb-6 max-h-64 rounded">
+            {% endif %}
+            <p class="text-sm uppercase tracking-widest text-gray-400">{{ recital.year }} Recital</p>
+            <h1 class="mt-2 text-4xl font-bold text-gray-900">{{ recital.title }}</h1>
+            {% if recital.theme %}<p class="mt-2 text-lg text-primary-600 italic">{{ recital.theme }}</p>{% endif %}
+            <div class="mt-8 text-gray-600 space-y-1">
+                {% if recital.recital_date %}<p>{{ recital.recital_date.strftime('%A, %B %d, %Y') }}</p>{% endif %}
+                {% if recital.show_times %}<p>{{ recital.show_times }}</p>{% endif %}
+                {% if recital.venue %}<p>{{ recital.venue }}</p>{% endif %}
+            </div>
+        </section>
+
+        <!-- DIRECTOR'S NOTE -->
+        {% if recital.director_note %}
+        <section class="px-8 py-10 border-t break-after-page">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4 text-center">A Note from the Director</h2>
+            <div class="prose text-gray-700 whitespace-pre-line max-w-none">{{ recital.director_note }}</div>
+        </section>
+        {% endif %}
+
+        <!-- PROGRAM -->
+        <section class="px-8 py-10 border-t break-after-page">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6 text-center">Program</h2>
+            {% if program %}
+            {% set ns = namespace(act=None) %}
+            <ol class="space-y-4">
+                {% for item in program %}
+                    {% if item.n.act and item.n.act != ns.act %}
+                        {% set ns.act = item.n.act %}
+                        <li class="pt-2"><h3 class="text-lg font-semibold text-primary-600 border-b border-primary-100 pb-1">{{ item.n.act }}</h3></li>
+                    {% endif %}
+                    <li class="flex gap-4">
+                        <div class="w-8 text-right font-bold text-gray-300">{{ item.n.order_index }}</div>
+                        <div class="flex-1">
+                            <div class="flex items-baseline justify-between">
+                                <span class="font-semibold text-gray-900">{{ item.n.title }}{% if item.n.is_finale %} <span class="text-xs text-purple-600 font-normal">(Finale)</span>{% endif %}</span>
+                                <span class="text-xs text-gray-400">
+                                    {% if item.n.style %}{{ item.n.style }}{% endif %}
+                                    {% if item.n.class_name %} · {{ item.n.class_name }}{% elif item.n.group_name %} · {{ item.n.group_name }}{% endif %}
+                                </span>
+                            </div>
+                            {% if item.n.song_title %}<p class="text-sm text-gray-500 italic">“{{ item.n.song_title }}”{% if item.n.song_artist %} — {{ item.n.song_artist }}{% endif %}</p>{% endif %}
+                            {% if item.n.choreographer %}<p class="text-xs text-gray-400">Choreography: {{ item.n.choreographer }}</p>{% endif %}
+                            {% if item.cast %}
+                            <p class="text-sm text-gray-600 mt-1">{% for c in item.cast %}{{ c.student.full_name }}{% if c.part %} <span class="text-gray-400">({{ c.part }})</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+                            {% endif %}
+                        </div>
+                    </li>
+                {% endfor %}
+            </ol>
+            {% else %}
+            <p class="text-gray-500 text-center">No numbers in the show order yet.</p>
+            {% endif %}
+        </section>
+
+        <!-- AWARDS -->
+        {% if awards %}
+        <section class="px-8 py-10 border-t break-after-page">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6 text-center">Awards</h2>
+            <div class="space-y-3 max-w-xl mx-auto">
+                {% for a in awards %}
+                <div class="text-center">
+                    <p class="font-semibold text-gray-900">{{ a.title }}{% if a.category %} <span class="text-xs text-gray-400">· {{ a.category }}</span>{% endif %}</p>
+                    <p class="text-primary-600">{{ a.student.full_name if a.student else (a.recipient_text or '') }}</p>
+                    {% if a.description %}<p class="text-sm text-gray-500">{{ a.description }}</p>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        <!-- ADS -->
+        {% if ads %}
+        <section class="px-8 py-10 border-t break-after-page">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6 text-center">With Thanks to Our Sponsors</h2>
+            <div class="grid grid-cols-2 gap-4">
+                {% for ad in ads %}
+                <div class="{% if ad.size in ['full_page', 'half_page'] %}col-span-2{% else %}col-span-1{% endif %} border border-gray-200 rounded-lg p-4 text-center break-inside-avoid">
+                    {% if ad.image_data %}
+                    <img src="{{ ad.image_data }}" alt="{{ ad.advertiser }}" class="mx-auto mb-2 {% if ad.size == 'full_page' %}max-h-80{% elif ad.size == 'half_page' %}max-h-44{% else %}max-h-28{% endif %}">
+                    {% endif %}
+                    <p class="font-semibold text-gray-900">{{ ad.advertiser }}</p>
+                    {% if ad.content %}<p class="text-sm text-gray-600 mt-1 whitespace-pre-line">{{ ad.content }}</p>{% endif %}
+                    {% if ad.student %}<p class="text-xs text-gray-400 mt-1">In honor of {{ ad.student.full_name }}</p>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        <!-- ACKNOWLEDGMENTS -->
+        {% if recital.acknowledgments %}
+        <section class="px-8 py-10 border-t">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4 text-center">Acknowledgments</h2>
+            <div class="text-gray-700 whitespace-pre-line text-center max-w-xl mx-auto">{{ recital.acknowledgments }}</div>
+        </section>
+        {% endif %}
+
+    </div>
+</div>
+
+<style>
+@media print {
+    nav, .print\:hidden { display: none !important; }
+    .break-after-page { break-after: page; }
+    .break-inside-avoid { break-inside: avoid; }
+}
+</style>
+{% endblock %}

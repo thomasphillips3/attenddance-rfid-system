@@ -34,6 +34,10 @@ CLASS_COLUMNS = [
     ('location_id', 'INTEGER'),
 ]
 
+PERFORMANCE_COLUMNS = [
+    ('recital_id', 'INTEGER'),
+]
+
 
 def _add_missing_columns(conn, inspector, table, columns):
     existing = [c['name'] for c in inspector.get_columns(table)]
@@ -51,4 +55,6 @@ def run_migrations(db):
             _add_missing_columns(conn, inspector, 'transactions', TRANSACTION_COLUMNS)
         if 'classes' in inspector.get_table_names():
             _add_missing_columns(conn, inspector, 'classes', CLASS_COLUMNS)
+        if 'performances' in inspector.get_table_names():
+            _add_missing_columns(conn, inspector, 'performances', PERFORMANCE_COLUMNS)
         conn.commit()

@@ -677,6 +677,7 @@ class Performance(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     group_id = db.Column(db.Integer, db.ForeignKey('performance_groups.id'))
+    recital_id = db.Column(db.Integer, db.ForeignKey('recitals.id'))  # link a show date to a Recital hub
     title = db.Column(db.String(150), nullable=False)
     performance_date = db.Column(db.Date)
     call_time = db.Column(db.String(40))  # free text, e.g. "5:30 PM call, 7 PM show"
@@ -1064,3 +1065,145 @@ class TimeClockEntry(db.Model):
 
     def __repr__(self):
         return f'<TimeClockEntry u={self.user_id} in={self.clock_in}>'
+
+
+# ── Recital hub (annual show organizer) ─────────────────────────────
+
+class Recital(db.Model):
+    """A single year's recital — the per-year container that ties the show
+    order, music/choreography, awards, and booklet together in one place."""
+    __tablename__ = 'recitals'
+
+    id = db.Column(db.Integer, primary_key=True)
+    year = db.Column(db.Integer, nullable=False, index=True)
+    title = db.Column(db.String(150), nullable=False)
+    theme = db.Column(db.String(150))
+    recital_date = db.Column(db.Date)
+    show_times = db.Column(db.String(120))  # free text, e.g. "Matinee 2 PM · Evening 6 PM"
+    venue = db.Column(db.String(200))
+    director_note = db.Column(db.Text)       # for the booklet
+    acknowledgments = db.Column(db.Text)     # thank-yous / sponsors, for the booklet
+    cover_image_data = db.Column(db.Text)    # optional booklet cover (data URI)
+    ad_pricing_note = db.Column(db.Text)     # blurb describing ad sizes/prices
+    is_active = db.Column(db.Boolean, default=False, nullable=False)  # the "current" recital
+    is_locked = db.Column(db.Boolean, default=False, nullable=False)  # freeze the show order
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    numbers = db.relationship('RecitalNumber', backref='recital', lazy='dynamic',
+                              cascade='all, delete-orphan')
+    awards = db.relationship('RecitalAward', backref='recital', lazy='dynamic',
+                             cascade='all, delete-orphan')
+    ads = db.relationship('RecitalAd', backref='recital', lazy='dynamic',
+                          cascade='all, delete-orphan')
+    performances = db.relationship('Performance', backref='recital', lazy='dynamic')
+
+    def __repr__(self):
+        return f'<Recital {self.year} {self.title}>'
+
+
+class RecitalNumber(db.Model):
+    """One routine in the show order. Also holds the music + choreography
+    details teachers organize for that number."""
+    __tablename__ = 'recital_numbers'
+
+    id = db.Column(db.Integer, primary_key=True)
+    recital_id = db.Column(db.Integer, db.ForeignKey('recitals.id'), nullable=False)
+    order_index = db.Column(db.Integer, default=0, nullable=False)  # position in the show
+    title = db.Column(db.String(150), nullable=False)
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'))
+    group_id = db.Column(db.Integer, db.ForeignKey('performance_groups.id'))
+    style = db.Column(db.String(60))   # Ballet, Hip-Hop, Tap...
+    act = db.Column(db.String(20))     # optional grouping, e.g. "Act 1"
+
+    # Music
+    song_title = db.Column(db.String(150))
+    song_artist = db.Column(db.String(150))
+    music_url = db.Column(db.Text)     # link to shared audio (Drive/Dropbox)
+    music_notes = db.Column(db.Text)   # cue notes (fade in/out, edits)
+
+    # Choreography
+    choreographer = db.Column(db.String(120))
+    choreo_notes = db.Column(db.Text)
+    choreo_url = db.Column(db.Text)    # link to reference video/notes
+    formation_notes = db.Column(db.Text)
+    duration = db.Column(db.String(20))   # "2:45"
+    props = db.Column(db.String(200))
+
+    is_finale = db.Column(db.Boolean, default=False, nullable=False)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    dance_class = db.relationship('DanceClass')
+    group = db.relationship('PerformanceGroup')
+    cast = db.relationship('RecitalCast', backref='number', lazy='dynamic',
+                           cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<RecitalNumber #{self.order_index} {self.title}>'
+
+
+class RecitalCast(db.Model):
+    """A dancer performing in a recital number."""
+    __tablename__ = 'recital_cast'
+
+    id = db.Column(db.Integer, primary_key=True)
+    number_id = db.Column(db.Integer, db.ForeignKey('recital_numbers.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    part = db.Column(db.String(80))  # e.g. "Soloist", "Lead" (optional)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    student = db.relationship('Student', backref='recital_cast')
+
+    __table_args__ = (
+        db.UniqueConstraint('number_id', 'student_id', name='unique_recital_cast'),
+    )
+
+    def __repr__(self):
+        return f'<RecitalCast n={self.number_id} s={self.student_id}>'
+
+
+class RecitalAward(db.Model):
+    """A student award presented at the recital."""
+    __tablename__ = 'recital_awards'
+
+    id = db.Column(db.Integer, primary_key=True)
+    recital_id = db.Column(db.Integer, db.ForeignKey('recitals.id'), nullable=False)
+    title = db.Column(db.String(150), nullable=False)        # "Dancer of the Year"
+    category = db.Column(db.String(60))                      # "Senior Award", "Studio Award"
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'))  # roster recipient
+    recipient_text = db.Column(db.String(150))              # freeform recipient (non-roster)
+    description = db.Column(db.Text)
+    order_index = db.Column(db.Integer, default=0, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    student = db.relationship('Student', backref='recital_awards')
+
+    def __repr__(self):
+        return f'<RecitalAward {self.title}>'
+
+
+class RecitalAd(db.Model):
+    """A custom ad / shout-out placed in the recital booklet."""
+    __tablename__ = 'recital_ads'
+
+    id = db.Column(db.Integer, primary_key=True)
+    recital_id = db.Column(db.Integer, db.ForeignKey('recitals.id'), nullable=False)
+    advertiser = db.Column(db.String(150), nullable=False)  # business or family name
+    size = db.Column(db.String(40), default='shout_out', nullable=False)
+    # full_page, half_page, quarter_page, business_card, shout_out
+    price = db.Column(db.Numeric(10, 2), default=0, nullable=False)
+    content = db.Column(db.Text)         # ad copy / shout-out message
+    image_data = db.Column(db.Text)      # uploaded ad artwork (data URI)
+    contact_name = db.Column(db.String(120))
+    contact_email = db.Column(db.String(120))
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'))  # "in honor of" dancer
+    status = db.Column(db.String(20), default='submitted', nullable=False)  # submitted, approved, placed
+    paid = db.Column(db.Boolean, default=False, nullable=False)
+    paid_at = db.Column(db.DateTime)
+    order_index = db.Column(db.Integer, default=0, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    student = db.relationship('Student', backref='recital_ads')
+
+    def __repr__(self):
+        return f'<RecitalAd {self.advertiser} {self.size}>'

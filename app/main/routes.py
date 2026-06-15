@@ -335,6 +335,34 @@ def recital_page():
     return render_template('recital/manage.html', students=students, classes=classes)
 
 
+@bp.route('/recital-hub')
+@staff_required
+def recital_hub_page():
+    """The per-year recital command center — show order, music/choreo, awards, booklet."""
+    from app.models import PerformanceGroup
+    students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
+    classes = DanceClass.query.filter_by(is_active=True).order_by(DanceClass.name).all()
+    groups = PerformanceGroup.query.filter_by(is_active=True).order_by(PerformanceGroup.name).all()
+    return render_template('recital/hub.html', students=students, classes=classes, groups=groups)
+
+
+@bp.route('/recital/<int:recital_id>/booklet')
+@staff_required
+def recital_booklet(recital_id):
+    """Print-ready recital booklet: cover, program, awards, ads, acknowledgments."""
+    from app.models import Recital, RecitalNumber, RecitalAward, RecitalAd
+    recital = Recital.query.get_or_404(recital_id)
+    numbers = recital.numbers.order_by(RecitalNumber.order_index).all()
+    program = []
+    for n in numbers:
+        cast = sorted(n.cast.all(), key=lambda c: (c.part or '￿', c.student.full_name))
+        program.append({'n': n, 'cast': cast})
+    awards = recital.awards.order_by(RecitalAward.order_index, RecitalAward.id).all()
+    ads = recital.ads.order_by(RecitalAd.order_index, RecitalAd.id).all()
+    return render_template('recital/booklet.html', recital=recital, program=program,
+                           awards=awards, ads=ads)
+
+
 @bp.route('/donations')
 @admin_required
 def donations_page():
