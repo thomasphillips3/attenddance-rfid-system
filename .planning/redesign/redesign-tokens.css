@@ -1,0 +1,87 @@
+/* ============================================================================
+   AttenDANCE — Redesign design tokens  (Phase 0 proposal)
+   Refines the existing brand purple + champagne gold into a full system,
+   replacing the legacy indigo (#6366f1). Every token below maps 1:1 to a
+   Tailwind theme.extend value — see the mapping note at the bottom so Claude
+   Code can drop these straight into tailwind.config.
+   ============================================================================ */
+
+:root {
+  /* ---- Brand: purple (the anchor; replaces indigo `primary`) -------------- */
+  --pri-50:  #faf2fd;
+  --pri-100: #f0ddf8;
+  --pri-200: #e0bcef;
+  --pri-300: #c98fe2;
+  --pri-400: #ad5ccf;
+  --pri-500: #8f2db5;   /* brand — CTAs, active nav, links */
+  --pri-600: #7c249f;   /* hover */
+  --pri-700: #6b228a;   /* pressed / active */
+  --pri-800: #531a6c;
+  --pri-900: #3d1252;   /* deep — type on tint, headings on light */
+
+  /* ---- Accent: champagne gold (prestige / celebrate — used sparingly) ----- */
+  --gold-300: #f3e3b8;  /* soft banners, gentle highlight */
+  --gold-400: #d9b25e;
+  --gold-500: #c8962f;  /* AA-safe gold for icons on light */
+  --gold-ink: #6e521a;  /* gold text on light surfaces */
+
+  /* ---- Warm neutrals (surfaces + ink) ------------------------------------- */
+  --canvas:  #f7f3ee;   /* app background (warm paper) */
+  --surface: #ffffff;   /* cards, panels */
+  --surface-2: #fbf8f4; /* subtle raised / striped rows */
+  --line:    #ece6dd;   /* hairline borders */
+  --line-2:  #d9d2c5;   /* stronger dividers */
+  --ink:     #1f1a17;   /* primary text */
+  --ink-2:   #5a534c;   /* secondary text */
+  --ink-3:   #8a827a;   /* tertiary / captions */
+
+  /* ---- Semantic (status only — never decorative) -------------------------- */
+  --ok:      #1f8a4c;   --ok-bg:   #e3f5ea;   --ok-ink:  #0f6234;
+  --warn:    #b8761a;   --warn-bg: #fbeed7;   --warn-ink:#8a5510;  /* amount due / pending */
+  --danger:  #c62f2f;   --danger-bg:#fbe4e4;  --danger-ink:#931f1f;
+  --info:    #2563c9;   --info-bg: #e4edfb;   --info-ink:#1a458f;  /* credit / informational */
+
+  /* ---- Type --------------------------------------------------------------- */
+  --display: 'DM Serif Display', 'Bodoni Moda', Georgia, serif;
+  --body:    'Atkinson Hyperlegible', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --mono:    ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* type scale (web app, not iPad) */
+  --t-display: 34px;   /* page titles, parent greeting */
+  --t-h2:      22px;   /* section headers (serif) */
+  --t-h3:      16px;   /* card titles (sans 700) */
+  --t-body:    15px;   /* default UI/body */
+  --t-sm:      13px;   /* table cells, secondary */
+  --t-cap:     12px;   /* overline / caption, +tracking, uppercase */
+
+  /* ---- Shape -------------------------------------------------------------- */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* ---- Elevation (soft, warm-tinted) -------------------------------------- */
+  --sh-1: 0 1px 2px rgba(40,20,60,.06), 0 1px 3px rgba(40,20,60,.04);
+  --sh-2: 0 1px 0 rgba(40,20,60,.03), 0 4px 16px rgba(40,20,60,.07);
+  --sh-3: 0 12px 40px rgba(40,20,60,.16);
+  --sh-pop: 0 8px 28px rgba(40,20,60,.18), 0 0 0 1px rgba(40,20,60,.05);
+
+  /* ---- Spacing base (4px grid) -------------------------------------------- */
+  --space: 4px;
+}
+
+/* ----------------------------------------------------------------------------
+   TAILWIND MAPPING (for implementation)
+   theme.extend.colors = {
+     primary: { 50:#faf2fd, 100:#f0ddf8, 200:#e0bcef, 300:#c98fe2, 400:#ad5ccf,
+                500:#8f2db5, 600:#7c249f, 700:#6b228a, 800:#531a6c, 900:#3d1252 },
+     gold:    { 300:#f3e3b8, 400:#d9b25e, 500:#c8962f, ink:#6e521a },
+     canvas:#f7f3ee, surface:#ffffff,
+     ink:{DEFAULT:#1f1a17, 2:#5a534c, 3:#8a827a},
+     line:{DEFAULT:#ece6dd, 2:#d9d2c5},
+     ok:#1f8a4c, warn:#b8761a, danger:#c62f2f, info:#2563c9
+   }
+   fontFamily = { display:['DM Serif Display',serif], sans:['Atkinson Hyperlegible',...] }
+   borderRadius = { sm:8px, md:12px, lg:16px }
+   Load fonts once in base.html; drop Font Awesome for a single inline-SVG icon set.
+   ---------------------------------------------------------------------------- */

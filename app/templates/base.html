@@ -1,30 +1,34 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-gray-50">
+<html lang="en" class="h-full bg-canvas">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#6366f1">
-    <meta name="description" content="AttenDANCE - RFID Attendance System for Dance Studios">
-    
+    <meta name="theme-color" content="#8f2db5">
+    <meta name="description" content="AttenDANCE - Studio management for dance schools">
+
     <!-- PWA Meta Tags -->
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="AttenDANCE">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192x192.png') }}">
-    
+
     <!-- Favicon -->
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    
-    <!-- Title -->
+
     <title>
         {%- if title -%}
             {{ title }} - {{ config.APP_NAME }}
         {%- else -%}
-            {{ config.APP_NAME }} - RFID Attendance System
+            {{ config.APP_NAME }} - Studio Management
         {%- endif -%}
     </title>
-    
+
+    <!-- Fonts: DM Serif Display (titles) + Atkinson Hyperlegible (UI/body) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -32,436 +36,247 @@
             theme: {
                 extend: {
                     colors: {
-                        primary: {
-                            50: '#f0f9ff',
-                            500: '#6366f1',
-                            600: '#4f46e5',
-                            700: '#4338ca',
-                            900: '#312e81'
-                        }
-                    }
+                        primary: { 50:'#faf2fd', 100:'#f0ddf8', 200:'#e0bcef', 300:'#c98fe2', 400:'#ad5ccf', 500:'#8f2db5', 600:'#7c249f', 700:'#6b228a', 800:'#531a6c', 900:'#3d1252' },
+                        gold:    { 300:'#f3e3b8', 400:'#d9b25e', 500:'#c8962f', ink:'#6e521a' },
+                        canvas:  '#f7f3ee',
+                        surface: { DEFAULT:'#ffffff', 2:'#fbf8f4' },
+                        ink:     { DEFAULT:'#1f1a17', 2:'#5a534c', 3:'#8a827a' },
+                        line:    { DEFAULT:'#ece6dd', 2:'#d9d2c5' },
+                        ok:'#1f8a4c', warn:'#b8761a', danger:'#c62f2f', info:'#2563c9',
+                    },
+                    fontFamily: {
+                        display: ['"DM Serif Display"', 'Georgia', 'serif'],
+                        sans:    ['"Atkinson Hyperlegible"', 'system-ui', '-apple-system', 'sans-serif'],
+                    },
+                    boxShadow: {
+                        soft: '0 1px 0 rgba(40,20,60,.03), 0 4px 16px rgba(40,20,60,.07)',
+                        pop:  '0 8px 28px rgba(40,20,60,.18), 0 0 0 1px rgba(40,20,60,.05)',
+                    },
                 }
             }
         }
     </script>
-    
+
     <!-- Font Awesome for icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Custom CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
     <style>
-        .logo-dance {
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        
-        .nav-item:hover {
-            transform: translateX(4px);
-            transition: transform 0.2s ease;
-        }
-        
-        .card-hover:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-            transition: all 0.3s ease;
-        }
-        
-        .pulse-ring {
-            animation: pulse-ring 1.25s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
-        }
-        
-        @keyframes pulse-ring {
-            0% {
-                transform: scale(.33);
-            }
-            80%, 100% {
-                opacity: 0;
-            }
+        body { font-family: 'Atkinson Hyperlegible', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+        .font-display { font-family: 'DM Serif Display', Georgia, serif; }
+        [x-cloak] { display: none !important; }
+        :root {
+            --pri-500:#8f2db5; --pri-700:#6b228a; --pri-900:#3d1252;
+            --gold-300:#f3e3b8; --gold-ink:#6e521a;
+            --warn-bg:#fbeed7; --warn-ink:#8a5510; --ok-ink:#0f6234;
         }
     </style>
-    
+
     {% block extra_head %}{% endblock %}
 </head>
-<body class="h-full flex flex-col">
-    <!-- Navigation -->
+<body class="h-full bg-canvas text-ink">
+
+{% set is_parent = current_user.is_authenticated and (current_user.role is defined and current_user.role == 'parent') %}
+{% set is_staff_user = current_user.is_authenticated and not is_parent %}
+
+{# ── Staff sidebar nav item macro ─────────────────────────────────────── #}
+{% macro nl(label, endpoint, icon, matches, badge=0) %}
+    {% set ep = request.endpoint or '' %}
+    {% set ns = namespace(active=false) %}
+    {% for m in matches %}{% if m in ep %}{% set ns.active = true %}{% endif %}{% endfor %}
+    <a href="{{ url_for(endpoint) }}" @click="sidebar=false"
+       class="group flex items-center gap-3 px-3 py-2 rounded-xl text-sm mb-0.5 transition-colors
+              {% if ns.active %}bg-primary-500 text-white font-bold shadow-sm{% else %}text-ink-2 font-semibold hover:bg-primary-50{% endif %}">
+        <i class="fas fa-{{ icon }} fa-fw w-4 text-center {% if ns.active %}text-white{% else %}text-ink-3 group-hover:text-primary-600{% endif %}"></i>
+        <span class="flex-1">{{ label }}</span>
+        {% if badge %}<span class="text-[11px] font-bold min-w-[18px] h-[18px] px-1.5 rounded-full flex items-center justify-center {% if ns.active %}bg-white/25 text-white{% else %}bg-danger text-white{% endif %}">{{ badge }}</span>{% endif %}
+    </a>
+{% endmacro %}
+
+{% macro group_label(text) %}
+    <div class="px-3 pt-4 pb-1.5 text-[11px] font-bold uppercase tracking-[.09em] text-ink-3">{{ text }}</div>
+{% endmacro %}
+
+{% macro account_menu() %}
     {% if current_user.is_authenticated %}
-    <nav class="bg-white shadow-lg border-b border-gray-200" x-data="{ mobileMenuOpen: false }">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between h-16">
-                <!-- Logo and Brand -->
-                <div class="flex items-center">
-                    <div class="flex-shrink-0 flex items-center">
-                        <i class="fas fa-music text-2xl text-primary-500 mr-2"></i>
-                        <h1 class="text-2xl font-bold logo-dance">AttenDANCE</h1>
-                    </div>
-                    
-                    <!-- Desktop Navigation -->
-                    <div class="hidden md:ml-8 md:flex md:space-x-8">
-                    {% if current_user.role is defined and current_user.role == 'parent' %}
-                        <a href="{{ url_for('main.parent_dashboard') }}"
-                           class="nav-item border-primary-500 text-primary-600 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-home mr-2"></i>My Dashboard
-                        </a>
-                    {% else %}
-                        <a href="{{ url_for('main.dashboard') }}" 
-                           class="nav-item {% if request.endpoint == 'main.dashboard' %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-tachometer-alt mr-2"></i>Dashboard
-                        </a>
-                        <a href="{{ url_for('main.students') }}" 
-                           class="nav-item {% if request.endpoint and 'students' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-users mr-2"></i>Students
-                        </a>
-                        <a href="{{ url_for('main.classes') }}"
-                           class="nav-item {% if request.endpoint and 'classes' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-calendar-alt mr-2"></i>Classes
-                        </a>
-                        <a href="{{ url_for('main.calendar_page') }}"
-                           class="nav-item {% if request.endpoint == 'main.calendar_page' %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-calendar-week mr-2"></i>Calendar
-                        </a>
-                        <a href="{{ url_for('main.timeclock_page') }}"
-                           class="nav-item {% if request.endpoint == 'main.timeclock_page' %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-business-time mr-2"></i>Time Clock
-                        </a>
-                        <a href="{{ url_for('main.attendance') }}"
-                           class="nav-item {% if request.endpoint and 'attendance' in request.endpoint and 'take' not in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-check-circle mr-2"></i>Attendance
-                        </a>
-                        <a href="{{ url_for('main.take_attendance') }}"
-                           class="nav-item {% if request.endpoint and 'take' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-clipboard-check mr-2"></i>Take Attendance
-                        </a>
-                        <a href="{{ url_for('main.families_page') }}"
-                           class="nav-item {% if request.endpoint and 'famil' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-home mr-2"></i>Families
-                        </a>
-                        <a href="{{ url_for('main.transactions') }}"
-                           class="nav-item {% if request.endpoint and 'transaction' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-dollar-sign mr-2"></i>Payments
-                        </a>
-                        {% if current_user.is_admin %}
-                        <a href="{{ url_for('main.pending_payments_page') }}"
-                           class="nav-item {% if request.endpoint == 'main.pending_payments_page' %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-clock mr-2"></i>Pending
-                            {% if pending_payment_count %}
-                            <span class="ml-1.5 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full">{{ pending_payment_count }}</span>
-                            {% endif %}
-                        </a>
-                        {% endif %}
-                        <a href="{{ url_for('main.rules_admin') }}"
-                           class="nav-item {% if request.endpoint and 'rules' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-gavel mr-2"></i>Rules
-                        </a>
-                        <a href="{{ url_for('main.messages_page') }}"
-                           class="nav-item {% if request.endpoint and 'message' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-envelope mr-2"></i>Messages
-                        </a>
-                        <a href="{{ url_for('main.recital_hub_page') }}"
-                           class="nav-item {% if request.endpoint in ['main.recital_hub_page', 'main.recital_page', 'main.recital_booklet'] %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-mask mr-2"></i>Recital
-                        </a>
-                        {% if current_user.is_admin %}
-                        <a href="{{ url_for('main.company_page') }}"
-                           class="nav-item {% if request.endpoint == 'main.company_page' %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-star mr-2"></i>Company
-                        </a>
-                        <a href="{{ url_for('main.waivers_page') }}"
-                           class="nav-item {% if request.endpoint == 'main.waivers_page' %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-file-signature mr-2"></i>Forms
-                        </a>
-                        <a href="{{ url_for('main.donations_page') }}"
-                           class="nav-item {% if request.endpoint == 'main.donations_page' %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-hand-holding-heart mr-2"></i>Donations
-                        </a>
-                        <a href="{{ url_for('main.registrations_page') }}"
-                           class="nav-item {% if request.endpoint == 'main.registrations_page' %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-user-plus mr-2"></i>Enroll
-                            {% if registration_count %}
-                            <span class="ml-1.5 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full">{{ registration_count }}</span>
-                            {% endif %}
-                        </a>
-                        <a href="{{ url_for('main.locations_page') }}"
-                           class="nav-item {% if request.endpoint and 'location' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-map-marker-alt mr-2"></i>Locations
-                        </a>
-                        <a href="{{ url_for('main.staff_page') }}"
-                           class="nav-item {% if request.endpoint and 'staff' in request.endpoint %}border-primary-500 text-primary-600{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-chalkboard-teacher mr-2"></i>Staff
-                        </a>
-                        {% endif %}
-                    {% endif %}
-                    </div>
-                </div>
-                
-                <!-- User Menu -->
-                <div class="flex items-center space-x-4">
-                    <!-- Notifications (future feature) -->
-                    <button type="button" class="p-2 rounded-full text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
-                        <span class="sr-only">View notifications</span>
-                        <i class="fas fa-bell h-5 w-5"></i>
-                    </button>
-                    
-                    <!-- User dropdown -->
-                    <div class="relative" x-data="{ open: false }">
-                        <button @click="open = !open" type="button" 
-                                class="flex items-center text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500" 
-                                id="user-menu-button">
-                            <span class="sr-only">Open user menu</span>
-                            <div class="h-8 w-8 rounded-full bg-primary-500 flex items-center justify-center">
-                                <span class="text-sm font-medium text-white">
-                                    {{ current_user.first_name[0].upper() }}{{ current_user.last_name[0].upper() }}
-                                </span>
-                            </div>
-                            <span class="ml-2 text-gray-700 text-sm font-medium hidden sm:block">
-                                {{ current_user.first_name }}
-                            </span>
-                            <i class="fas fa-chevron-down ml-1 h-3 w-3 text-gray-400"></i>
-                        </button>
-                        
-                        <div x-show="open" @click.away="open = false" 
-                             x-transition:enter="transition ease-out duration-200"
-                             x-transition:enter-start="transform opacity-0 scale-95"
-                             x-transition:enter-end="transform opacity-100 scale-100"
-                             x-transition:leave="transition ease-in duration-75"
-                             x-transition:leave-start="transform opacity-100 scale-100"
-                             x-transition:leave-end="transform opacity-0 scale-95"
-                             class="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-50">
-                            <a href="{{ url_for('auth.profile') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                                <i class="fas fa-user mr-2"></i>Your Profile
-                            </a>
-                            {% if current_user.is_admin %}
-                            <a href="{{ url_for('main.skills_page') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><i class="fas fa-medal mr-2"></i>Skills</a>
-                            <a href="{{ url_for('main.makeups_page') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><i class="fas fa-rotate mr-2"></i>Makeups</a>
-                            <a href="{{ url_for('main.leads_page') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><i class="fas fa-user-tag mr-2"></i>Leads &amp; Trials</a>
-                            <a href="{{ url_for('main.analytics_page') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><i class="fas fa-chart-line mr-2"></i>Insights</a>
-                            <div class="border-t border-gray-100 my-1"></div>
-                            <a href="{{ url_for('main.settings_page') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                                <i class="fas fa-cog mr-2"></i>Settings
-                            </a>
-                            {% endif %}
-                            <a href="{{ url_for('auth.logout') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                                <i class="fas fa-sign-out-alt mr-2"></i>Sign out
-                            </a>
-                        </div>
-                    </div>
-                    
-                    <!-- Mobile menu button -->
-                    <div class="md:hidden">
-                        <button @click="mobileMenuOpen = !mobileMenuOpen" type="button" 
-                                class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500">
-                            <span class="sr-only">Open main menu</span>
-                            <i class="fas fa-bars h-6 w-6"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Mobile menu -->
-        <div x-show="mobileMenuOpen" class="md:hidden">
-            <div class="pt-2 pb-3 space-y-1">
-            {% if current_user.role is defined and current_user.role == 'parent' %}
-                <a href="{{ url_for('main.parent_dashboard') }}"
-                   class="bg-primary-50 border-primary-500 text-primary-700 block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-home mr-2"></i>My Dashboard
-                </a>
-            {% else %}
-                <a href="{{ url_for('main.dashboard') }}"
-                   class="{% if request.endpoint == 'main.dashboard' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-tachometer-alt mr-2"></i>Dashboard
-                </a>
-                <a href="{{ url_for('main.students') }}"
-                   class="{% if request.endpoint and 'students' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-users mr-2"></i>Students
-                </a>
-                <a href="{{ url_for('main.classes') }}"
-                   class="{% if request.endpoint and 'classes' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-calendar-alt mr-2"></i>Classes
-                </a>
-                <a href="{{ url_for('main.calendar_page') }}"
-                   class="{% if request.endpoint == 'main.calendar_page' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-calendar-week mr-2"></i>Calendar
-                </a>
-                <a href="{{ url_for('main.timeclock_page') }}"
-                   class="{% if request.endpoint == 'main.timeclock_page' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-business-time mr-2"></i>Time Clock
-                </a>
-                {% if current_user.is_admin %}
-                <a href="{{ url_for('main.skills_page') }}" class="border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800 block pl-3 pr-4 py-2 border-l-4 text-base font-medium"><i class="fas fa-medal mr-2"></i>Skills</a>
-                <a href="{{ url_for('main.makeups_page') }}" class="border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800 block pl-3 pr-4 py-2 border-l-4 text-base font-medium"><i class="fas fa-rotate mr-2"></i>Makeups</a>
-                <a href="{{ url_for('main.leads_page') }}" class="border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800 block pl-3 pr-4 py-2 border-l-4 text-base font-medium"><i class="fas fa-user-tag mr-2"></i>Leads</a>
-                <a href="{{ url_for('main.analytics_page') }}" class="border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800 block pl-3 pr-4 py-2 border-l-4 text-base font-medium"><i class="fas fa-chart-line mr-2"></i>Insights</a>
-                {% endif %}
-                <a href="{{ url_for('main.attendance') }}"
-                   class="{% if request.endpoint and 'attendance' in request.endpoint and 'take' not in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-check-circle mr-2"></i>Attendance
-                </a>
-                <a href="{{ url_for('main.take_attendance') }}"
-                   class="{% if request.endpoint and 'take' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-clipboard-check mr-2"></i>Take Attendance
-                </a>
-                <a href="{{ url_for('main.families_page') }}"
-                   class="{% if request.endpoint and 'famil' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-home mr-2"></i>Families
-                </a>
-                <a href="{{ url_for('main.transactions') }}"
-                   class="{% if request.endpoint and 'transaction' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-dollar-sign mr-2"></i>Payments
-                </a>
-                {% if current_user.is_admin %}
-                <a href="{{ url_for('main.pending_payments_page') }}"
-                   class="{% if request.endpoint == 'main.pending_payments_page' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-clock mr-2"></i>Pending Payments
-                    {% if pending_payment_count %}
-                    <span class="ml-1.5 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full">{{ pending_payment_count }}</span>
-                    {% endif %}
-                </a>
-                {% endif %}
-                <a href="{{ url_for('main.rules_admin') }}"
-                   class="{% if request.endpoint and 'rules' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-gavel mr-2"></i>Rules
-                </a>
-                <a href="{{ url_for('main.messages_page') }}"
-                   class="{% if request.endpoint and 'message' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-envelope mr-2"></i>Messages
-                </a>
-                <a href="{{ url_for('main.recital_hub_page') }}"
-                   class="{% if request.endpoint in ['main.recital_hub_page', 'main.recital_page', 'main.recital_booklet'] %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-mask mr-2"></i>Recital
-                </a>
-                {% if current_user.is_admin %}
-                <a href="{{ url_for('main.company_page') }}"
-                   class="{% if request.endpoint == 'main.company_page' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-star mr-2"></i>Company
-                </a>
-                <a href="{{ url_for('main.waivers_page') }}"
-                   class="{% if request.endpoint == 'main.waivers_page' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-file-signature mr-2"></i>Forms
-                </a>
-                <a href="{{ url_for('main.donations_page') }}"
-                   class="{% if request.endpoint == 'main.donations_page' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-hand-holding-heart mr-2"></i>Donations
-                </a>
-                <a href="{{ url_for('main.registrations_page') }}"
-                   class="{% if request.endpoint == 'main.registrations_page' %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-user-plus mr-2"></i>Enroll Requests
-                    {% if registration_count %}<span class="ml-1.5 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full">{{ registration_count }}</span>{% endif %}
-                </a>
-                <a href="{{ url_for('main.locations_page') }}"
-                   class="{% if request.endpoint and 'location' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-map-marker-alt mr-2"></i>Locations
-                </a>
-                <a href="{{ url_for('main.staff_page') }}"
-                   class="{% if request.endpoint and 'staff' in request.endpoint %}bg-primary-50 border-primary-500 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-chalkboard-teacher mr-2"></i>Staff
-                </a>
-                {% endif %}
+    <div class="relative" x-data="{ open:false }">
+        <button @click="open=!open" class="flex items-center gap-2 rounded-full focus:outline-none">
+            <span class="h-9 w-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-sm font-bold">{{ current_user.first_name[0]|upper }}{{ current_user.last_name[0]|upper }}</span>
+            <span class="hidden sm:block text-sm font-bold text-ink">{{ current_user.first_name }}</span>
+            <i class="fas fa-chevron-down text-xs text-ink-3"></i>
+        </button>
+        <div x-show="open" x-cloak @click.away="open=false"
+             x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+             class="origin-top-right absolute right-0 mt-2 w-52 rounded-2xl shadow-pop bg-surface border border-line py-1.5 z-50">
+            <a href="{{ url_for('auth.profile') }}" class="flex items-center gap-2.5 px-4 py-2 text-sm text-ink-2 hover:bg-primary-50 hover:text-primary-700"><i class="fas fa-user fa-fw text-ink-3"></i>Your profile</a>
+            {% if is_staff_user and current_user.is_admin %}
+            <a href="{{ url_for('main.settings_page') }}" class="flex items-center gap-2.5 px-4 py-2 text-sm text-ink-2 hover:bg-primary-50 hover:text-primary-700"><i class="fas fa-gear fa-fw text-ink-3"></i>Payment methods</a>
             {% endif %}
+            <div class="border-t border-line my-1"></div>
+            <a href="{{ url_for('auth.logout') }}" class="flex items-center gap-2.5 px-4 py-2 text-sm text-ink-2 hover:bg-danger/10 hover:text-danger"><i class="fas fa-arrow-right-from-bracket fa-fw text-ink-3"></i>Sign out</a>
+        </div>
+    </div>
+    {% endif %}
+{% endmacro %}
+
+{# ── Flash messages (fixed) ───────────────────────────────────────────── #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="fixed top-4 right-4 z-[60] space-y-2 w-full max-w-sm" id="flash-messages">
+        {% for category, message in messages %}
+        <div class="bg-surface shadow-pop rounded-2xl border border-line overflow-hidden" x-data="{ show:true }" x-show="show">
+            <div class="p-4 flex items-start gap-3">
+                {% if category == 'error' %}<i class="fas fa-circle-exclamation text-danger mt-0.5"></i>
+                {% elif category == 'success' %}<i class="fas fa-circle-check text-ok mt-0.5"></i>
+                {% elif category == 'warning' %}<i class="fas fa-triangle-exclamation text-warn mt-0.5"></i>
+                {% else %}<i class="fas fa-circle-info text-info mt-0.5"></i>{% endif %}
+                <p class="text-sm font-medium text-ink flex-1">{{ message }}</p>
+                <button @click="show=false" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark"></i></button>
             </div>
         </div>
-    </nav>
+        {% endfor %}
+    </div>
     {% endif %}
-    
-    <!-- Flash Messages -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div class="fixed top-4 right-4 z-50 space-y-2" id="flash-messages">
-                {% for category, message in messages %}
-                    <div class="max-w-sm w-full bg-white shadow-lg rounded-lg pointer-events-auto ring-1 ring-black ring-opacity-5 overflow-hidden animate-pulse"
-                         x-data="{ show: true }" 
-                         x-show="show"
-                         x-transition:enter="transform ease-out duration-300 transition"
-                         x-transition:enter-start="translate-y-2 opacity-0 sm:translate-y-0 sm:translate-x-2"
-                         x-transition:enter-end="translate-y-0 opacity-100 sm:translate-x-0"
-                         x-transition:leave="transition ease-in duration-100"
-                         x-transition:leave-start="opacity-100"
-                         x-transition:leave-end="opacity-0">
-                        <div class="p-4">
-                            <div class="flex items-start">
-                                <div class="flex-shrink-0">
-                                    {% if category == 'error' %}
-                                        <i class="fas fa-exclamation-circle h-5 w-5 text-red-400"></i>
-                                    {% elif category == 'success' %}
-                                        <i class="fas fa-check-circle h-5 w-5 text-green-400"></i>
-                                    {% elif category == 'warning' %}
-                                        <i class="fas fa-exclamation-triangle h-5 w-5 text-yellow-400"></i>
-                                    {% else %}
-                                        <i class="fas fa-info-circle h-5 w-5 text-blue-400"></i>
-                                    {% endif %}
-                                </div>
-                                <div class="ml-3 w-0 flex-1 pt-0.5">
-                                    <p class="text-sm font-medium text-gray-900">{{ message }}</p>
-                                </div>
-                                <div class="ml-4 flex-shrink-0 flex">
-                                    <button @click="show = false" 
-                                            class="bg-white rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
-                                        <span class="sr-only">Close</span>
-                                        <i class="fas fa-times h-4 w-4"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                {% endfor %}
+{% endwith %}
+
+{# ══ SHELL OPEN ════════════════════════════════════════════════════════ #}
+{% if is_staff_user %}
+<div x-data="{ sidebar:false }">
+    <div x-show="sidebar" x-cloak @click="sidebar=false" class="fixed inset-0 bg-ink/40 z-40 lg:hidden"></div>
+    <div class="lg:grid lg:grid-cols-[16rem_minmax(0,1fr)]">
+        <!-- Sidebar -->
+        <aside class="fixed lg:sticky top-0 left-0 z-50 lg:z-auto h-screen w-64 bg-surface border-r border-line flex flex-col -translate-x-full lg:translate-x-0 transition-transform duration-200"
+               :class="sidebar && '!translate-x-0'">
+            <div class="flex items-center gap-2.5 px-4 pt-4 pb-3">
+                <span class="w-9 h-9 rounded-xl bg-primary-500 text-white flex items-center justify-center"><i class="fas fa-shoe-prints"></i></span>
+                <span class="font-display text-2xl leading-none text-ink">AttenDANCE</span>
+                <button @click="sidebar=false" class="ml-auto lg:hidden text-ink-3 p-1"><i class="fas fa-xmark"></i></button>
             </div>
-        {% endif %}
-    {% endwith %}
-    
-    <!-- Main Content -->
-    <main class="flex-1">
-        {% block content %}{% endblock %}
-    </main>
-    
-    <!-- Footer -->
-    <footer class="bg-white border-t border-gray-200 mt-8">
-        <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center">
-                <div class="text-sm text-gray-500">
-                    &copy; 2026 AttenDANCE v{{ config.APP_VERSION }}. Built for LaShelle's School of Dance.
+            <nav class="flex-1 overflow-y-auto px-3 pb-4">
+                {{ group_label('Overview') }}
+                {{ nl('Dashboard', 'main.dashboard', 'gauge-high', ['main.dashboard']) }}
+                {% if current_user.is_admin %}{{ nl('Insights', 'main.analytics_page', 'chart-line', ['analytics']) }}{% endif %}
+
+                {{ group_label('People') }}
+                {{ nl('Students', 'main.students', 'users', ['students']) }}
+                {{ nl('Families', 'main.families_page', 'people-roof', ['famil']) }}
+                {% if current_user.is_admin %}{{ nl('Staff', 'main.staff_page', 'chalkboard-user', ['staff']) }}{% endif %}
+                {% if current_user.is_admin %}{{ nl('Leads & Trials', 'main.leads_page', 'user-tag', ['leads']) }}{% endif %}
+
+                {{ group_label('Classes & Attendance') }}
+                {{ nl('Classes', 'main.classes', 'calendar-week', ['classes']) }}
+                {{ nl('Calendar', 'main.calendar_page', 'calendar-days', ['calendar']) }}
+                {{ nl('Take Attendance', 'main.take_attendance', 'clipboard-check', ['take']) }}
+                {{ nl('Attendance Log', 'main.attendance', 'list-check', ['main.attendance']) }}
+                {% if current_user.is_admin %}{{ nl('Makeups', 'main.makeups_page', 'rotate', ['makeups']) }}{% endif %}
+                {% if current_user.is_admin %}{{ nl('Skills', 'main.skills_page', 'medal', ['skills']) }}{% endif %}
+
+                {{ group_label('Money') }}
+                {{ nl('Payments', 'main.transactions', 'dollar-sign', ['transaction']) }}
+                {% if current_user.is_admin %}{{ nl('Pending', 'main.pending_payments_page', 'clock', ['pending'], pending_payment_count) }}{% endif %}
+                {% if current_user.is_admin %}{{ nl('Payment Methods', 'main.settings_page', 'gear', ['settings']) }}{% endif %}
+                {% if current_user.is_admin %}{{ nl('Donations', 'main.donations_page', 'hand-holding-heart', ['donations']) }}{% endif %}
+
+                {{ group_label('Performance') }}
+                {{ nl('Recital Hub', 'main.recital_hub_page', 'masks-theater', ['recital']) }}
+                {% if current_user.is_admin %}{{ nl('Company', 'main.company_page', 'star', ['company']) }}{% endif %}
+
+                {{ group_label('Studio') }}
+                {% if current_user.is_admin %}{{ nl('Locations', 'main.locations_page', 'location-dot', ['location']) }}{% endif %}
+                {% if current_user.is_admin %}{{ nl('Enrollment', 'main.registrations_page', 'user-plus', ['registration'], registration_count) }}{% endif %}
+                {% if current_user.is_admin %}{{ nl('Forms & Waivers', 'main.waivers_page', 'file-signature', ['waivers']) }}{% endif %}
+                {{ nl('Rules', 'main.rules_admin', 'gavel', ['rules']) }}
+                {{ nl('Messages', 'main.messages_page', 'envelope', ['message']) }}
+                {{ nl('Time Clock', 'main.timeclock_page', 'business-time', ['timeclock']) }}
+            </nav>
+            <div class="border-t border-line p-3 flex items-center gap-2.5">
+                <span class="h-9 w-9 rounded-full bg-gold-300 text-gold-ink flex items-center justify-center text-sm font-bold">{{ current_user.first_name[0]|upper }}{{ current_user.last_name[0]|upper }}</span>
+                <div class="flex-1 min-w-0">
+                    <div class="text-sm font-bold text-ink truncate">{{ current_user.full_name }}</div>
+                    <div class="text-xs text-ink-3">{{ 'Studio admin' if current_user.is_admin else 'Teacher' }}</div>
                 </div>
-                <div class="text-sm text-gray-500">
+                <a href="{{ url_for('auth.logout') }}" title="Sign out" class="text-ink-3 hover:text-danger p-1.5"><i class="fas fa-arrow-right-from-bracket"></i></a>
+            </div>
+        </aside>
+
+        <!-- Main column -->
+        <div class="min-w-0 flex flex-col min-h-screen">
+            <header class="sticky top-0 z-30 flex items-center gap-3 px-4 sm:px-7 py-2.5 border-b border-line bg-surface/80 backdrop-blur">
+                <button @click="sidebar=true" class="lg:hidden text-ink-2 p-2 -ml-2"><i class="fas fa-bars text-lg"></i></button>
+                <span class="lg:hidden font-display text-xl text-ink">AttenDANCE</span>
+                <div class="relative flex-1 max-w-sm hidden md:block">
+                    <i class="fas fa-search text-xs text-ink-3 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+                    <input placeholder="Search students, families, classes…" class="w-full pl-9 pr-3 py-2 text-sm bg-surface border border-line-2 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+                </div>
+                <div class="flex-1"></div>
+                <a href="{{ url_for('main.take_attendance') }}" class="hidden sm:inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-clipboard-check"></i>Take attendance</a>
+                {{ account_menu() }}
+            </header>
+            <main class="flex-1">
+                <div class="mx-auto w-full max-w-[1080px] px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
+{% elif is_parent %}
+<div class="min-h-full flex flex-col">
+    <header class="sticky top-0 z-30 flex items-center gap-3 px-4 sm:px-7 py-3 border-b border-line bg-surface/90 backdrop-blur">
+        <span class="w-8 h-8 rounded-lg bg-primary-500 text-white flex items-center justify-center"><i class="fas fa-shoe-prints text-sm"></i></span>
+        <a href="{{ url_for('main.parent_dashboard') }}" class="font-display text-xl text-ink">AttenDANCE</a>
+        <div class="flex-1"></div>
+        <a href="{{ url_for('main.parent_dashboard') }}" class="hidden sm:block text-sm font-bold {% if request.endpoint == 'main.parent_dashboard' %}text-primary-700{% else %}text-ink-2 hover:text-ink{% endif %}">Home</a>
+        {{ account_menu() }}
+    </header>
+    <main class="flex-1">
+{% else %}
+<main class="min-h-full">
+{% endif %}
+
+        {% block content %}{% endblock %}
+
+{# ══ SHELL CLOSE ═══════════════════════════════════════════════════════ #}
+{% if is_staff_user %}
+                </div>
+            </main>
+            <footer class="border-t border-line">
+                <div class="mx-auto max-w-[1080px] py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center text-xs text-ink-3">
+                    <span>&copy; 2026 AttenDANCE v{{ config.APP_VERSION }} · Built for LaShelle's School of Dance</span>
                     <span id="current-time"></span>
                 </div>
-            </div>
+            </footer>
+        </div>
+    </div>
+</div>
+{% elif is_parent %}
+    </main>
+    <footer class="border-t border-line">
+        <div class="mx-auto max-w-4xl py-4 px-4 flex justify-between items-center text-xs text-ink-3">
+            <span>&copy; 2026 AttenDANCE · LaShelle's School of Dance</span>
+            <span id="current-time"></span>
         </div>
     </footer>
-    
-    <!-- Alpine.js for interactive components -->
+</div>
+{% else %}
+</main>
+{% endif %}
+
+    <!-- Alpine.js -->
     <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-    
-    <!-- Service Worker Registration -->
+
+    <!-- Service Worker -->
     <script>
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/static/sw.js')
-                    .then(function(registration) {
-                        console.log('ServiceWorker registration successful');
-                    })
-                    .catch(function(err) {
-                        console.log('ServiceWorker registration failed: ', err);
-                    });
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('/static/sw.js').catch(function () {});
             });
         }
-        
-        // Update current time
-        function updateTime() {
-            const now = new Date();
-            document.getElementById('current-time').textContent = now.toLocaleTimeString();
-        }
-        updateTime();
-        setInterval(updateTime, 1000);
-        
-        // Auto-hide flash messages
-        setTimeout(function() {
-            const messages = document.getElementById('flash-messages');
-            if (messages) {
-                messages.style.display = 'none';
-            }
+        (function () {
+            var el = document.getElementById('current-time');
+            if (!el) return;
+            function tick() { el.textContent = new Date().toLocaleTimeString(); }
+            tick(); setInterval(tick, 1000);
+        })();
+        setTimeout(function () {
+            var m = document.getElementById('flash-messages');
+            if (m) m.style.display = 'none';
         }, 5000);
     </script>
-    
+
     {% block extra_js %}{% endblock %}
 </body>
-</html> 
+</html>

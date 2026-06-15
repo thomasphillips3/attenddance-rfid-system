@@ -1,0 +1,71 @@
+{# ════════════════════════════════════════════════════════════════════════
+   AttenDANCE shared UI macros — the one component layer.
+   Mirrors the redesign prototype's rd-ui.jsx: one button, card, pill,
+   stat tile, page header, table, empty state. Import in a page with:
+       {% from "_components.html" import page_header, card, stat_tile, pill, empty_state %}
+   ════════════════════════════════════════════════════════════════════════ #}
+
+{# Page title block (serif title + optional subtitle/icon) #}
+{% macro page_header(title, subtitle='', icon='') %}
+<div class="mb-6">
+    <h1 class="font-display text-3xl text-ink leading-tight">{% if icon %}<i class="fas fa-{{ icon }} text-primary-500 mr-2 text-2xl align-middle"></i>{% endif %}{{ title }}</h1>
+    {% if subtitle %}<p class="mt-1 text-sm text-ink-2">{{ subtitle }}</p>{% endif %}
+</div>
+{% endmacro %}
+
+{# Card with optional header. Use with {% call %}:
+   {% call card('Title', 'icon') %} body {% endcall %} #}
+{% macro card(title='', icon='', actions='') %}
+<div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
+    {% if title %}
+    <div class="flex items-center gap-2.5 px-5 py-3.5 border-b border-line">
+        {% if icon %}<i class="fas fa-{{ icon }} text-primary-500"></i>{% endif %}
+        <span class="font-bold text-ink flex-1">{{ title }}</span>
+        {{ actions }}
+    </div>
+    {% endif %}
+    <div class="p-5">{{ caller() }}</div>
+</div>
+{% endmacro %}
+
+{# Stat tile: tinted icon chip + overline label + serif value #}
+{% macro stat_tile(label, value, icon, tone='pri') %}
+{% set tones = {'pri':'bg-primary-50 text-primary-600','ok':'bg-ok/10 text-ok','warn':'bg-warn/10 text-warn','danger':'bg-danger/10 text-danger','info':'bg-info/10 text-info','gold':'bg-gold-300 text-gold-ink'} %}
+<div class="bg-surface border border-line rounded-2xl shadow-soft p-4">
+    <div class="flex items-center gap-3">
+        <span class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 {{ tones[tone] }}"><i class="fas fa-{{ icon }} text-lg"></i></span>
+        <div class="min-w-0">
+            <div class="text-[11px] font-bold uppercase tracking-[.09em] text-ink-3 truncate">{{ label }}</div>
+            <div class="font-display text-3xl text-ink leading-none mt-0.5">{{ value }}</div>
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+{# Status pill #}
+{% macro pill(text, tone='neutral', dot=false, icon='') %}
+{% set tones = {'ok':'bg-ok/10 text-ok','warn':'bg-warn/10 text-warn','danger':'bg-danger/10 text-danger','info':'bg-info/10 text-info','gold':'bg-gold-300 text-gold-ink','pri':'bg-primary-50 text-primary-700','neutral':'bg-surface-2 text-ink-2'} %}
+<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold {{ tones[tone] }}">{% if dot %}<span class="w-1.5 h-1.5 rounded-full bg-current opacity-70"></span>{% endif %}{% if icon %}<i class="fas fa-{{ icon }}"></i>{% endif %}{{ text }}</span>
+{% endmacro %}
+
+{# Empty state #}
+{% macro empty_state(title, sub='', icon='inbox') %}
+<div class="text-center py-10">
+    <div class="w-14 h-14 mx-auto mb-3.5 rounded-full bg-primary-50 text-primary-500 flex items-center justify-center"><i class="fas fa-{{ icon }} text-xl"></i></div>
+    <div class="font-display text-xl text-ink">{{ title }}</div>
+    {% if sub %}<div class="text-sm text-ink-2 mt-1 max-w-xs mx-auto">{{ sub }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{# Primary link-button #}
+{% macro btn(label, href, icon='', variant='primary', size='md') %}
+{% set sizes = {'sm':'px-3 py-1.5 text-sm','md':'px-4 py-2 text-sm','lg':'px-5 py-3 text-base'} %}
+{% set variants = {
+    'primary':'bg-primary-500 text-white hover:bg-primary-600 shadow-sm',
+    'secondary':'bg-surface text-primary-700 border-[1.5px] border-primary-500 hover:bg-primary-50',
+    'soft':'bg-primary-50 text-primary-700 hover:bg-primary-100',
+    'gold':'text-[#3a2c08] bg-gradient-to-b from-gold-400 to-gold-500 hover:brightness-105 shadow-sm',
+    'ghost':'text-ink-2 hover:bg-surface-2'
+} %}
+<a href="{{ href }}" class="inline-flex items-center justify-center gap-2 font-bold rounded-xl whitespace-nowrap {{ sizes[size] }} {{ variants[variant] }}">{% if icon %}<i class="fas fa-{{ icon }}"></i>{% endif %}{{ label }}</a>
+{% endmacro %}
