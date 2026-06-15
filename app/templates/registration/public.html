@@ -1,20 +1,29 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-gray-50">
+<html lang="en" class="h-full bg-canvas">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#8f2db5">
     <title>Register — LaShelle's School of Dance</title>
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>tailwind.config={theme:{extend:{colors:{primary:{50:'#f0f9ff',500:'#6366f1',600:'#4f46e5',700:'#4338ca'}}}}}</script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>tailwind.config={theme:{extend:{
+        colors:{primary:{50:'#faf2fd',100:'#f0ddf8',200:'#e0bcef',300:'#c98fe2',400:'#ad5ccf',500:'#8f2db5',600:'#7c249f',700:'#6b228a',800:'#531a6c',900:'#3d1252'},
+                canvas:'#f7f3ee',surface:{DEFAULT:'#ffffff',2:'#fbf8f4'},ink:{DEFAULT:'#1f1a17',2:'#5a534c',3:'#8a827a'},line:{DEFAULT:'#ece6dd',2:'#d9d2c5'},ok:'#1f8a4c'},
+        fontFamily:{display:['"DM Serif Display"','Georgia','serif'],sans:['"Atkinson Hyperlegible"','system-ui','sans-serif']}
+    }}}</script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>body{font-family:'Atkinson Hyperlegible',system-ui,sans-serif;-webkit-font-smoothing:antialiased}.font-display{font-family:'DM Serif Display',Georgia,serif}</style>
 </head>
 <body class="min-h-full">
     <div class="max-w-2xl mx-auto py-10 px-4">
         <div class="text-center mb-8">
-            <i class="fas fa-music text-4xl text-primary-500"></i>
-            <h1 class="text-3xl font-bold text-gray-900 mt-2">LaShelle's School of Dance</h1>
-            <p class="text-gray-600">Registration</p>
+            <span class="inline-flex w-14 h-14 rounded-2xl bg-primary-500 text-white items-center justify-center text-2xl"><i class="fas fa-shoe-prints"></i></span>
+            <h1 class="font-display text-3xl text-ink mt-3">LaShelle's School of Dance</h1>
+            <p class="text-ink-2">Registration</p>
         </div>
 
         <div id="closed" class="hidden bg-white rounded-lg shadow p-8 text-center text-gray-600">

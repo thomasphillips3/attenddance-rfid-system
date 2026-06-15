@@ -1,57 +1,58 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-gray-50">
+<html lang="en" class="h-full bg-canvas">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#6366f1">
-    <title>Login - AttenDANCE</title>
-    
+    <meta name="theme-color" content="#8f2db5">
+    <title>Sign in - AttenDANCE</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: {
-                            50: '#f0f9ff',
-                            500: '#6366f1',
-                            600: '#4f46e5',
-                            700: '#4338ca',
-                            900: '#312e81'
-                        }
-                    }
-                }
-            }
+            theme: { extend: {
+                colors: {
+                    primary: { 50:'#faf2fd', 100:'#f0ddf8', 200:'#e0bcef', 300:'#c98fe2', 400:'#ad5ccf', 500:'#8f2db5', 600:'#7c249f', 700:'#6b228a', 800:'#531a6c', 900:'#3d1252' },
+                    gold:    { 300:'#f3e3b8', 400:'#d9b25e', 500:'#c8962f', ink:'#6e521a' },
+                    canvas:  '#f7f3ee',
+                    surface: { DEFAULT:'#ffffff', 2:'#fbf8f4' },
+                    ink:     { DEFAULT:'#1f1a17', 2:'#5a534c', 3:'#8a827a' },
+                    line:    { DEFAULT:'#ece6dd', 2:'#d9d2c5' },
+                    ok:'#1f8a4c', warn:'#b8761a', danger:'#c62f2f', info:'#2563c9',
+                },
+                fontFamily: {
+                    display: ['"DM Serif Display"', 'Georgia', 'serif'],
+                    sans:    ['"Atkinson Hyperlegible"', 'system-ui', 'sans-serif'],
+                },
+            } }
         }
     </script>
-    
+
     <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
     <style>
+        body { font-family: 'Atkinson Hyperlegible', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+        .font-display { font-family: 'DM Serif Display', Georgia, serif; }
         .logo-dance {
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            background: linear-gradient(135deg, #8f2db5 0%, #6b228a 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
         }
-        
         .dance-pattern {
-            background-image: 
-                radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 40% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%);
+            background-image:
+                radial-gradient(circle at 20% 50%, rgba(143, 45, 181, 0.10) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(201, 143, 226, 0.12) 0%, transparent 50%),
+                radial-gradient(circle at 40% 80%, rgba(143, 45, 181, 0.05) 0%, transparent 50%);
         }
-        
-        .form-float {
-            animation: float 6s ease-in-out infinite;
-        }
-        
-        @keyframes float {
-            0%, 100% { transform: translateY(0px); }
-            50% { transform: translateY(-10px); }
-        }
+        .form-float { animation: float 6s ease-in-out infinite; }
+        @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
     </style>
 </head>
 <body class="h-full dance-pattern">
@@ -60,20 +61,20 @@
             <!-- Logo and Title -->
             <div class="flex justify-center">
                 <div class="flex items-center space-x-3">
-                    <div class="w-12 h-12 bg-gradient-to-br from-primary-500 to-purple-600 rounded-xl flex items-center justify-center form-float">
-                        <i class="fas fa-music text-white text-xl"></i>
+                    <div class="w-12 h-12 bg-gradient-to-br from-primary-700 to-primary-500 rounded-xl flex items-center justify-center form-float">
+                        <i class="fas fa-shoe-prints text-white text-xl"></i>
                     </div>
                     <div>
-                        <h1 class="text-3xl font-bold logo-dance">AttenDANCE</h1>
-                        <p class="text-sm text-gray-500 mt-1">LaShelle's School of Dance</p>
+                        <h1 class="font-display text-3xl logo-dance">AttenDANCE</h1>
+                        <p class="text-sm text-ink-3 mt-1">LaShelle's School of Dance</p>
                     </div>
                 </div>
             </div>
-            
-            <h2 class="mt-8 text-center text-3xl font-extrabold text-gray-900">
+
+            <h2 class="mt-8 text-center font-display text-3xl text-ink">
                 Welcome back
             </h2>
-            <p class="mt-2 text-center text-sm text-gray-600">
+            <p class="mt-2 text-center text-sm text-ink-2">
                 Sign in to LaShelle's School of Dance
             </p>
         </div>
