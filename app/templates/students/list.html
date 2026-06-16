@@ -1,166 +1,117 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="min-h-full">
-    <div class="bg-white shadow">
-        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between">
-                <div>
-                    <h1 class="text-3xl font-bold text-gray-900">Students</h1>
-                    <p class="mt-1 text-sm text-gray-600">Manage your dance studio students</p>
-                </div>
-                <button onclick="openAddModal()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
-                    <i class="fas fa-user-plus mr-2"></i>Add Student
-                </button>
-            </div>
-        </div>
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+    <div>
+        <div class="text-[11px] font-bold uppercase tracking-[.09em] text-primary-600">People</div>
+        <h1 class="font-display text-3xl text-ink leading-tight mt-1">Students</h1>
+        <p class="mt-1 text-sm text-ink-2">Manage your dance studio's students.</p>
     </div>
+    <button onclick="openAddModal()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">
+        <i class="fas fa-user-plus"></i>Add Student
+    </button>
+</div>
 
-    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div class="mb-6">
-            <div class="relative">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <i class="fas fa-search text-gray-400"></i>
-                </div>
-                <input type="text" id="search-input" placeholder="Search students..."
-                       class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                       oninput="searchStudents()">
-            </div>
-        </div>
+<div class="relative mb-5 max-w-md">
+    <i class="fas fa-search text-xs text-ink-3 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+    <input type="text" id="search-input" placeholder="Search students…" oninput="searchStudents()"
+           class="w-full pl-9 pr-3 py-2 text-sm bg-surface border border-line-2 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+</div>
 
-        <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">RFID</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="students-table" class="bg-white divide-y divide-gray-200">
-                    <tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Loading students...</td></tr>
-                </tbody>
-            </table>
-        </div>
+<div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead class="bg-surface-2 border-b border-line">
+                <tr>
+                    <th class="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Name</th>
+                    <th class="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Email</th>
+                    <th class="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Phone</th>
+                    <th class="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">RFID</th>
+                    <th class="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Status</th>
+                    <th class="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="students-table">
+                <tr><td colspan="6" class="px-5 py-8 text-center text-ink-3">Loading students…</td></tr>
+            </tbody>
+        </table>
     </div>
 </div>
 
+{% set lbl = "block text-sm font-medium text-ink-2" %}
+{% set lblsm = "block text-xs font-medium text-ink-2" %}
+{% set inp = "mt-1 block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
+{% set inpsm = "mt-1 block w-full bg-surface border border-line-2 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
+{% set sect = "text-[11px] font-bold uppercase tracking-[.09em] text-ink-3 mb-2" %}
 <div id="student-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
     <div class="flex items-center justify-center min-h-screen px-4">
-        <div class="fixed inset-0 bg-gray-500 bg-opacity-75" onclick="closeModal()"></div>
-        <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <h3 id="modal-title" class="text-lg font-medium text-gray-900 mb-4">Add Student</h3>
+        <div class="fixed inset-0 bg-ink/40" onclick="closeModal()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+            <h3 id="modal-title" class="font-display text-2xl text-ink mb-4">Add Student</h3>
             <form id="student-form" onsubmit="saveStudent(event)">
                 <input type="hidden" id="student-id">
 
-                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Basic Info</p>
+                <p class="{{ sect }}">Basic Info</p>
                 <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">First Name *</label>
-                        <input type="text" id="first_name" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Last Name *</label>
-                        <input type="text" id="last_name" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Date of Birth</label>
-                        <input type="date" id="date_of_birth" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Email</label>
-                        <input type="email" id="email" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Phone</label>
-                        <input type="tel" id="phone" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                    </div>
+                    <div><label class="{{ lbl }}">First Name *</label><input type="text" id="first_name" required class="{{ inp }}"></div>
+                    <div><label class="{{ lbl }}">Last Name *</label><input type="text" id="last_name" required class="{{ inp }}"></div>
+                    <div><label class="{{ lbl }}">Date of Birth</label><input type="date" id="date_of_birth" class="{{ inp }}"></div>
+                    <div><label class="{{ lbl }}">Email</label><input type="email" id="email" class="{{ inp }}"></div>
+                    <div><label class="{{ lbl }}">Phone</label><input type="tel" id="phone" class="{{ inp }}"></div>
                 </div>
 
-                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-5 mb-2">School</p>
+                <p class="{{ sect }} mt-5">School</p>
                 <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">School</label>
-                        <input type="text" id="school" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Grade</label>
-                        <input type="text" id="grade" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. 3rd, 7th, Pre-K">
-                    </div>
+                    <div><label class="{{ lbl }}">School</label><input type="text" id="school" class="{{ inp }}"></div>
+                    <div><label class="{{ lbl }}">Grade</label><input type="text" id="grade" class="{{ inp }}" placeholder="e.g. 3rd, 7th, Pre-K"></div>
                 </div>
 
-                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-5 mb-2">Parent / Emergency Contact</p>
+                <p class="{{ sect }} mt-5">Parent / Emergency Contact</p>
                 <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Emergency Contact Name</label>
-                        <input type="text" id="emergency_contact_name" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Emergency Contact Phone</label>
-                        <input type="tel" id="emergency_contact_phone" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                    </div>
-                    <div class="col-span-2">
-                        <label class="block text-sm font-medium text-gray-700">Parent Email</label>
-                        <input type="email" id="parent_email" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                    </div>
+                    <div><label class="{{ lbl }}">Emergency Contact Name</label><input type="text" id="emergency_contact_name" class="{{ inp }}"></div>
+                    <div><label class="{{ lbl }}">Emergency Contact Phone</label><input type="tel" id="emergency_contact_phone" class="{{ inp }}"></div>
+                    <div class="col-span-2"><label class="{{ lbl }}">Parent Email</label><input type="email" id="parent_email" class="{{ inp }}"></div>
                 </div>
 
-                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-5 mb-2">Family</p>
+                <p class="{{ sect }} mt-5">Family</p>
                 <div class="grid grid-cols-1 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Family</label>
-                        <select id="family_id" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                            <option value="">No family assigned</option>
-                        </select>
-                    </div>
+                    <div><label class="{{ lbl }}">Family</label><select id="family_id" class="{{ inp }}"><option value="">No family assigned</option></select></div>
                 </div>
 
-                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-5 mb-2">Sizes &amp; Measurements</p>
+                <p class="{{ sect }} mt-5">Sizes &amp; Measurements</p>
                 <div class="grid grid-cols-4 gap-3">
-                    <div><label class="block text-xs font-medium text-gray-700">T-Shirt</label><input type="text" id="shirt_size" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Leotard</label><input type="text" id="leotard_size" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Pant</label><input type="text" id="pants_size" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Dress</label><input type="text" id="dress_size" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Shoe</label><input type="text" id="shoe_size" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Tight</label><input type="text" id="tight_size" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Waist</label><input type="text" id="waist" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Bust</label><input type="text" id="bust" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Hips</label><input type="text" id="hips" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Chest</label><input type="text" id="chest" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Height</label><input type="text" id="height" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Sleeve</label><input type="text" id="sleeve" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Girth</label><input type="text" id="girth" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Inseam</label><input type="text" id="inseam" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Neck</label><input type="text" id="neck" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
-                    <div><label class="block text-xs font-medium text-gray-700">Weight</label><input type="text" id="weight" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></div>
+                    <div><label class="{{ lblsm }}">T-Shirt</label><input type="text" id="shirt_size" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Leotard</label><input type="text" id="leotard_size" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Pant</label><input type="text" id="pants_size" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Dress</label><input type="text" id="dress_size" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Shoe</label><input type="text" id="shoe_size" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Tight</label><input type="text" id="tight_size" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Waist</label><input type="text" id="waist" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Bust</label><input type="text" id="bust" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Hips</label><input type="text" id="hips" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Chest</label><input type="text" id="chest" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Height</label><input type="text" id="height" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Sleeve</label><input type="text" id="sleeve" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Girth</label><input type="text" id="girth" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Inseam</label><input type="text" id="inseam" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Neck</label><input type="text" id="neck" class="{{ inpsm }}"></div>
+                    <div><label class="{{ lblsm }}">Weight</label><input type="text" id="weight" class="{{ inpsm }}"></div>
                 </div>
                 <div class="mt-2">
-                    <label class="block text-xs font-medium text-gray-700">Size Notes</label>
-                    <textarea id="size_notes" rows="2" class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"></textarea>
+                    <label class="{{ lblsm }}">Size Notes</label>
+                    <textarea id="size_notes" rows="2" class="{{ inpsm }}"></textarea>
                 </div>
 
-                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-5 mb-2">Health &amp; Special Needs</p>
+                <p class="{{ sect }} mt-5">Health &amp; Special Needs</p>
                 <div class="grid grid-cols-1 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Allergies</label>
-                        <textarea id="allergies" rows="2" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"></textarea>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Special Needs</label>
-                        <textarea id="special_needs" rows="2" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"></textarea>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Medical Notes</label>
-                        <textarea id="medical_notes" rows="2" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"></textarea>
-                    </div>
+                    <div><label class="{{ lbl }}">Allergies</label><textarea id="allergies" rows="2" class="{{ inp }}"></textarea></div>
+                    <div><label class="{{ lbl }}">Special Needs</label><textarea id="special_needs" rows="2" class="{{ inp }}"></textarea></div>
+                    <div><label class="{{ lbl }}">Medical Notes</label><textarea id="medical_notes" rows="2" class="{{ inp }}"></textarea></div>
                 </div>
 
-                <div class="mt-6 flex justify-end space-x-3">
-                    <button type="button" onclick="closeModal()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-                    <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">Save</button>
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl border border-line-2 text-sm font-bold text-ink-2 hover:bg-surface-2">Cancel</button>
+                    <button type="submit" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Save</button>
                 </div>
             </form>
         </div>
@@ -186,41 +137,41 @@ async function loadStudents() {
         renderStudents(allStudents);
     } catch (err) {
         document.getElementById('students-table').innerHTML =
-            '<tr><td colspan="6" class="px-6 py-8 text-center text-red-500">Failed to load students</td></tr>';
+            '<tr><td colspan="6" class="px-5 py-8 text-center text-danger">Failed to load students</td></tr>';
     }
 }
 
 function renderStudents(students) {
     const tbody = document.getElementById('students-table');
     if (!students.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">No students found. Click "Add Student" to get started.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="px-5 py-8 text-center text-ink-3">No students found. Click "Add Student" to get started.</td></tr>';
         return;
     }
     tbody.innerHTML = students.map(s => `
-        <tr>
-            <td class="px-6 py-4 whitespace-nowrap">
-                <div class="flex items-center">
-                    <div class="h-8 w-8 rounded-full bg-primary-100 flex items-center justify-center">
-                        <span class="text-xs font-medium text-primary-700">${esc(s.first_name[0])}${esc(s.last_name[0])}</span>
+        <tr class="border-b border-line last:border-0 hover:bg-surface-2">
+            <td class="px-5 py-3.5 whitespace-nowrap">
+                <div class="flex items-center gap-3">
+                    <div class="h-8 w-8 rounded-full bg-primary-100 flex items-center justify-center shrink-0">
+                        <span class="text-xs font-bold text-primary-700">${esc(s.first_name[0])}${esc(s.last_name[0])}</span>
                     </div>
-                    <div class="ml-3"><a href="/students/${s.id}/detail" class="text-sm font-medium text-primary-600 hover:text-primary-900">${esc(s.full_name)}</a></div>
+                    <a href="/students/${s.id}/detail" class="text-sm font-bold text-primary-600 hover:text-primary-800">${esc(s.full_name)}</a>
                 </div>
             </td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${esc(s.email || '-')}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${esc(s.phone || '-')}</td>
-            <td class="px-6 py-4 whitespace-nowrap">
+            <td class="px-5 py-3.5 whitespace-nowrap text-ink-2">${esc(s.email || '—')}</td>
+            <td class="px-5 py-3.5 whitespace-nowrap text-ink-2">${esc(s.phone || '—')}</td>
+            <td class="px-5 py-3.5 whitespace-nowrap">
                 ${s.has_rfid
-                    ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"><i class="fas fa-check mr-1"></i>Assigned</span>'
-                    : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800"><i class="fas fa-times mr-1"></i>None</span>'}
+                    ? '<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-ok/10 text-ok"><i class="fas fa-check"></i>Assigned</span>'
+                    : '<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-warn/10 text-warn"><i class="fas fa-xmark"></i>None</span>'}
             </td>
-            <td class="px-6 py-4 whitespace-nowrap">
+            <td class="px-5 py-3.5 whitespace-nowrap">
                 ${s.is_active
-                    ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Active</span>'
-                    : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Inactive</span>'}
+                    ? '<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-ok/10 text-ok">Active</span>'
+                    : '<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-danger/10 text-danger">Inactive</span>'}
             </td>
-            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                <button data-student-id="${s.id}" class="edit-btn text-primary-600 hover:text-primary-900 mr-3"><i class="fas fa-edit"></i></button>
-                <button data-student-id="${s.id}" data-student-name="${esc(s.full_name)}" class="delete-btn text-red-600 hover:text-red-900"><i class="fas fa-trash"></i></button>
+            <td class="px-5 py-3.5 whitespace-nowrap text-right">
+                <button data-student-id="${s.id}" class="edit-btn text-primary-600 hover:text-primary-800 mr-3"><i class="fas fa-pen"></i></button>
+                <button data-student-id="${s.id}" data-student-name="${esc(s.full_name)}" class="delete-btn text-danger hover:opacity-70"><i class="fas fa-trash"></i></button>
             </td>
         </tr>
     `).join('');

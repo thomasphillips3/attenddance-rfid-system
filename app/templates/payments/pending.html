@@ -1,81 +1,76 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="min-h-full">
-    <div class="bg-white shadow">
-        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between flex-wrap gap-3">
-                <div>
-                    <h1 class="text-3xl font-bold text-gray-900">Pending Payments</h1>
-                    <p class="mt-1 text-sm text-gray-600">Confirm payments parents sent via Zelle, Cash App, etc.</p>
-                </div>
-                <div class="flex gap-2">
-                    <select id="status-filter" onchange="loadPending()" class="border border-gray-300 rounded-md px-3 py-2 text-sm">
-                        <option value="pending">Pending</option>
-                        <option value="confirmed">Confirmed</option>
-                        <option value="rejected">Rejected</option>
-                        <option value="all">All</option>
-                    </select>
-                    <button onclick="sendReminders()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-amber-600 hover:bg-amber-700">
-                        <i class="fas fa-bell mr-2"></i>Send Balance Reminders
-                    </button>
-                    <button onclick="applyLateFees()" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                        <i class="fas fa-clock mr-2"></i>Apply Late Fees
-                    </button>
-                </div>
-            </div>
-        </div>
+{% set thl = "px-4 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3" %}
+{% set thr = "px-4 py-3 text-right text-[11px] font-bold uppercase tracking-[.06em] text-ink-3" %}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+    <div>
+        <div class="text-[11px] font-bold uppercase tracking-[.09em] text-primary-600">Money</div>
+        <h1 class="font-display text-3xl text-ink leading-tight mt-1">Pending Payments</h1>
+        <p class="mt-1 text-sm text-ink-2">Confirm payments parents sent via Zelle, Cash App, etc.</p>
     </div>
+    <div class="flex flex-wrap gap-2">
+        <select id="status-filter" onchange="loadPending()" class="bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+            <option value="pending">Pending</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="rejected">Rejected</option>
+            <option value="all">All</option>
+        </select>
+        <button onclick="sendReminders()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-bell"></i>Send Reminders</button>
+        <button onclick="applyLateFees()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-line-2 text-ink-2 text-sm font-bold hover:bg-surface-2"><i class="fas fa-clock"></i>Apply Late Fees</button>
+    </div>
+</div>
 
-    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div id="status-msg" class="hidden mb-4 p-3 rounded-md text-sm font-medium"></div>
+<div id="status-msg" class="hidden mb-4 p-3 rounded-xl text-sm font-medium"></div>
 
-        <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
+<div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead class="bg-surface-2 border-b border-line">
+                <tr>
+                    <th class="{{ thl }}">When</th>
+                    <th class="{{ thl }}">For</th>
+                    <th class="{{ thl }}">Reported by</th>
+                    <th class="{{ thr }}">Amount</th>
+                    <th class="{{ thl }}">Method</th>
+                    <th class="{{ thl }}">Reference</th>
+                    <th class="{{ thr }}">Action</th>
+                </tr>
+            </thead>
+            <tbody id="pending-table">
+                <tr><td colspan="7" class="px-4 py-6 text-center text-ink-3">Loading…</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Payment plans -->
+<div class="mt-10">
+    <div class="flex items-center justify-between mb-3">
+        <h2 class="font-display text-xl text-ink">Payment Plans</h2>
+        <button onclick="createPlan()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary-500 text-white text-xs font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus"></i>New Plan</button>
+    </div>
+    <div id="plans-list" class="space-y-3"><p class="text-ink-3 text-sm">Loading…</p></div>
+</div>
+
+<!-- Audit log -->
+<div class="mt-10">
+    <h2 class="font-display text-xl text-ink mb-3">Recent Activity</h2>
+    <div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead class="bg-surface-2 border-b border-line">
                     <tr>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">When</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">For</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reported by</th>
-                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reference</th>
-                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Action</th>
+                        <th class="{{ thl }}">When</th>
+                        <th class="{{ thl }}">Who</th>
+                        <th class="{{ thl }}">Action</th>
+                        <th class="{{ thl }}">Detail</th>
                     </tr>
                 </thead>
-                <tbody id="pending-table" class="bg-white divide-y divide-gray-100">
-                    <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">Loading...</td></tr>
+                <tbody id="audit-table">
+                    <tr><td colspan="4" class="px-4 py-4 text-center text-ink-3">Loading…</td></tr>
                 </tbody>
             </table>
-        </div>
-
-        <!-- Payment plans -->
-        <div class="mt-10">
-            <div class="flex items-center justify-between mb-3">
-                <h2 class="text-lg font-semibold text-gray-900">Payment Plans</h2>
-                <button onclick="createPlan()" class="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md shadow-sm text-xs font-medium text-white bg-primary-600 hover:bg-primary-700"><i class="fas fa-plus mr-1"></i>New Plan</button>
-            </div>
-            <div id="plans-list" class="space-y-3"><p class="text-gray-500 text-sm">Loading…</p></div>
-        </div>
-
-        <!-- Audit log -->
-        <div class="mt-10">
-            <h2 class="text-lg font-semibold text-gray-900 mb-3">Recent Activity</h2>
-            <div class="bg-white shadow rounded-lg overflow-hidden">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">When</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Who</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Detail</th>
-                        </tr>
-                    </thead>
-                    <tbody id="audit-table" class="bg-white divide-y divide-gray-100">
-                        <tr><td colspan="4" class="px-4 py-4 text-center text-gray-500">Loading...</td></tr>
-                    </tbody>
-                </table>
-            </div>
         </div>
     </div>
 </div>
@@ -88,7 +83,7 @@ const METHOD_LABELS = {zelle: 'Zelle', cashapp: 'Cash App', square: 'Square', ca
 function showMsg(text, ok) {
     const m = document.getElementById('status-msg');
     m.textContent = text;
-    m.className = 'mb-4 p-3 rounded-md text-sm font-medium ' + (ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800');
+    m.className = 'mb-4 p-3 rounded-xl text-sm font-medium ' + (ok ? 'bg-ok/10 text-ok' : 'bg-danger/10 text-danger');
     m.classList.remove('hidden');
     setTimeout(() => m.classList.add('hidden'), 4000);
 }
@@ -105,32 +100,32 @@ async function loadPending() {
         const data = await res.json();
         const rows = data.pending_payments || [];
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">Nothing here.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-6 text-center text-ink-3">Nothing here.</td></tr>';
             return;
         }
         tbody.innerHTML = rows.map(p => {
             const when = new Date(p.created_at).toLocaleString();
             const badge = p.status === 'pending'
-                ? `<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Pending</span>`
+                ? `<span class="px-2 py-1 rounded-full text-xs font-bold bg-warn/10 text-warn">Pending</span>`
                 : p.status === 'confirmed'
-                ? `<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Confirmed</span>`
-                : `<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">Rejected</span>`;
+                ? `<span class="px-2 py-1 rounded-full text-xs font-bold bg-ok/10 text-ok">Confirmed</span>`
+                : `<span class="px-2 py-1 rounded-full text-xs font-bold bg-surface-2 text-ink-2">Rejected</span>`;
             const action = p.status === 'pending'
-                ? `<button onclick="confirmPay(${p.id})" class="px-3 py-1 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 mr-1">Confirm</button>
-                   <button onclick="rejectPay(${p.id})" class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-xs font-medium hover:bg-gray-300">Reject</button>`
-                : badge + (p.admin_note ? `<div class="text-xs text-gray-400 mt-1">${esc(p.admin_note)}</div>` : '');
-            return `<tr>
-                <td class="px-4 py-3 text-sm text-gray-600">${when}</td>
-                <td class="px-4 py-3 text-sm font-medium text-gray-900">${esc(p.who)}</td>
-                <td class="px-4 py-3 text-sm text-gray-600">${esc(p.parent_name || '')}</td>
-                <td class="px-4 py-3 text-sm text-right font-semibold text-gray-900">$${p.amount}</td>
-                <td class="px-4 py-3 text-sm text-gray-600">${METHOD_LABELS[p.method] || p.method}</td>
-                <td class="px-4 py-3 text-sm text-gray-500">${esc(p.reference || '—')}${p.note ? '<div class="text-xs text-gray-400">' + esc(p.note) + '</div>' : ''}</td>
+                ? `<button onclick="confirmPay(${p.id})" class="px-3 py-1 bg-ok text-white rounded-lg text-xs font-bold hover:opacity-90 mr-1">Confirm</button>
+                   <button onclick="rejectPay(${p.id})" class="px-3 py-1 border border-line-2 text-ink-2 rounded-lg text-xs font-bold hover:bg-surface-2">Reject</button>`
+                : badge + (p.admin_note ? `<div class="text-xs text-ink-3 mt-1">${esc(p.admin_note)}</div>` : '');
+            return `<tr class="border-b border-line last:border-0 hover:bg-surface-2">
+                <td class="px-4 py-3 text-sm text-ink-2 tabular-nums">${when}</td>
+                <td class="px-4 py-3 text-sm font-bold text-ink">${esc(p.who)}</td>
+                <td class="px-4 py-3 text-sm text-ink-2">${esc(p.parent_name || '')}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold text-ink tabular-nums">$${p.amount}</td>
+                <td class="px-4 py-3 text-sm text-ink-2">${METHOD_LABELS[p.method] || p.method}</td>
+                <td class="px-4 py-3 text-sm text-ink-3">${esc(p.reference || '—')}${p.note ? '<div class="text-xs text-ink-3">' + esc(p.note) + '</div>' : ''}</td>
                 <td class="px-4 py-3 text-sm text-right">${action}</td>
             </tr>`;
         }).join('');
     } catch (err) {
-        tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-6 text-center text-red-500">Failed to load.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-6 text-center text-danger">Failed to load.</td></tr>';
     }
 }
 
@@ -174,17 +169,17 @@ async function loadAudit() {
         const data = await res.json();
         const rows = data.entries || [];
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-gray-500">No activity yet.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-ink-3">No activity yet.</td></tr>';
             return;
         }
-        tbody.innerHTML = rows.map(r => `<tr>
-            <td class="px-4 py-2 text-sm text-gray-600">${new Date(r.created_at).toLocaleString()}</td>
-            <td class="px-4 py-2 text-sm text-gray-900">${esc(r.user)}</td>
-            <td class="px-4 py-2 text-sm text-gray-600"><code class="text-xs">${esc(r.action)}</code></td>
-            <td class="px-4 py-2 text-sm text-gray-500">${esc(r.detail || '')}</td>
+        tbody.innerHTML = rows.map(r => `<tr class="border-b border-line last:border-0">
+            <td class="px-4 py-2 text-sm text-ink-2 tabular-nums">${new Date(r.created_at).toLocaleString()}</td>
+            <td class="px-4 py-2 text-sm text-ink">${esc(r.user)}</td>
+            <td class="px-4 py-2 text-sm text-ink-2"><code class="text-xs bg-surface-2 px-1.5 py-0.5 rounded">${esc(r.action)}</code></td>
+            <td class="px-4 py-2 text-sm text-ink-3">${esc(r.detail || '')}</td>
         </tr>`).join('');
     } catch {
-        tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-red-500">Failed to load.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-danger">Failed to load.</td></tr>';
     }
 }
 
@@ -211,21 +206,21 @@ async function loadPlans() {
     try {
         const data = await (await fetch('/api/payment-plans')).json();
         const plans = data.plans || [];
-        if (!plans.length) { el.innerHTML = '<p class="text-gray-500 text-sm">No active payment plans.</p>'; return; }
+        if (!plans.length) { el.innerHTML = '<p class="text-ink-3 text-sm">No active payment plans.</p>'; return; }
         el.innerHTML = plans.map(p => `
-            <div class="bg-white shadow rounded-lg p-4">
-                <div class="flex items-center justify-between mb-2">
-                    <div><span class="font-medium text-gray-900">${esc(p.student_name)}</span>
-                        <span class="text-sm text-gray-500 ml-2">$${p.installment_amount} × ${p.num_installments} (total $${p.total}) · ${p.paid_count}/${p.num_installments} paid</span>
-                        ${p.note ? `<div class="text-xs text-gray-400">${esc(p.note)}</div>` : ''}</div>
-                    <button onclick="endPlan(${p.id})" class="text-xs text-red-600 hover:underline">End plan</button>
+            <div class="bg-surface border border-line rounded-2xl shadow-soft p-4">
+                <div class="flex items-center justify-between mb-2 gap-2">
+                    <div><span class="font-bold text-ink">${esc(p.student_name)}</span>
+                        <span class="text-sm text-ink-3 ml-2">$${p.installment_amount} × ${p.num_installments} (total $${p.total}) · ${p.paid_count}/${p.num_installments} paid</span>
+                        ${p.note ? `<div class="text-xs text-ink-3">${esc(p.note)}</div>` : ''}</div>
+                    <button onclick="endPlan(${p.id})" class="text-xs text-danger hover:underline shrink-0">End plan</button>
                 </div>
                 <div class="flex flex-wrap gap-2">${p.installments.map(i => `
-                    <button onclick="toggleInst(${i.id})" class="px-2 py-1 rounded text-xs border ${i.paid ? 'bg-green-100 text-green-800 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'}">
+                    <button onclick="toggleInst(${i.id})" class="px-2 py-1 rounded-lg text-xs border ${i.paid ? 'bg-ok/10 text-ok border-ok/20' : 'bg-surface-2 text-ink-2 border-line-2'}">
                         #${i.seq} ${new Date(i.due_date+'T00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'})} · $${i.amount}${i.paid ? ' ✓' : ''}
                     </button>`).join('')}</div>
             </div>`).join('');
-    } catch { el.innerHTML = '<p class="text-red-500 text-sm">Failed to load.</p>'; }
+    } catch { el.innerHTML = '<p class="text-danger text-sm">Failed to load.</p>'; }
 }
 async function createPlan() {
     if (!PLAN_STUDENTS.length) {
