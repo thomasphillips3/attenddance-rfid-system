@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#8f2db5">
-    <title>Parent Registration - AttenDANCE</title>
+    <title>Parent Registration · LSO Dance</title>
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -39,21 +39,15 @@
         body { font-family: 'Atkinson Hyperlegible', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
         .font-display { font-family: 'DM Serif Display', Georgia, serif; }
         .logo-dance { background: linear-gradient(135deg, #8f2db5 0%, #ad5ccf 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .logo-plate { background: linear-gradient(135deg,#2b0f3d 0%,#3d1252 55%,#531a6c 100%); box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); border-radius: 12px; }
     </style>
 </head>
 <body class="h-full">
     <div class="min-h-full flex flex-col justify-center py-12 sm:px-6 lg:px-8">
         <div class="sm:mx-auto sm:w-full sm:max-w-md">
-            <div class="flex justify-center">
-                <div class="flex items-center space-x-3">
-                    <div class="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-400 rounded-xl flex items-center justify-center">
-                        <i class="fas fa-shoe-prints text-white text-xl"></i>
-                    </div>
-                    <div>
-                        <h1 class="font-display text-3xl logo-dance">AttenDANCE</h1>
-                        <p class="text-sm text-ink-3 mt-1">LaShelle's School of Dance</p>
-                    </div>
-                </div>
+            <div class="flex flex-col items-center">
+                <span class="logo-plate inline-flex items-center" style="padding:12px 18px"><img src="{{ url_for('static', filename='lsodance-logo.png') }}" alt="LSO Dance" class="block w-auto" style="height:36px"></span>
+                <p class="text-sm text-ink-3 mt-3">LaShelle's School of Dance</p>
             </div>
             <h2 class="mt-8 text-center font-display text-2xl text-ink">Parent Registration</h2>
             <p class="mt-2 text-center text-sm text-ink-2">Enter your invite code to create your account</p>

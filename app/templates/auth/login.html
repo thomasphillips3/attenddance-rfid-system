@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#8f2db5">
-    <title>Sign in - AttenDANCE</title>
+    <title>Sign in · LSO Dance</title>
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -45,6 +45,7 @@
             -webkit-text-fill-color: transparent;
             background-clip: text;
         }
+        .logo-plate { background: linear-gradient(135deg,#2b0f3d 0%,#3d1252 55%,#531a6c 100%); box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); border-radius: 12px; }
         .dance-pattern {
             background-image:
                 radial-gradient(circle at 20% 50%, rgba(143, 45, 181, 0.10) 0%, transparent 50%),
@@ -60,14 +61,9 @@
         <div class="sm:mx-auto sm:w-full sm:max-w-md">
             <!-- Logo and Title -->
             <div class="flex justify-center">
-                <div class="flex items-center space-x-3">
-                    <div class="w-12 h-12 bg-gradient-to-br from-primary-700 to-primary-500 rounded-xl flex items-center justify-center form-float">
-                        <i class="fas fa-shoe-prints text-white text-xl"></i>
-                    </div>
-                    <div>
-                        <h1 class="font-display text-3xl logo-dance">AttenDANCE</h1>
-                        <p class="text-sm text-ink-3 mt-1">LaShelle's School of Dance</p>
-                    </div>
+                <div class="flex flex-col items-center">
+                    <span class="logo-plate inline-flex items-center form-float" style="padding:12px 18px"><img src="{{ url_for('static', filename='lsodance-logo.png') }}" alt="LSO Dance" class="block w-auto" style="height:36px"></span>
+                    <p class="text-sm text-ink-3 mt-3">LaShelle's School of Dance</p>
                 </div>
             </div>
 
@@ -219,7 +215,7 @@
         <!-- Footer -->
         <div class="mt-8 text-center">
             <p class="text-xs text-ink-3">
-&copy; 2026 AttenDANCE. Built for LaShelle's School of Dance.
+&copy; 2026 LSO Dance. Built for LaShelle's School of Dance.
             </p>
         </div>
     </div>

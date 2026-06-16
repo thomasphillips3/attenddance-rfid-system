@@ -40,7 +40,7 @@ class Config:
     RFID_RST_PIN = int(os.environ.get('RFID_RST_PIN', 25))
     
     # Application settings
-    APP_NAME = 'AttenDANCE'
+    APP_NAME = 'LSO Dance'
     APP_VERSION = '1.0.0'
     TIMEZONE = os.environ.get('TIMEZONE', 'America/New_York')
     

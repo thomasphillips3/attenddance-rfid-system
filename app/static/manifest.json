@@ -1,7 +1,7 @@
 {
-  "name": "AttenDANCE - RFID Attendance System",
-  "short_name": "AttenDANCE",
-  "description": "RFID-based attendance system for dance studios",
+  "name": "LSO Dance — Studio",
+  "short_name": "LSO Dance",
+  "description": "Studio management for LaShelle's School of Dance",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f8fafc",
