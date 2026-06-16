@@ -1,83 +1,84 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="min-h-full" x-data="{ tab: 'overview' }">
-    <div class="bg-white shadow">
-        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-            <h1 class="text-3xl font-bold text-gray-900"><i class="fas fa-mask text-primary-500 mr-2"></i>Recital Hub</h1>
-            <p class="mt-1 text-sm text-gray-600">One place each year — show order, music &amp; choreography, awards, and the booklet</p>
-
-            <div class="mt-4 flex flex-wrap items-center gap-2">
-                <select id="recital-select" onchange="selectRecital(this.value)"
-                        class="border border-gray-300 rounded-md px-3 py-2 text-sm font-medium"></select>
-                <span id="active-badge"></span>
-                {% if current_user.is_admin %}
-                <button onclick="newRecital()" class="px-3 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-plus mr-1"></i>New Year</button>
-                <button id="activate-btn" onclick="activateRecital()" class="px-3 py-2 bg-amber-500 text-white rounded-md text-sm font-medium hover:bg-amber-600 hidden"><i class="fas fa-star mr-1"></i>Make Active</button>
-                {% endif %}
-                <a id="booklet-link" href="#" target="_blank" class="px-3 py-2 bg-gray-800 text-white rounded-md text-sm font-medium hover:bg-gray-900 hidden"><i class="fas fa-book-open mr-1"></i>Open Booklet</a>
-                <a href="{{ url_for('main.recital_page') }}" class="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50"><i class="fas fa-tshirt mr-1"></i>Costumes &amp; Tickets</a>
-            </div>
-
-            <div id="tabs" class="mt-4 flex gap-1 border-b border-gray-200 hidden">
-                <button @click="tab='overview'" :class="tab==='overview' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500'" class="px-4 py-2 border-b-2 text-sm font-medium">Overview</button>
-                <button @click="tab='show'" :class="tab==='show' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500'" class="px-4 py-2 border-b-2 text-sm font-medium">Show Order</button>
-                <button @click="tab='awards'" :class="tab==='awards' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500'" class="px-4 py-2 border-b-2 text-sm font-medium">Awards</button>
-                <button @click="tab='ads'" :class="tab==='ads' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500'" class="px-4 py-2 border-b-2 text-sm font-medium">Booklet &amp; Ads</button>
-            </div>
+<div x-data="{ tab: 'overview' }">
+    <div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+        <div>
+            <div class="text-[11px] font-bold uppercase tracking-[.09em] text-primary-600">Performance</div>
+            <h1 class="font-display text-3xl text-ink leading-tight mt-1">Recital Hub</h1>
+            <p class="mt-1 text-sm text-ink-3">One place each year — show order, music &amp; choreography, awards, and the booklet</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            <select id="recital-select" onchange="selectRecital(this.value)"
+                    class="bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400"></select>
+            <span id="active-badge"></span>
+            {% if current_user.is_admin %}
+            <button onclick="newRecital()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-1"></i>New Year</button>
+            <button id="activate-btn" onclick="activateRecital()" class="px-4 py-2 rounded-xl bg-gold-500 text-white text-sm font-bold hover:bg-gold-400 hidden"><i class="fas fa-star mr-1"></i>Make Active</button>
+            {% endif %}
+            <a id="booklet-link" href="#" target="_blank" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm hidden"><i class="fas fa-book-open mr-1"></i>Open Booklet</a>
+            <a href="{{ url_for('main.recital_page') }}" class="px-4 py-2 rounded-xl border border-line-2 text-ink-2 text-sm font-bold hover:bg-surface-2"><i class="fas fa-tshirt mr-1"></i>Costumes &amp; Tickets</a>
         </div>
     </div>
 
-    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div id="msg" class="hidden mb-4 p-3 rounded-md text-sm font-medium"></div>
+    <div id="tabs" class="flex gap-1 border-b border-line mb-6 hidden">
+        <button @click="tab='overview'" :class="tab==='overview' ? 'border-primary-500 text-primary-600' : 'border-transparent text-ink-3'" class="px-4 py-2 border-b-2 text-sm font-bold">Overview</button>
+        <button @click="tab='show'" :class="tab==='show' ? 'border-primary-500 text-primary-600' : 'border-transparent text-ink-3'" class="px-4 py-2 border-b-2 text-sm font-bold">Show Order</button>
+        <button @click="tab='awards'" :class="tab==='awards' ? 'border-primary-500 text-primary-600' : 'border-transparent text-ink-3'" class="px-4 py-2 border-b-2 text-sm font-bold">Awards</button>
+        <button @click="tab='ads'" :class="tab==='ads' ? 'border-primary-500 text-primary-600' : 'border-transparent text-ink-3'" class="px-4 py-2 border-b-2 text-sm font-bold">Booklet &amp; Ads</button>
+    </div>
 
-        <div id="empty" class="text-center py-16 text-gray-500">
-            <i class="fas fa-mask text-4xl text-gray-300 mb-3"></i>
+    <div>
+        <div id="msg" class="hidden mb-4 p-3 rounded-xl text-sm font-bold"></div>
+
+        <div id="empty" class="text-center py-16 text-ink-3">
+            <i class="fas fa-mask text-4xl text-ink-3 mb-3"></i>
             <p>No recital yet.{% if current_user.is_admin %} Click <strong>New Year</strong> to start organizing this year's show.{% else %} An admin needs to create one.{% endif %}</p>
         </div>
 
         <div id="panel" class="hidden">
             <!-- OVERVIEW -->
+            {% set ov_inp = "ov mt-1 w-full bg-surface border border-line-2 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
             <div x-show="tab==='overview'">
-                <div class="bg-white shadow rounded-lg p-6 max-w-3xl">
+                <div class="bg-surface border border-line rounded-2xl shadow-soft p-6 max-w-3xl">
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <label class="block"><span class="text-xs font-medium text-gray-500 uppercase">Title</span>
-                            <input id="ov-title" class="ov mt-1 w-full border border-gray-300 rounded px-3 py-2"></label>
-                        <label class="block"><span class="text-xs font-medium text-gray-500 uppercase">Year</span>
-                            <input id="ov-year" type="number" class="ov mt-1 w-full border border-gray-300 rounded px-3 py-2"></label>
-                        <label class="block"><span class="text-xs font-medium text-gray-500 uppercase">Theme</span>
-                            <input id="ov-theme" class="ov mt-1 w-full border border-gray-300 rounded px-3 py-2"></label>
-                        <label class="block"><span class="text-xs font-medium text-gray-500 uppercase">Show date</span>
-                            <input id="ov-recital_date" type="date" class="ov mt-1 w-full border border-gray-300 rounded px-3 py-2"></label>
-                        <label class="block"><span class="text-xs font-medium text-gray-500 uppercase">Show times</span>
-                            <input id="ov-show_times" placeholder="Matinee 2 PM · Evening 6 PM" class="ov mt-1 w-full border border-gray-300 rounded px-3 py-2"></label>
-                        <label class="block"><span class="text-xs font-medium text-gray-500 uppercase">Venue</span>
-                            <input id="ov-venue" class="ov mt-1 w-full border border-gray-300 rounded px-3 py-2"></label>
+                        <label class="block"><span class="text-xs font-bold text-ink-3 uppercase">Title</span>
+                            <input id="ov-title" class="{{ ov_inp }}"></label>
+                        <label class="block"><span class="text-xs font-bold text-ink-3 uppercase">Year</span>
+                            <input id="ov-year" type="number" class="{{ ov_inp }}"></label>
+                        <label class="block"><span class="text-xs font-bold text-ink-3 uppercase">Theme</span>
+                            <input id="ov-theme" class="{{ ov_inp }}"></label>
+                        <label class="block"><span class="text-xs font-bold text-ink-3 uppercase">Show date</span>
+                            <input id="ov-recital_date" type="date" class="{{ ov_inp }}"></label>
+                        <label class="block"><span class="text-xs font-bold text-ink-3 uppercase">Show times</span>
+                            <input id="ov-show_times" placeholder="Matinee 2 PM · Evening 6 PM" class="{{ ov_inp }}"></label>
+                        <label class="block"><span class="text-xs font-bold text-ink-3 uppercase">Venue</span>
+                            <input id="ov-venue" class="{{ ov_inp }}"></label>
                     </div>
-                    <label class="block mt-4"><span class="text-xs font-medium text-gray-500 uppercase">Director's note <span class="text-gray-400 normal-case">(prints in the booklet)</span></span>
-                        <textarea id="ov-director_note" rows="3" class="ov mt-1 w-full border border-gray-300 rounded px-3 py-2"></textarea></label>
-                    <label class="block mt-4"><span class="text-xs font-medium text-gray-500 uppercase">Acknowledgments &amp; thank-yous</span>
-                        <textarea id="ov-acknowledgments" rows="3" class="ov mt-1 w-full border border-gray-300 rounded px-3 py-2"></textarea></label>
-                    <label class="block mt-4"><span class="text-xs font-medium text-gray-500 uppercase">Ad pricing note <span class="text-gray-400 normal-case">(reference for selling ads)</span></span>
-                        <textarea id="ov-ad_pricing_note" rows="2" placeholder="Full page $100 · Half $60 · Quarter $35 · Business card $20 · Shout-out $10" class="ov mt-1 w-full border border-gray-300 rounded px-3 py-2"></textarea></label>
+                    <label class="block mt-4"><span class="text-xs font-bold text-ink-3 uppercase">Director's note <span class="text-ink-3 normal-case">(prints in the booklet)</span></span>
+                        <textarea id="ov-director_note" rows="3" class="{{ ov_inp }}"></textarea></label>
+                    <label class="block mt-4"><span class="text-xs font-bold text-ink-3 uppercase">Acknowledgments &amp; thank-yous</span>
+                        <textarea id="ov-acknowledgments" rows="3" class="{{ ov_inp }}"></textarea></label>
+                    <label class="block mt-4"><span class="text-xs font-bold text-ink-3 uppercase">Ad pricing note <span class="text-ink-3 normal-case">(reference for selling ads)</span></span>
+                        <textarea id="ov-ad_pricing_note" rows="2" placeholder="Full page $100 · Half $60 · Quarter $35 · Business card $20 · Shout-out $10" class="{{ ov_inp }}"></textarea></label>
                     {% if current_user.is_admin %}
                     <div class="mt-5 flex items-center gap-3">
-                        <button onclick="saveOverview()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700">Save</button>
-                        <button onclick="deleteRecital()" class="text-sm text-red-600 hover:underline ml-auto">Delete this recital</button>
+                        <button onclick="saveOverview()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Save</button>
+                        <button onclick="deleteRecital()" class="text-sm text-danger hover:underline ml-auto">Delete this recital</button>
                     </div>
                     {% else %}
-                    <p class="mt-4 text-xs text-gray-400">Only admins can edit the overview. You can still manage the show order, music, and choreography.</p>
+                    <p class="mt-4 text-xs text-ink-3">Only admins can edit the overview. You can still manage the show order, music, and choreography.</p>
                     {% endif %}
                 </div>
 
-                <div class="bg-white shadow rounded-lg p-6 max-w-3xl mt-6">
-                    <h3 class="font-semibold text-gray-900 mb-2"><i class="fas fa-ticket-alt text-gray-400 mr-1"></i>Show dates &amp; tickets</h3>
-                    <p class="text-xs text-gray-500 mb-3">Link a scheduled performance (from Company → Performances) to this recital to track its ticket tiers here.</p>
-                    <div id="linked-perfs" class="text-sm text-gray-500">Loading…</div>
+                <div class="bg-surface border border-line rounded-2xl shadow-soft p-6 max-w-3xl mt-6">
+                    <h3 class="font-display text-xl text-ink mb-2"><i class="fas fa-ticket-alt text-ink-3 mr-1"></i>Show dates &amp; tickets</h3>
+                    <p class="text-xs text-ink-3 mb-3">Link a scheduled performance (from Company → Performances) to this recital to track its ticket tiers here.</p>
+                    <div id="linked-perfs" class="text-sm text-ink-3">Loading…</div>
                     {% if current_user.is_admin %}
                     <div class="mt-3 flex items-center gap-2">
-                        <select id="perf-picker" class="border border-gray-300 rounded px-2 py-1 text-sm"></select>
-                        <button onclick="linkPerf()" class="px-3 py-1 bg-primary-600 text-white rounded text-sm">Link</button>
+                        <select id="perf-picker" class="bg-surface border border-line-2 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400"></select>
+                        <button onclick="linkPerf()" class="px-3 py-1 rounded-lg bg-primary-500 text-white text-sm font-bold hover:bg-primary-600">Link</button>
                     </div>
                     {% endif %}
                 </div>
@@ -86,59 +87,60 @@
             <!-- SHOW ORDER -->
             <div x-show="tab==='show'" style="display:none">
                 <div class="flex justify-between items-center mb-3">
-                    <p class="text-sm text-gray-500">Drag-free reorder with the arrows. Click a number to add music, choreography, and cast.</p>
-                    <button onclick="addNumber()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-plus mr-1"></i>Add Number</button>
+                    <p class="text-sm text-ink-3">Drag-free reorder with the arrows. Click a number to add music, choreography, and cast.</p>
+                    <button onclick="addNumber()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-1"></i>Add Number</button>
                 </div>
-                <div id="numbers-list" class="space-y-3"><p class="text-gray-500">Loading…</p></div>
+                <div id="numbers-list" class="space-y-3"><p class="text-ink-3">Loading…</p></div>
             </div>
 
             <!-- AWARDS -->
+            {% set form_inp = "bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
             <div x-show="tab==='awards'" style="display:none">
                 {% if current_user.is_admin %}
-                <div class="bg-white shadow rounded-lg p-4 mb-4 max-w-3xl">
-                    <h3 class="font-semibold text-gray-900 mb-3">Add an award</h3>
+                <div class="bg-surface border border-line rounded-2xl shadow-soft p-4 mb-4 max-w-3xl">
+                    <h3 class="font-bold text-ink mb-3">Add an award</h3>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <input id="aw-title" placeholder="Award title (e.g. Dancer of the Year)" class="border border-gray-300 rounded px-3 py-2 text-sm">
-                        <input id="aw-category" placeholder="Category (optional, e.g. Senior Award)" class="border border-gray-300 rounded px-3 py-2 text-sm">
-                        <select id="aw-student" class="border border-gray-300 rounded px-3 py-2 text-sm"></select>
-                        <input id="aw-recipient" placeholder="Or type a recipient name" class="border border-gray-300 rounded px-3 py-2 text-sm">
+                        <input id="aw-title" placeholder="Award title (e.g. Dancer of the Year)" class="{{ form_inp }}">
+                        <input id="aw-category" placeholder="Category (optional, e.g. Senior Award)" class="{{ form_inp }}">
+                        <select id="aw-student" class="{{ form_inp }}"></select>
+                        <input id="aw-recipient" placeholder="Or type a recipient name" class="{{ form_inp }}">
                     </div>
-                    <textarea id="aw-description" rows="2" placeholder="Description (optional)" class="mt-3 w-full border border-gray-300 rounded px-3 py-2 text-sm"></textarea>
-                    <button onclick="addAward()" class="mt-3 px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700">Add Award</button>
+                    <textarea id="aw-description" rows="2" placeholder="Description (optional)" class="mt-3 w-full {{ form_inp }}"></textarea>
+                    <button onclick="addAward()" class="mt-3 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Add Award</button>
                 </div>
                 {% endif %}
-                <div id="awards-list" class="space-y-2 max-w-3xl"><p class="text-gray-500">Loading…</p></div>
+                <div id="awards-list" class="space-y-2 max-w-3xl"><p class="text-ink-3">Loading…</p></div>
             </div>
 
             <!-- BOOKLET & ADS -->
             <div x-show="tab==='ads'" style="display:none">
                 <div class="flex justify-between items-center mb-3">
-                    <p class="text-sm text-gray-500">Custom ads &amp; shout-outs for the printed booklet.</p>
-                    <a id="booklet-link2" href="#" target="_blank" class="px-4 py-2 bg-gray-800 text-white rounded-md text-sm font-medium hover:bg-gray-900"><i class="fas fa-book-open mr-1"></i>Preview / Print Booklet</a>
+                    <p class="text-sm text-ink-3">Custom ads &amp; shout-outs for the printed booklet.</p>
+                    <a id="booklet-link2" href="#" target="_blank" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-book-open mr-1"></i>Preview / Print Booklet</a>
                 </div>
                 {% if current_user.is_admin %}
-                <div class="bg-white shadow rounded-lg p-4 mb-4 max-w-3xl">
-                    <h3 class="font-semibold text-gray-900 mb-3">Add an ad</h3>
+                <div class="bg-surface border border-line rounded-2xl shadow-soft p-4 mb-4 max-w-3xl">
+                    <h3 class="font-bold text-ink mb-3">Add an ad</h3>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <input id="ad-advertiser" placeholder="Advertiser / family name" class="border border-gray-300 rounded px-3 py-2 text-sm">
-                        <select id="ad-size" class="border border-gray-300 rounded px-3 py-2 text-sm">
+                        <input id="ad-advertiser" placeholder="Advertiser / family name" class="{{ form_inp }}">
+                        <select id="ad-size" class="{{ form_inp }}">
                             <option value="full_page">Full page</option>
                             <option value="half_page">Half page</option>
                             <option value="quarter_page">Quarter page</option>
                             <option value="business_card">Business card</option>
                             <option value="shout_out" selected>Shout-out</option>
                         </select>
-                        <input id="ad-price" type="number" step="0.01" placeholder="Price" class="border border-gray-300 rounded px-3 py-2 text-sm">
-                        <select id="ad-student" class="border border-gray-300 rounded px-3 py-2 text-sm"></select>
-                        <input id="ad-contact_name" placeholder="Contact name (optional)" class="border border-gray-300 rounded px-3 py-2 text-sm">
-                        <input id="ad-contact_email" placeholder="Contact email (optional)" class="border border-gray-300 rounded px-3 py-2 text-sm">
+                        <input id="ad-price" type="number" step="0.01" placeholder="Price" class="{{ form_inp }}">
+                        <select id="ad-student" class="{{ form_inp }}"></select>
+                        <input id="ad-contact_name" placeholder="Contact name (optional)" class="{{ form_inp }}">
+                        <input id="ad-contact_email" placeholder="Contact email (optional)" class="{{ form_inp }}">
                     </div>
-                    <textarea id="ad-content" rows="2" placeholder="Ad copy / shout-out message" class="mt-3 w-full border border-gray-300 rounded px-3 py-2 text-sm"></textarea>
+                    <textarea id="ad-content" rows="2" placeholder="Ad copy / shout-out message" class="mt-3 w-full {{ form_inp }}"></textarea>
                     <label class="inline-flex items-center mt-3 text-sm"><input id="ad-paid" type="checkbox" class="mr-2">Paid</label>
-                    <button onclick="addAd()" class="mt-3 block px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700">Add Ad</button>
+                    <button onclick="addAd()" class="mt-3 block px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Add Ad</button>
                 </div>
                 {% endif %}
-                <div id="ads-list" class="grid grid-cols-1 md:grid-cols-2 gap-3"><p class="text-gray-500">Loading…</p></div>
+                <div id="ads-list" class="grid grid-cols-1 md:grid-cols-2 gap-3"><p class="text-ink-3">Loading…</p></div>
             </div>
         </div>
     </div>
@@ -154,12 +156,13 @@ const IS_ADMIN = {{ 'true' if current_user.is_admin else 'false' }};
 
 {% block extra_js %}
 <script>
-function msg(t, ok){const m=document.getElementById('msg');m.textContent=t;m.className='mb-4 p-3 rounded-md text-sm font-medium '+(ok?'bg-green-100 text-green-800':'bg-red-100 text-red-800');m.classList.remove('hidden');setTimeout(()=>m.classList.add('hidden'),4000);}
+const INP = "bg-surface border border-line-2 rounded-xl px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400";
+function msg(t, ok){const m=document.getElementById('msg');m.textContent=t;m.className='mb-4 p-3 rounded-xl text-sm font-bold '+(ok?'bg-ok/10 text-ok':'bg-danger/10 text-danger');m.classList.remove('hidden');setTimeout(()=>m.classList.add('hidden'),4000);}
 function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 async function jpost(url,b){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});}
 async function jput(url,b){return fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});}
 async function jdel(url){return fetch(url,{method:'DELETE'});}
-function studentPicker(id,blank){return `<select id="${id}" class="border border-gray-300 rounded px-2 py-1 text-sm"><option value="">${blank||'Pick a dancer…'}</option>${STUDENTS.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>`;}
+function studentPicker(id,blank){return `<select id="${id}" class="${INP}"><option value="">${blank||'Pick a dancer…'}</option>${STUDENTS.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>`;}
 function performerOptions(selClass,selGroup){
     let o='<option value="">— not linked —</option>';
     o+='<optgroup label="Classes">'+CLASSES.map(c=>`<option value="c:${c.id}" ${selClass==c.id?'selected':''}>${esc(c.name)}</option>`).join('')+'</optgroup>';
@@ -204,8 +207,8 @@ async function loadDetail(){
     const d=await (await fetch(`/api/recitals/${RID}`)).json();
     const r=d.recital;
     document.getElementById('active-badge').innerHTML = r.is_active
-        ? '<span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800"><i class="fas fa-star mr-1"></i>Active</span>'
-        : '<span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-500">Not active</span>';
+        ? '<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-ok/10 text-ok"><i class="fas fa-star mr-1"></i>Active</span>'
+        : '<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-surface-2 text-ink-2">Not active</span>';
     const ab=document.getElementById('activate-btn'); if(ab) ab.classList.toggle('hidden', r.is_active);
     const set=(id,v)=>{const e=document.getElementById('ov-'+id); if(e) e.value=v||'';};
     set('title',r.title); set('year',r.year); set('theme',r.theme); set('recital_date',r.recital_date);
@@ -236,10 +239,10 @@ async function deleteRecital(){if(!confirm('Delete this recital and everything i
 /* ---- Linked performances ---- */
 function renderLinkedPerfs(perfs){
     const el=document.getElementById('linked-perfs');
-    el.innerHTML = perfs.length ? perfs.map(p=>`<div class="flex items-center justify-between border-b border-gray-100 py-1">
-        <span>${esc(p.title)} <span class="text-xs text-gray-400">${p.performance_date?new Date(p.performance_date+'T00:00').toLocaleDateString():''} ${p.call_time?'· call '+esc(p.call_time):''}</span></span>
-        ${IS_ADMIN?`<button onclick="unlinkPerf(${p.id})" class="text-xs text-red-600 hover:underline">Unlink</button>`:''}
-    </div>`).join('') : '<span class="text-gray-400">No show dates linked yet.</span>';
+    el.innerHTML = perfs.length ? perfs.map(p=>`<div class="flex items-center justify-between border-b border-line last:border-0 py-1">
+        <span>${esc(p.title)} <span class="text-xs text-ink-3">${p.performance_date?new Date(p.performance_date+'T00:00').toLocaleDateString():''} ${p.call_time?'· call '+esc(p.call_time):''}</span></span>
+        ${IS_ADMIN?`<button onclick="unlinkPerf(${p.id})" class="text-xs text-danger hover:underline">Unlink</button>`:''}
+    </div>`).join('') : '<span class="text-ink-3">No show dates linked yet.</span>';
     const picker=document.getElementById('perf-picker');
     if(picker) fetch('/api/performance/performances').then(r=>r.json()).then(d=>{
         const avail=(d.performances||[]).filter(p=>!perfs.some(lp=>lp.id===p.id));
@@ -254,77 +257,77 @@ async function loadNumbers(){
     const data=await (await fetch(`/api/recitals/${RID}/numbers`)).json();
     NUMBERS=data.numbers||[];
     const el=document.getElementById('numbers-list');
-    if(!NUMBERS.length){el.innerHTML='<p class="text-gray-500">No numbers yet. Add the first routine.</p>';return;}
+    if(!NUMBERS.length){el.innerHTML='<p class="text-ink-3">No numbers yet. Add the first routine.</p>';return;}
     el.innerHTML=NUMBERS.map((n,i)=>numberCard(n,i)).join('');
 }
 function numberCard(n,i){
     const linked = n.class_name||n.group_name;
-    return `<div class="bg-white shadow rounded-lg overflow-hidden">
+    return `<div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
         <div class="px-4 py-3 flex items-center gap-3">
-            <div class="flex flex-col text-gray-400">
+            <div class="flex flex-col text-ink-3">
                 <button onclick="moveNumber(${i},-1)" ${i===0?'disabled class=opacity-30':''} title="Up"><i class="fas fa-chevron-up"></i></button>
                 <button onclick="moveNumber(${i},1)" ${i===NUMBERS.length-1?'disabled class=opacity-30':''} title="Down"><i class="fas fa-chevron-down"></i></button>
             </div>
-            <div class="w-8 text-center font-bold text-gray-300 text-lg">${n.order_index}</div>
+            <div class="w-8 text-center font-bold text-ink-3 text-lg">${n.order_index}</div>
             <div class="flex-1 cursor-pointer" onclick="toggleEdit(${n.id})">
-                <span class="font-semibold text-gray-900">${esc(n.title)}</span>
-                ${n.is_finale?'<span class="ml-2 text-xs bg-purple-100 text-purple-700 rounded-full px-2 py-0.5">Finale</span>':''}
-                <div class="text-xs text-gray-500">
+                <span class="font-bold text-ink">${esc(n.title)}</span>
+                ${n.is_finale?'<span class="ml-2 text-xs font-bold bg-primary-50 text-primary-700 rounded-full px-2.5 py-0.5">Finale</span>':''}
+                <div class="text-xs text-ink-3">
                     ${linked?esc(linked)+' · ':''}${n.style?esc(n.style)+' · ':''}<i class="fas fa-users mr-1"></i>${n.cast_count}
-                    ${n.has_music?'<i class="fas fa-music text-green-500 ml-2" title="Music set"></i>':'<i class="fas fa-music text-gray-300 ml-2" title="No music"></i>'}
-                    ${n.has_choreo?'<i class="fas fa-shoe-prints text-green-500 ml-1" title="Choreo notes"></i>':'<i class="fas fa-shoe-prints text-gray-300 ml-1" title="No choreo"></i>'}
+                    ${n.has_music?'<i class="fas fa-music text-ok ml-2" title="Music set"></i>':'<i class="fas fa-music text-ink-3 ml-2" title="No music"></i>'}
+                    ${n.has_choreo?'<i class="fas fa-shoe-prints text-ok ml-1" title="Choreo notes"></i>':'<i class="fas fa-shoe-prints text-ink-3 ml-1" title="No choreo"></i>'}
                     ${n.duration?'<span class="ml-2">'+esc(n.duration)+'</span>':''}
                 </div>
             </div>
             <button onclick="toggleEdit(${n.id})" class="text-sm text-primary-600 hover:underline">Edit</button>
-            <button onclick="deleteNumber(${n.id})" class="text-sm text-red-600 hover:underline">Delete</button>
+            <button onclick="deleteNumber(${n.id})" class="text-sm text-danger hover:underline">Delete</button>
         </div>
-        <div id="edit-${n.id}" class="hidden border-t bg-gray-50 px-4 py-4">${numberForm(n)}</div>
+        <div id="edit-${n.id}" class="hidden border-t border-line bg-surface-2 px-4 py-4">${numberForm(n)}</div>
     </div>`;
 }
 function numberForm(n){
     return `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <label class="text-sm">Title<input id="n-title-${n.id}" value="${esc(n.title)}" class="mt-1 w-full border border-gray-300 rounded px-2 py-1"></label>
-        <label class="text-sm">Performed by<select id="n-performer-${n.id}" class="mt-1 w-full border border-gray-300 rounded px-2 py-1">${performerOptions(n.class_id,n.group_id)}</select></label>
-        <label class="text-sm">Style<input id="n-style-${n.id}" value="${esc(n.style)}" placeholder="Ballet, Hip-Hop…" class="mt-1 w-full border border-gray-300 rounded px-2 py-1"></label>
-        <label class="text-sm">Act<input id="n-act-${n.id}" value="${esc(n.act)}" placeholder="Act 1" class="mt-1 w-full border border-gray-300 rounded px-2 py-1"></label>
-        <label class="text-sm">Duration<input id="n-duration-${n.id}" value="${esc(n.duration)}" placeholder="2:45" class="mt-1 w-full border border-gray-300 rounded px-2 py-1"></label>
-        <label class="text-sm">Props<input id="n-props-${n.id}" value="${esc(n.props)}" class="mt-1 w-full border border-gray-300 rounded px-2 py-1"></label>
+        <label class="text-sm">Title<input id="n-title-${n.id}" value="${esc(n.title)}" class="mt-1 w-full ${INP}"></label>
+        <label class="text-sm">Performed by<select id="n-performer-${n.id}" class="mt-1 w-full ${INP}">${performerOptions(n.class_id,n.group_id)}</select></label>
+        <label class="text-sm">Style<input id="n-style-${n.id}" value="${esc(n.style)}" placeholder="Ballet, Hip-Hop…" class="mt-1 w-full ${INP}"></label>
+        <label class="text-sm">Act<input id="n-act-${n.id}" value="${esc(n.act)}" placeholder="Act 1" class="mt-1 w-full ${INP}"></label>
+        <label class="text-sm">Duration<input id="n-duration-${n.id}" value="${esc(n.duration)}" placeholder="2:45" class="mt-1 w-full ${INP}"></label>
+        <label class="text-sm">Props<input id="n-props-${n.id}" value="${esc(n.props)}" class="mt-1 w-full ${INP}"></label>
     </div>
     <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div class="bg-white border border-gray-200 rounded p-3">
-            <p class="text-xs font-semibold text-gray-500 uppercase mb-2"><i class="fas fa-music mr-1"></i>Music</p>
-            <input id="n-song_title-${n.id}" value="${esc(n.song_title)}" placeholder="Song title" class="w-full border border-gray-300 rounded px-2 py-1 text-sm mb-2">
-            <input id="n-song_artist-${n.id}" value="${esc(n.song_artist)}" placeholder="Artist" class="w-full border border-gray-300 rounded px-2 py-1 text-sm mb-2">
-            <input id="n-music_url-${n.id}" value="${esc(n.music_url)}" placeholder="Audio link (Drive/Dropbox)" class="w-full border border-gray-300 rounded px-2 py-1 text-sm mb-2">
-            <textarea id="n-music_notes-${n.id}" rows="2" placeholder="Cue notes (fade in/out, edits)" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">${esc(n.music_notes)}</textarea>
+        <div class="bg-surface border border-line rounded-xl p-3">
+            <p class="text-xs font-bold text-ink-3 uppercase mb-2"><i class="fas fa-music mr-1"></i>Music</p>
+            <input id="n-song_title-${n.id}" value="${esc(n.song_title)}" placeholder="Song title" class="w-full mb-2 ${INP}">
+            <input id="n-song_artist-${n.id}" value="${esc(n.song_artist)}" placeholder="Artist" class="w-full mb-2 ${INP}">
+            <input id="n-music_url-${n.id}" value="${esc(n.music_url)}" placeholder="Audio link (Drive/Dropbox)" class="w-full mb-2 ${INP}">
+            <textarea id="n-music_notes-${n.id}" rows="2" placeholder="Cue notes (fade in/out, edits)" class="w-full ${INP}">${esc(n.music_notes)}</textarea>
             ${n.music_url?`<a href="${esc(n.music_url)}" target="_blank" class="text-xs text-primary-600 hover:underline">Open current audio link ↗</a>`:''}
         </div>
-        <div class="bg-white border border-gray-200 rounded p-3">
-            <p class="text-xs font-semibold text-gray-500 uppercase mb-2"><i class="fas fa-shoe-prints mr-1"></i>Choreography</p>
-            <input id="n-choreographer-${n.id}" value="${esc(n.choreographer)}" placeholder="Choreographer" class="w-full border border-gray-300 rounded px-2 py-1 text-sm mb-2">
-            <input id="n-choreo_url-${n.id}" value="${esc(n.choreo_url)}" placeholder="Reference video link" class="w-full border border-gray-300 rounded px-2 py-1 text-sm mb-2">
-            <textarea id="n-choreo_notes-${n.id}" rows="2" placeholder="Choreography notes" class="w-full border border-gray-300 rounded px-2 py-1 text-sm mb-2">${esc(n.choreo_notes)}</textarea>
-            <textarea id="n-formation_notes-${n.id}" rows="2" placeholder="Formation notes" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">${esc(n.formation_notes)}</textarea>
+        <div class="bg-surface border border-line rounded-xl p-3">
+            <p class="text-xs font-bold text-ink-3 uppercase mb-2"><i class="fas fa-shoe-prints mr-1"></i>Choreography</p>
+            <input id="n-choreographer-${n.id}" value="${esc(n.choreographer)}" placeholder="Choreographer" class="w-full mb-2 ${INP}">
+            <input id="n-choreo_url-${n.id}" value="${esc(n.choreo_url)}" placeholder="Reference video link" class="w-full mb-2 ${INP}">
+            <textarea id="n-choreo_notes-${n.id}" rows="2" placeholder="Choreography notes" class="w-full mb-2 ${INP}">${esc(n.choreo_notes)}</textarea>
+            <textarea id="n-formation_notes-${n.id}" rows="2" placeholder="Formation notes" class="w-full ${INP}">${esc(n.formation_notes)}</textarea>
         </div>
     </div>
-    <label class="block mt-3 text-sm">Notes<textarea id="n-notes-${n.id}" rows="2" class="mt-1 w-full border border-gray-300 rounded px-2 py-1">${esc(n.notes)}</textarea></label>
+    <label class="block mt-3 text-sm">Notes<textarea id="n-notes-${n.id}" rows="2" class="mt-1 w-full ${INP}">${esc(n.notes)}</textarea></label>
     <label class="inline-flex items-center mt-3 text-sm"><input id="n-finale-${n.id}" type="checkbox" ${n.is_finale?'checked':''} class="mr-2">Finale</label>
-    <div class="mt-3"><button onclick="saveNumber(${n.id})" class="px-4 py-2 bg-primary-600 text-white rounded text-sm font-medium hover:bg-primary-700">Save number</button></div>
-    <div class="mt-4 border-t pt-3">
-        <p class="text-xs font-semibold text-gray-500 uppercase mb-2"><i class="fas fa-users mr-1"></i>Cast (${n.cast_count})</p>
+    <div class="mt-3"><button onclick="saveNumber(${n.id})" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Save number</button></div>
+    <div class="mt-4 border-t border-line pt-3">
+        <p class="text-xs font-bold text-ink-3 uppercase mb-2"><i class="fas fa-users mr-1"></i>Cast (${n.cast_count})</p>
         <div id="cast-${n.id}" class="mb-2">${castChips(n)}</div>
         <div class="flex items-center gap-2 flex-wrap">
             ${studentPicker('castpick-'+n.id)}
-            <input id="castpart-${n.id}" placeholder="Part (e.g. Soloist)" class="border border-gray-300 rounded px-2 py-1 text-sm w-36">
-            <button onclick="addCast(${n.id})" class="px-3 py-1 bg-primary-600 text-white rounded text-sm">Add</button>
-            ${(n.class_id||n.group_id)?`<button onclick="fillCast(${n.id})" class="px-3 py-1 bg-amber-500 text-white rounded text-sm">Fill from ${n.class_id?'class':'company'}</button>`:''}
+            <input id="castpart-${n.id}" placeholder="Part (e.g. Soloist)" class="w-36 ${INP}">
+            <button onclick="addCast(${n.id})" class="px-3 py-1 rounded-lg bg-primary-500 text-white text-sm font-bold hover:bg-primary-600">Add</button>
+            ${(n.class_id||n.group_id)?`<button onclick="fillCast(${n.id})" class="px-3 py-1 rounded-lg bg-gold-500 text-white text-sm font-bold">Fill from ${n.class_id?'class':'company'}</button>`:''}
         </div>
     </div>`;
 }
 function castChips(n){
-    if(!n.cast||!n.cast.length) return '<span class="text-gray-400 text-sm">No dancers yet.</span>';
-    return n.cast.map(c=>`<span class="inline-flex items-center bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1 mr-2 mb-2 text-sm">${esc(c.student_name)}${c.part?'<span class="text-xs text-indigo-500 ml-1">'+esc(c.part)+'</span>':''}<button onclick="removeCast(${c.id},${n.id})" class="ml-2 text-red-500 hover:text-red-700">&times;</button></span>`).join('');
+    if(!n.cast||!n.cast.length) return '<span class="text-ink-3 text-sm">No dancers yet.</span>';
+    return n.cast.map(c=>`<span class="inline-flex items-center bg-primary-50 border border-primary-200 rounded-full px-3 py-1 mr-2 mb-2 text-sm font-bold">${esc(c.student_name)}${c.part?'<span class="text-xs text-primary-500 ml-1">'+esc(c.part)+'</span>':''}<button onclick="removeCast(${c.id},${n.id})" class="ml-2 text-danger hover:underline">&times;</button></span>`).join('');
 }
 function toggleEdit(id){document.getElementById('edit-'+id).classList.toggle('hidden');}
 async function addNumber(){const title=prompt('Number title (e.g. "Twinkle Twinkle"):');if(!title)return;const r=await jpost(`/api/recitals/${RID}/numbers`,{title});msg(r.ok?'Number added':'Error',r.ok);if(r.ok)loadNumbers();}
@@ -362,13 +365,13 @@ async function loadAwards(){
     const data=await (await fetch(`/api/recitals/${RID}/awards`)).json();
     const awards=data.awards||[];
     const el=document.getElementById('awards-list');
-    if(!awards.length){el.innerHTML='<p class="text-gray-500">No awards yet.</p>';return;}
-    el.innerHTML=awards.map(a=>`<div class="bg-white shadow rounded-lg px-4 py-3 flex items-center justify-between">
-        <div><span class="font-semibold text-gray-900">${esc(a.title)}</span>
-            ${a.category?'<span class="text-xs bg-gray-100 text-gray-600 rounded-full px-2 py-0.5 ml-2">'+esc(a.category)+'</span>':''}
-            <div class="text-sm text-gray-600">${esc(a.student_name||a.recipient_text||'—')}</div>
-            ${a.description?'<div class="text-xs text-gray-500 mt-1">'+esc(a.description)+'</div>':''}</div>
-        ${IS_ADMIN?`<button onclick="deleteAward(${a.id})" class="text-sm text-red-600 hover:underline">Delete</button>`:''}
+    if(!awards.length){el.innerHTML='<p class="text-ink-3">No awards yet.</p>';return;}
+    el.innerHTML=awards.map(a=>`<div class="bg-surface border border-line rounded-2xl shadow-soft px-4 py-3 flex items-center justify-between">
+        <div><span class="font-bold text-ink">${esc(a.title)}</span>
+            ${a.category?'<span class="text-xs font-bold bg-surface-2 text-ink-2 rounded-full px-2.5 py-0.5 ml-2">'+esc(a.category)+'</span>':''}
+            <div class="text-sm text-ink-2">${esc(a.student_name||a.recipient_text||'—')}</div>
+            ${a.description?'<div class="text-xs text-ink-3 mt-1">'+esc(a.description)+'</div>':''}</div>
+        ${IS_ADMIN?`<button onclick="deleteAward(${a.id})" class="text-sm text-danger hover:underline">Delete</button>`:''}
     </div>`).join('');
 }
 async function addAward(){
@@ -388,20 +391,20 @@ async function loadAds(){
     const data=await (await fetch(`/api/recitals/${RID}/ads`)).json();
     const ads=data.ads||[];
     const el=document.getElementById('ads-list');
-    if(!ads.length){el.innerHTML='<p class="text-gray-500">No ads yet.</p>';return;}
-    el.innerHTML=ads.map(a=>`<div class="bg-white shadow rounded-lg p-4">
+    if(!ads.length){el.innerHTML='<p class="text-ink-3">No ads yet.</p>';return;}
+    el.innerHTML=ads.map(a=>`<div class="bg-surface border border-line rounded-2xl shadow-soft p-4">
         <div class="flex items-center justify-between">
-            <div><span class="font-semibold text-gray-900">${esc(a.advertiser)}</span>
-                <span class="text-xs bg-gray-100 text-gray-600 rounded-full px-2 py-0.5 ml-2">${SIZE_LABEL[a.size]||a.size}</span>
-                <span class="text-xs ${a.paid?'text-green-600':'text-amber-600'} ml-2">${a.paid?'Paid':'Unpaid'} · $${a.price}</span></div>
-            ${IS_ADMIN?`<button onclick="deleteAd(${a.id})" class="text-sm text-red-600 hover:underline">Delete</button>`:''}
+            <div><span class="font-bold text-ink">${esc(a.advertiser)}</span>
+                <span class="text-xs font-bold bg-surface-2 text-ink-2 rounded-full px-2.5 py-0.5 ml-2">${SIZE_LABEL[a.size]||a.size}</span>
+                <span class="text-xs font-bold ${a.paid?'text-ok':'text-warn'} ml-2">${a.paid?'Paid':'Unpaid'} · $${a.price}</span></div>
+            ${IS_ADMIN?`<button onclick="deleteAd(${a.id})" class="text-sm text-danger hover:underline">Delete</button>`:''}
         </div>
-        ${a.content?'<p class="text-sm text-gray-600 mt-2">'+esc(a.content)+'</p>':''}
-        ${a.student_name?'<p class="text-xs text-gray-400 mt-1">In honor of '+esc(a.student_name)+'</p>':''}
-        ${a.has_image?`<img src="/api/recital-ads/${a.id}/image?_=${Date.now()}" onerror="this.style.display='none'" class="mt-2 max-h-28 rounded border">`:''}
+        ${a.content?'<p class="text-sm text-ink-2 mt-2">'+esc(a.content)+'</p>':''}
+        ${a.student_name?'<p class="text-xs text-ink-3 mt-1">In honor of '+esc(a.student_name)+'</p>':''}
+        ${a.has_image?`<img src="/api/recital-ads/${a.id}/image?_=${Date.now()}" onerror="this.style.display='none'" class="mt-2 max-h-28 rounded-xl border border-line">`:''}
         ${IS_ADMIN?`<div class="mt-3 flex items-center gap-3 text-sm">
             <label class="text-primary-600 hover:underline cursor-pointer">${a.has_image?'Replace image':'Upload image'}<input type="file" accept="image/*" class="hidden" onchange="uploadAdImage(${a.id},this)"></label>
-            <button onclick="togglePaid(${a.id},${!a.paid})" class="text-gray-600 hover:underline">${a.paid?'Mark unpaid':'Mark paid'}</button>
+            <button onclick="togglePaid(${a.id},${!a.paid})" class="text-ink-2 hover:underline">${a.paid?'Mark unpaid':'Mark paid'}</button>
         </div>`:''}
     </div>`).join('');
 }

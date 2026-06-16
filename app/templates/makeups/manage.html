@@ -1,35 +1,32 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="min-h-full">
-    <div class="bg-white shadow">
-        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex items-center justify-between flex-wrap gap-3">
-            <div>
-                <h1 class="text-3xl font-bold text-gray-900"><i class="fas fa-rotate text-primary-500 mr-2"></i>Makeup Classes</h1>
-                <p class="mt-1 text-sm text-gray-600">Track missed classes and the sessions making them up</p>
-            </div>
-            <button onclick="createMakeup()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-plus mr-2"></i>Log Makeup</button>
-        </div>
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+    <div>
+        <p class="text-[11px] font-bold uppercase tracking-[.12em] text-ink-3">Classes &amp; Attendance</p>
+        <h1 class="font-display text-3xl text-ink leading-tight mt-1">Makeup Classes</h1>
+        <p class="mt-1 text-sm text-ink-3">Track missed classes and the sessions making them up</p>
     </div>
-    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div id="msg" class="hidden mb-4 p-3 rounded-md text-sm font-medium"></div>
-        <div class="mb-4">
-            <select id="filter" onchange="load()" class="border border-gray-300 rounded-md px-3 py-2 text-sm">
-                <option value="">All</option><option value="requested">Requested</option>
-                <option value="scheduled">Scheduled</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option>
-            </select>
-        </div>
-        <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50"><tr>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dancer</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Missed</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Makeup</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Action</th>
-                </tr></thead>
-                <tbody id="tbl" class="bg-white divide-y divide-gray-100"><tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">Loading…</td></tr></tbody>
-            </table>
-        </div>
+    <button onclick="createMakeup()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-2"></i>Log Makeup</button>
+</div>
+<div id="msg" class="hidden mb-4 p-3 rounded-xl text-sm font-medium"></div>
+<div class="mb-4">
+    <select id="filter" onchange="load()" class="bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+        <option value="">All</option><option value="requested">Requested</option>
+        <option value="scheduled">Scheduled</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option>
+    </select>
+</div>
+<div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead class="bg-surface-2 border-b border-line"><tr>
+                <th class="text-[11px] font-bold uppercase tracking-[.06em] text-ink-3 px-5 py-3 text-left">Dancer</th>
+                <th class="text-[11px] font-bold uppercase tracking-[.06em] text-ink-3 px-5 py-3 text-left">Missed</th>
+                <th class="text-[11px] font-bold uppercase tracking-[.06em] text-ink-3 px-5 py-3 text-left">Makeup</th>
+                <th class="text-[11px] font-bold uppercase tracking-[.06em] text-ink-3 px-5 py-3 text-left">Status</th>
+                <th class="text-[11px] font-bold uppercase tracking-[.06em] text-ink-3 px-5 py-3 text-right">Action</th>
+            </tr></thead>
+            <tbody id="tbl"><tr><td colspan="5" class="px-5 py-6 text-center text-ink-3">Loading…</td></tr></tbody>
+        </table>
     </div>
 </div>
 {% endblock %}
@@ -37,7 +34,7 @@
 <script>
 const STUDENTS=[{% for s in students %}{id:{{s.id}},name:"{{s.full_name|e}}"},{% endfor %}];
 const CLASSES=[{% for c in classes %}{id:{{c.id}},name:"{{c.name|e}}"},{% endfor %}];
-function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;m.className='mb-4 p-3 rounded-md text-sm font-medium '+(ok?'bg-green-100 text-green-800':'bg-red-100 text-red-800');m.classList.remove('hidden');setTimeout(()=>m.classList.add('hidden'),3500);}
+function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;m.className='mb-4 p-3 rounded-xl text-sm font-medium '+(ok?'bg-ok/10 text-ok':'bg-danger/10 text-danger');m.classList.remove('hidden');setTimeout(()=>m.classList.add('hidden'),3500);}
 function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function classOptions(){return CLASSES.map(c=>`${c.id}. ${c.name}`).join('\n');}
 
@@ -45,17 +42,17 @@ async function load(){
     const status=document.getElementById('filter').value;
     const data=await (await fetch('/api/makeups'+(status?'?status='+status:''))).json();
     const rows=data.makeups||[];const tb=document.getElementById('tbl');
-    if(!rows.length){tb.innerHTML='<tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">Nothing here.</td></tr>';return;}
-    const badge=s=>({requested:'bg-amber-100 text-amber-800',scheduled:'bg-blue-100 text-blue-800',completed:'bg-green-100 text-green-800',cancelled:'bg-gray-200 text-gray-600'}[s]||'');
-    tb.innerHTML=rows.map(m=>`<tr>
-        <td class="px-4 py-3 text-sm font-medium">${esc(m.student_name)}</td>
-        <td class="px-4 py-3 text-sm text-gray-600">${esc(m.missed_class||'—')}${m.missed_date?'<div class="text-xs text-gray-400">'+m.missed_date+'</div>':''}</td>
-        <td class="px-4 py-3 text-sm text-gray-600">${esc(m.makeup_class||'—')}${m.makeup_date?'<div class="text-xs text-gray-400">'+m.makeup_date+'</div>':''}</td>
-        <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-full text-xs ${badge(m.status)}">${m.status}</span></td>
-        <td class="px-4 py-3 text-sm text-right">
-            ${m.status!=='completed'?`<button onclick="setStatus(${m.id},'completed')" class="text-xs text-green-600 hover:underline mr-2">Complete</button>`:''}
-            ${m.status==='requested'?`<button onclick="schedule(${m.id})" class="text-xs text-blue-600 hover:underline mr-2">Schedule</button>`:''}
-            <button onclick="del(${m.id})" class="text-xs text-red-600 hover:underline">Delete</button>
+    if(!rows.length){tb.innerHTML='<tr><td colspan="5" class="px-5 py-6 text-center text-ink-3">Nothing here.</td></tr>';return;}
+    const badge=s=>({requested:'bg-warn/10 text-warn',scheduled:'bg-info/10 text-info',completed:'bg-ok/10 text-ok',cancelled:'bg-surface-2 text-ink-2'}[s]||'bg-surface-2 text-ink-2');
+    tb.innerHTML=rows.map(m=>`<tr class="border-b border-line last:border-0">
+        <td class="px-5 py-3 text-sm font-bold text-ink">${esc(m.student_name)}</td>
+        <td class="px-5 py-3 text-sm text-ink-2">${esc(m.missed_class||'—')}${m.missed_date?'<div class="text-xs text-ink-3 tabular-nums">'+m.missed_date+'</div>':''}</td>
+        <td class="px-5 py-3 text-sm text-ink-2">${esc(m.makeup_class||'—')}${m.makeup_date?'<div class="text-xs text-ink-3 tabular-nums">'+m.makeup_date+'</div>':''}</td>
+        <td class="px-5 py-3"><span class="px-2.5 py-1 rounded-full text-xs font-bold ${badge(m.status)}">${m.status}</span></td>
+        <td class="px-5 py-3 text-sm text-right">
+            ${m.status!=='completed'?`<button onclick="setStatus(${m.id},'completed')" class="text-xs text-ok hover:underline mr-2">Complete</button>`:''}
+            ${m.status==='requested'?`<button onclick="schedule(${m.id})" class="text-xs text-info hover:underline mr-2">Schedule</button>`:''}
+            <button onclick="del(${m.id})" class="text-xs text-danger hover:underline">Delete</button>
         </td></tr>`).join('');
 }
 async function createMakeup(){

@@ -154,28 +154,28 @@
 <!-- Pay modal -->
 <div id="pay-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
     <div class="flex items-center justify-center min-h-screen px-4 py-8">
-        <div class="fixed inset-0 bg-gray-500 bg-opacity-75" onclick="closePay()"></div>
-        <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+        <div class="fixed inset-0 bg-ink/40" onclick="closePay()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
             <div class="flex items-start justify-between mb-4">
-                <h3 class="text-lg font-semibold text-gray-900">Pay <span id="pay-target" class="text-primary-600"></span></h3>
-                <button onclick="closePay()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+                <h3 class="font-display text-2xl text-ink">Pay <span id="pay-target" class="text-primary-600"></span></h3>
+                <button onclick="closePay()" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark"></i></button>
             </div>
 
             <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700">Amount</label>
-                <div class="mt-1 flex rounded-md shadow-sm">
-                    <span class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500">$</span>
-                    <input type="number" id="pay-amount" step="0.01" min="0.01" class="flex-1 block w-full border border-gray-300 rounded-r-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                <label class="block text-sm font-medium text-ink-2">Amount</label>
+                <div class="mt-1 flex">
+                    <span class="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-line-2 bg-surface-2 text-ink-3">$</span>
+                    <input type="number" id="pay-amount" step="0.01" min="0.01" class="flex-1 block w-full bg-surface border border-line-2 rounded-r-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
                 </div>
-                <p class="mt-1 text-xs text-gray-500">You can pay the full balance or a partial amount.</p>
+                <p class="mt-1 text-xs text-ink-3">You can pay the full balance or a partial amount.</p>
             </div>
 
             <div id="pay-methods" class="space-y-3"></div>
 
-            <div class="mt-5 border-t border-gray-100 pt-4">
-                <p class="text-xs text-gray-500 mb-2">After you send the money, let the studio know so they can match it to your account:</p>
-                <label class="block text-xs font-medium text-gray-600">Confirmation # / note (optional)</label>
-                <input type="text" id="pay-reference" placeholder="e.g. Zelle confirmation number" class="mt-1 mb-3 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+            <div class="mt-5 border-t border-line pt-4">
+                <p class="text-xs text-ink-3 mb-2">After you send the money, let the studio know so they can match it to your account:</p>
+                <label class="block text-xs font-medium text-ink-2">Confirmation # / note (optional)</label>
+                <input type="text" id="pay-reference" placeholder="e.g. Zelle confirmation number" class="mt-1 mb-3 block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
                 <div id="pay-claim-buttons" class="flex flex-wrap gap-2"></div>
             </div>
         </div>
@@ -193,7 +193,7 @@ const METHOD_LABELS = {zelle: 'Zelle', cashapp: 'Cash App', square: 'Square'};
 function toast(text, ok) {
     const t = document.getElementById('toast');
     t.textContent = text;
-    t.className = 'mb-4 p-3 rounded-md text-sm font-medium ' + (ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800');
+    t.className = 'mb-4 p-3 rounded-xl text-sm font-medium ' + (ok ? 'bg-ok/10 text-ok' : 'bg-danger/10 text-danger');
     t.classList.remove('hidden');
     window.scrollTo({top: 0, behavior: 'smooth'});
     setTimeout(() => t.classList.add('hidden'), 5000);
@@ -217,35 +217,35 @@ function renderMethods() {
     PAY_OPTIONS.forEach(opt => {
         if (opt.type === 'zelle') {
             mHtml += `
-                <div class="border border-purple-200 rounded-lg p-3 bg-purple-50">
-                    <div class="font-medium text-purple-800 text-sm mb-1"><i class="fas fa-qrcode mr-1"></i>Zelle — ${esc(opt.name || 'the studio')}</div>
+                <div class="border border-primary-200 rounded-xl p-3 bg-primary-50">
+                    <div class="font-bold text-primary-800 text-sm mb-1"><i class="fas fa-qrcode mr-1"></i>Zelle — ${esc(opt.name || 'the studio')}</div>
                     ${opt.qr ? `<img src="${opt.qr}" alt="Zelle QR" class="mx-auto my-2 max-w-[200px]">`
-                              : '<p class="text-xs text-gray-500 my-2">QR code not uploaded yet — search the name above in your bank\\'s Zelle.</p>'}
-                    ${opt.memo ? `<p class="text-xs text-purple-700">${esc(opt.memo)}</p>` : ''}
+                              : '<p class="text-xs text-ink-3 my-2">QR code not uploaded yet — search the name above in your bank\\'s Zelle.</p>'}
+                    ${opt.memo ? `<p class="text-xs text-primary-700">${esc(opt.memo)}</p>` : ''}
                 </div>`;
-            cHtml += `<button onclick="submitClaim('zelle')" class="px-3 py-2 bg-purple-600 text-white rounded text-sm font-medium hover:bg-purple-700">I sent it with Zelle</button>`;
+            cHtml += `<button onclick="submitClaim('zelle')" class="px-3 py-2 bg-primary-500 text-white rounded-xl text-sm font-bold hover:bg-primary-600">I sent it with Zelle</button>`;
         }
         if (opt.type === 'cashapp' && opt.cashtag) {
             const url = `https://cash.app/$${opt.cashtag}${amt ? '/' + amt.toFixed(2) : ''}`;
             mHtml += `
-                <div class="border border-green-200 rounded-lg p-3 bg-green-50">
-                    <div class="font-medium text-green-800 text-sm mb-2"><i class="fas fa-dollar-sign mr-1"></i>Cash App — $${esc(opt.cashtag)}</div>
-                    <a href="${url}" target="_blank" class="inline-flex items-center px-3 py-2 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700">
+                <div class="border border-ok/30 rounded-xl p-3 bg-ok/10">
+                    <div class="font-bold text-ok text-sm mb-2"><i class="fas fa-dollar-sign mr-1"></i>Cash App — $${esc(opt.cashtag)}</div>
+                    <a href="${url}" target="_blank" class="inline-flex items-center px-3 py-2 bg-ok text-white rounded-xl text-sm font-bold hover:opacity-90">
                         Open Cash App${amt ? ' for $' + amt.toFixed(2) : ''}
                     </a>
                 </div>`;
-            cHtml += `<button onclick="submitClaim('cashapp')" class="px-3 py-2 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700">I sent it with Cash App</button>`;
+            cHtml += `<button onclick="submitClaim('cashapp')" class="px-3 py-2 bg-ok text-white rounded-xl text-sm font-bold hover:opacity-90">I sent it with Cash App</button>`;
         }
         if (opt.type === 'square' && opt.configured) {
             mHtml += `
-                <div class="border border-blue-200 rounded-lg p-3 bg-blue-50">
-                    <div class="font-medium text-blue-800 text-sm"><i class="fas fa-credit-card mr-1"></i>Square (card)</div>
-                    <p class="text-xs text-blue-700 mt-1">Ask the studio to email you a Square invoice — you can pay it online by card.</p>
+                <div class="border border-info/30 rounded-xl p-3 bg-info/10">
+                    <div class="font-bold text-info text-sm"><i class="fas fa-credit-card mr-1"></i>Square (card)</div>
+                    <p class="text-xs text-info mt-1">Ask the studio to email you a Square invoice — you can pay it online by card.</p>
                 </div>`;
         }
     });
 
-    if (!mHtml) mHtml = '<p class="text-sm text-gray-500">No online payment methods are set up yet. Please contact the studio.</p>';
+    if (!mHtml) mHtml = '<p class="text-sm text-ink-3">No online payment methods are set up yet. Please contact the studio.</p>';
     methods.innerHTML = mHtml;
     claimButtons.innerHTML = cHtml;
 }
@@ -316,12 +316,12 @@ async function loadMyPayments() {
         const plans = data.plans || [];
         if (plansEl) {
             plansEl.innerHTML = plans.length ? `
-                <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-                    <h3 class="text-sm font-semibold text-indigo-800 mb-2"><i class="fas fa-calendar-check mr-1"></i>Payment Plan</h3>
-                    ${plans.map(p => `<div class="text-sm text-indigo-900 mb-2">
-                        <span class="font-medium">${esc(p.student_name)}</span> — $${p.installment_amount}/mo, ${p.paid_count}/${p.num_installments} paid
+                <div class="bg-primary-50 border border-primary-200 rounded-2xl p-4">
+                    <h3 class="text-sm font-bold text-primary-800 mb-2"><i class="fas fa-calendar-check mr-1"></i>Payment Plan</h3>
+                    ${plans.map(p => `<div class="text-sm text-primary-900 mb-2">
+                        <span class="font-bold">${esc(p.student_name)}</span> — $${p.installment_amount}/mo, ${p.paid_count}/${p.num_installments} paid
                         <div class="flex flex-wrap gap-1 mt-1">${p.installments.map(i => `
-                            <span class="px-2 py-0.5 rounded text-xs ${i.paid ? 'bg-green-100 text-green-700' : 'bg-white border border-indigo-200 text-indigo-700'}">
+                            <span class="px-2 py-0.5 rounded-lg text-xs ${i.paid ? 'bg-ok/10 text-ok' : 'bg-surface border border-primary-200 text-primary-700'}">
                                 ${new Date(i.due_date+'T00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'})} $${i.amount}${i.paid ? ' ✓' : ''}</span>`).join('')}</div>
                     </div>`).join('')}
                 </div>` : '';
@@ -330,13 +330,13 @@ async function loadMyPayments() {
         const pending = (data.pending || []).filter(p => p.status === 'pending');
         if (pending.length) {
             pendEl.innerHTML = `
-                <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                    <h3 class="text-sm font-semibold text-amber-800 mb-2"><i class="fas fa-clock mr-1"></i>Awaiting confirmation</h3>
-                    ${pending.map(p => `<div class="text-sm text-amber-900 flex justify-between py-1">
+                <div class="bg-warn/10 border border-warn/30 rounded-2xl p-4">
+                    <h3 class="text-sm font-bold text-warn mb-2"><i class="fas fa-clock mr-1"></i>Awaiting confirmation</h3>
+                    ${pending.map(p => `<div class="text-sm text-ink-2 flex justify-between py-1">
                         <span>$${p.amount} via ${METHOD_LABELS[p.method] || p.method} for ${esc(p.who)}</span>
-                        <span class="text-xs text-amber-600">${new Date(p.created_at).toLocaleDateString()}</span>
+                        <span class="text-xs text-warn">${new Date(p.created_at).toLocaleDateString()}</span>
                     </div>`).join('')}
-                    <p class="text-xs text-amber-600 mt-2">The studio will confirm and apply these to your balance.</p>
+                    <p class="text-xs text-warn mt-2">The studio will confirm and apply these to your balance.</p>
                 </div>`;
         } else {
             pendEl.innerHTML = '';
@@ -344,32 +344,32 @@ async function loadMyPayments() {
 
         const hist = data.history || [];
         if (!hist.length) {
-            histEl.innerHTML = '<p class="text-sm text-gray-500">No payments recorded yet.</p>';
+            histEl.innerHTML = '<p class="text-sm text-ink-3">No payments recorded yet.</p>';
             return;
         }
         histEl.innerHTML = `
             <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
+                <table class="min-w-full text-sm">
+                    <thead class="bg-surface-2 border-b border-line">
                         <tr>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Student</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
-                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
+                            <th class="px-4 py-2 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Date</th>
+                            <th class="px-4 py-2 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Student</th>
+                            <th class="px-4 py-2 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Method</th>
+                            <th class="px-4 py-2 text-right text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Amount</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        ${hist.map(t => `<tr>
-                            <td class="px-4 py-2 text-sm text-gray-900">${new Date(t.transaction_date).toLocaleDateString()}</td>
-                            <td class="px-4 py-2 text-sm text-gray-900">${esc(t.student_name)}</td>
-                            <td class="px-4 py-2 text-sm text-gray-600">${esc(t.payment_method || '—')}</td>
-                            <td class="px-4 py-2 text-sm text-right font-medium text-green-700">$${t.amount}</td>
+                    <tbody>
+                        ${hist.map(t => `<tr class="border-b border-line last:border-0">
+                            <td class="px-4 py-2 text-sm text-ink tabular-nums">${new Date(t.transaction_date).toLocaleDateString()}</td>
+                            <td class="px-4 py-2 text-sm text-ink">${esc(t.student_name)}</td>
+                            <td class="px-4 py-2 text-sm text-ink-2">${esc(t.payment_method || '—')}</td>
+                            <td class="px-4 py-2 text-sm text-right font-bold text-ok tabular-nums">$${t.amount}</td>
                         </tr>`).join('')}
                     </tbody>
                 </table>
             </div>`;
     } catch (err) {
-        histEl.innerHTML = '<p class="text-sm text-gray-500">Could not load payment history.</p>';
+        histEl.innerHTML = '<p class="text-sm text-ink-3">Could not load payment history.</p>';
     }
 }
 
@@ -380,7 +380,7 @@ async function loadFormsBadges() {
         try {
             const data = await (await fetch(`/api/students/${sid}/waivers`)).json();
             const unsigned = (data.waivers || []).filter(w => !w.signed).length;
-            if (unsigned) b.innerHTML = ` <span class="inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold text-white bg-red-500 rounded-full">${unsigned}</span>`;
+            if (unsigned) b.innerHTML = ` <span class="inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold text-white bg-danger rounded-full">${unsigned}</span>`;
         } catch {}
     }
 }
@@ -427,51 +427,51 @@ async function loadCompany() {
 
         const mEl = document.getElementById('company-memberships');
         mEl.innerHTML = memberships.length ? `
-            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Company Member</h3>
+            <h3 class="text-[11px] font-bold text-ink-3 uppercase tracking-[.09em] mb-2">Company Member</h3>
             <div class="flex flex-wrap gap-2">${memberships.map(m => `
-                <span class="inline-flex items-center bg-amber-50 border border-amber-200 rounded-full px-3 py-1 text-sm">
-                    <i class="fas fa-star text-amber-400 mr-1"></i>${esc(m.student_name)} — ${esc(m.group_name)}${m.role && m.role!=='Member' ? ' ('+esc(m.role)+')' : ''}
+                <span class="inline-flex items-center bg-gold-300/40 border border-gold-400 rounded-full px-3 py-1 text-sm">
+                    <i class="fas fa-star text-gold-500 mr-1"></i>${esc(m.student_name)} — ${esc(m.group_name)}${m.role && m.role!=='Member' ? ' ('+esc(m.role)+')' : ''}
                 </span>`).join('')}</div>` : '';
 
         const pEl = document.getElementById('company-performances');
         pEl.innerHTML = perfs.length ? `
-            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Upcoming Performances</h3>
+            <h3 class="text-[11px] font-bold text-ink-3 uppercase tracking-[.09em] mb-2">Upcoming Performances</h3>
             <div class="space-y-2">${perfs.map(p => {
                 const tickets = (p.ticket_types || []).length ? `
                     <div class="mt-2 flex items-center gap-2 flex-wrap text-sm">
-                        <span class="text-gray-500">Tickets:</span>
-                        <select id="tt-sel-${p.id}" class="border border-gray-300 rounded px-2 py-1 text-sm">${p.ticket_types.map(t => `<option value="${t.id}">${esc(t.name)} — $${t.price}</option>`).join('')}</select>
-                        <input id="tt-qty-${p.id}" type="number" min="1" value="1" class="border border-gray-300 rounded px-2 py-1 text-sm w-16">
-                        <button onclick="requestTickets(${p.id})" class="px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700">Request</button>
+                        <span class="text-ink-3">Tickets:</span>
+                        <select id="tt-sel-${p.id}" class="bg-surface border border-line-2 rounded-lg px-2 py-1 text-sm">${p.ticket_types.map(t => `<option value="${t.id}">${esc(t.name)} — $${t.price}</option>`).join('')}</select>
+                        <input id="tt-qty-${p.id}" type="number" min="1" value="1" class="bg-surface border border-line-2 rounded-lg px-2 py-1 text-sm w-16">
+                        <button onclick="requestTickets(${p.id})" class="px-3 py-1 bg-primary-500 text-white rounded-lg text-sm font-bold hover:bg-primary-600">Request</button>
                     </div>` : '';
-                return `<div class="border border-gray-200 rounded-lg p-3">
-                    <div class="font-medium text-gray-900">${esc(p.title)} <span class="text-xs text-amber-600 ml-1">${esc(p.group_name)}</span></div>
-                    <div class="text-sm text-gray-500">${p.performance_date ? new Date(p.performance_date+'T00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD'}${p.call_time ? ' · call '+esc(p.call_time) : ''}${p.venue ? ' · '+esc(p.venue) : ''}</div>
-                    ${p.description ? `<div class="text-xs text-gray-400 mt-1">${esc(p.description)}</div>` : ''}
+                return `<div class="border border-line rounded-xl p-3">
+                    <div class="font-bold text-ink">${esc(p.title)} <span class="text-xs text-gold-500 ml-1">${esc(p.group_name)}</span></div>
+                    <div class="text-sm text-ink-3">${p.performance_date ? new Date(p.performance_date+'T00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD'}${p.call_time ? ' · call '+esc(p.call_time) : ''}${p.venue ? ' · '+esc(p.venue) : ''}</div>
+                    ${p.description ? `<div class="text-xs text-ink-3 mt-1">${esc(p.description)}</div>` : ''}
                     ${tickets}
                 </div>`;
             }).join('')}</div>` : '';
 
         const cEl = document.getElementById('company-costumes');
         cEl.innerHTML = costumes.length ? `
-            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Costumes</h3>
+            <h3 class="text-[11px] font-bold text-ink-3 uppercase tracking-[.09em] mb-2">Costumes</h3>
             <div class="space-y-1">${costumes.map(c => `
-                <div class="flex items-center justify-between text-sm border border-gray-100 rounded px-3 py-2">
-                    <span>${esc(c.student_name)} — ${esc(c.costume_name)}${c.size ? ' <span class="text-gray-400">(size '+esc(c.size)+')</span>' : ''}</span>
-                    <span>${c.charged ? (c.paid ? '<span class="text-green-700">Paid</span>' : '<span class="text-amber-600">$'+c.fee+' due</span>') : '<span class="text-gray-400">$'+c.fee+'</span>'}</span>
+                <div class="flex items-center justify-between text-sm border border-line rounded-xl px-3 py-2">
+                    <span>${esc(c.student_name)} — ${esc(c.costume_name)}${c.size ? ' <span class="text-ink-3">(size '+esc(c.size)+')</span>' : ''}</span>
+                    <span>${c.charged ? (c.paid ? '<span class="text-ok font-bold">Paid</span>' : '<span class="text-warn">$'+c.fee+' due</span>') : '<span class="text-ink-3">$'+c.fee+'</span>'}</span>
                 </div>`).join('')}</div>` : '';
 
         const aEl = document.getElementById('company-auditions');
         aEl.innerHTML = auditions.length ? `
-            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Open Auditions</h3>
+            <h3 class="text-[11px] font-bold text-ink-3 uppercase tracking-[.09em] mb-2">Open Auditions</h3>
             <div class="space-y-2">${auditions.map(a => `
-                <div class="border border-indigo-200 bg-indigo-50 rounded-lg p-3">
-                    <div class="font-medium text-indigo-900">${esc(a.title)}${a.group_name ? ' — '+esc(a.group_name) : ''}</div>
-                    <div class="text-sm text-indigo-700">${a.audition_date ? new Date(a.audition_date+'T00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD'}${a.location_text ? ' · '+esc(a.location_text) : ''}</div>
-                    ${a.description ? `<div class="text-xs text-indigo-600 mt-1">${esc(a.description)}</div>` : ''}
+                <div class="border border-primary-200 bg-primary-50 rounded-xl p-3">
+                    <div class="font-bold text-primary-900">${esc(a.title)}${a.group_name ? ' — '+esc(a.group_name) : ''}</div>
+                    <div class="text-sm text-primary-700">${a.audition_date ? new Date(a.audition_date+'T00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD'}${a.location_text ? ' · '+esc(a.location_text) : ''}</div>
+                    ${a.description ? `<div class="text-xs text-primary-600 mt-1">${esc(a.description)}</div>` : ''}
                     <div class="mt-2 flex flex-wrap gap-2">${a.children.map(c => c.signed_up
-                        ? `<span class="text-xs text-green-700 px-2 py-1">✓ ${esc(c.student_name)} signed up</span>`
-                        : `<button onclick="signupAudition(${a.id}, ${c.student_id}, this)" class="text-xs px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700">Sign up ${esc(c.student_name)}</button>`
+                        ? `<span class="text-xs text-ok px-2 py-1">✓ ${esc(c.student_name)} signed up</span>`
+                        : `<button onclick="signupAudition(${a.id}, ${c.student_id}, this)" class="text-xs px-3 py-1 bg-primary-500 text-white rounded-lg font-bold hover:bg-primary-600">Sign up ${esc(c.student_name)}</button>`
                     ).join('')}</div>
                 </div>`).join('')}</div>` : '';
     } catch (err) { /* leave hidden */ }
@@ -524,11 +524,11 @@ async function loadMakeups() {
         const rows = data.makeups || [];
         if (!rows.length) return;
         card.classList.remove('hidden');
-        const badge = s => ({requested:'bg-amber-100 text-amber-800',scheduled:'bg-blue-100 text-blue-800',completed:'bg-green-100 text-green-800',cancelled:'bg-gray-200 text-gray-600'}[s]||'');
+        const badge = s => ({requested:'bg-warn/10 text-warn',scheduled:'bg-info/10 text-info',completed:'bg-ok/10 text-ok',cancelled:'bg-surface-2 text-ink-2'}[s]||'');
         el.innerHTML = rows.map(m => `
-            <div class="flex items-center justify-between border border-gray-100 rounded px-3 py-2">
+            <div class="flex items-center justify-between border border-line rounded-xl px-3 py-2">
                 <span>${esc(m.student_name)}${m.missed_date ? ' · missed '+m.missed_date : ''}${m.makeup_date ? ' · makeup '+m.makeup_date : ''}${m.makeup_class ? ' ('+esc(m.makeup_class)+')' : ''}</span>
-                <span class="px-2 py-0.5 rounded-full text-xs ${badge(m.status)}">${m.status}</span>
+                <span class="px-2 py-1 rounded-full text-xs font-bold ${badge(m.status)}">${m.status}</span>
             </div>`).join('');
     } catch {}
 }
@@ -549,16 +549,16 @@ async function loadRecital() {
         const mine = program.filter(p => p.my_dancers && p.my_dancers.length);
         const mEl = document.getElementById('recital-mine');
         if (mine.length) {
-            mEl.innerHTML = '<h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Your dancer\'s numbers</h3>' +
-                mine.map(p => `<div class="flex items-center gap-2 py-1 text-sm"><span class="w-6 text-right font-bold text-gray-300">${p.order_index}</span><span class="font-medium text-gray-900">${esc(p.title)}</span><span class="text-xs text-primary-600">${p.my_dancers.map(x => esc(x.student_name) + (x.part ? ' (' + esc(x.part) + ')' : '')).join(', ')}</span></div>`).join('');
+            mEl.innerHTML = '<h3 class="text-[11px] font-bold text-ink-3 uppercase tracking-[.09em] mb-2">Your dancer\'s numbers</h3>' +
+                mine.map(p => `<div class="flex items-center gap-2 py-1 text-sm"><span class="w-6 text-right font-bold text-ink-3">${p.order_index}</span><span class="font-bold text-ink">${esc(p.title)}</span><span class="text-xs text-primary-600">${p.my_dancers.map(x => esc(x.student_name) + (x.part ? ' (' + esc(x.part) + ')' : '')).join(', ')}</span></div>`).join('');
         } else {
-            mEl.innerHTML = '<p class="text-sm text-gray-500">Your dancer isn\'t assigned to a number yet — check back soon.</p>';
+            mEl.innerHTML = '<p class="text-sm text-ink-3">Your dancer isn\'t assigned to a number yet — check back soon.</p>';
         }
 
         const prog = document.getElementById('recital-program');
         prog.innerHTML = program.length
-            ? program.map(p => `<div class="flex gap-2 py-0.5 text-sm ${p.my_dancers.length ? 'bg-primary-50 rounded px-1' : ''}"><span class="w-6 text-right text-gray-300">${p.order_index}</span><span class="text-gray-700">${esc(p.title)}${p.is_finale ? ' <span class="text-xs text-purple-600">(Finale)</span>' : ''}</span></div>`).join('')
-            : '<p class="text-sm text-gray-400">Program coming soon.</p>';
+            ? program.map(p => `<div class="flex gap-2 py-0.5 text-sm ${p.my_dancers.length ? 'bg-primary-50 rounded px-1' : ''}"><span class="w-6 text-right text-ink-3">${p.order_index}</span><span class="text-ink-2">${esc(p.title)}${p.is_finale ? ' <span class="text-xs text-primary-600">(Finale)</span>' : ''}</span></div>`).join('')
+            : '<p class="text-sm text-ink-3">Program coming soon.</p>';
     } catch {}
 }
 

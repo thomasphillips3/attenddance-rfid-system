@@ -1,50 +1,47 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="min-h-full">
-    <div class="bg-white shadow">
-        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-            <h1 class="text-3xl font-bold text-gray-900"><i class="fas fa-medal text-primary-500 mr-2"></i>Skills &amp; Progress</h1>
-            <p class="mt-1 text-sm text-gray-600">Define skills/levels and mark what each dancer has achieved</p>
+<div class="mb-6">
+    <p class="text-[11px] font-bold uppercase tracking-[.12em] text-ink-3">Classes &amp; Attendance</p>
+    <h1 class="font-display text-3xl text-ink leading-tight mt-1">Skills &amp; Progress</h1>
+    <p class="mt-1 text-sm text-ink-3">Define skills/levels and mark what each dancer has achieved</p>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div id="msg" class="hidden lg:col-span-2 p-3 rounded-xl text-sm font-medium"></div>
+
+    <!-- Skills list -->
+    <div class="bg-surface border border-line rounded-2xl shadow-soft p-5">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="font-display text-xl text-ink">Skills</h2>
+            <button onclick="createSkill()" class="px-3 py-1.5 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-1"></i>Add Skill</button>
         </div>
+        <div id="skills-list" class="space-y-2 text-sm"><p class="text-ink-3">Loading…</p></div>
     </div>
-    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div id="msg" class="hidden lg:col-span-2 p-3 rounded-md text-sm font-medium"></div>
 
-        <!-- Skills list -->
-        <div class="bg-white shadow rounded-lg p-5">
-            <div class="flex items-center justify-between mb-3">
-                <h2 class="font-semibold text-gray-900">Skills</h2>
-                <button onclick="createSkill()" class="px-3 py-1.5 bg-primary-600 text-white rounded text-sm"><i class="fas fa-plus mr-1"></i>Add Skill</button>
-            </div>
-            <div id="skills-list" class="space-y-2 text-sm"><p class="text-gray-500">Loading…</p></div>
-        </div>
-
-        <!-- Mark a student -->
-        <div class="bg-white shadow rounded-lg p-5">
-            <h2 class="font-semibold text-gray-900 mb-3">Mark a Dancer's Skills</h2>
-            <select id="stu" onchange="loadStudentSkills()" class="border border-gray-300 rounded px-3 py-2 text-sm w-full mb-3">
-                <option value="">Choose a dancer…</option>
-                {% for s in students %}<option value="{{ s.id }}">{{ s.full_name }}</option>{% endfor %}
-            </select>
-            <div id="student-skills" class="space-y-2 text-sm text-gray-500">Pick a dancer to mark skills.</div>
-        </div>
+    <!-- Mark a student -->
+    <div class="bg-surface border border-line rounded-2xl shadow-soft p-5">
+        <h2 class="font-display text-xl text-ink mb-3">Mark a Dancer's Skills</h2>
+        <select id="stu" onchange="loadStudentSkills()" class="bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm w-full mb-3 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+            <option value="">Choose a dancer…</option>
+            {% for s in students %}<option value="{{ s.id }}">{{ s.full_name }}</option>{% endfor %}
+        </select>
+        <div id="student-skills" class="space-y-2 text-sm text-ink-3">Pick a dancer to mark skills.</div>
     </div>
 </div>
 {% endblock %}
 {% block extra_js %}
 <script>
 const CLASSES=[{% for c in classes %}{id:{{c.id}},name:"{{c.name|e}}"},{% endfor %}];
-function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;m.className='lg:col-span-2 mb-2 p-3 rounded-md text-sm font-medium '+(ok?'bg-green-100 text-green-800':'bg-red-100 text-red-800');m.classList.remove('hidden');setTimeout(()=>m.classList.add('hidden'),3500);}
+function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;m.className='lg:col-span-2 mb-2 p-3 rounded-xl text-sm font-medium '+(ok?'bg-ok/10 text-ok':'bg-danger/10 text-danger');m.classList.remove('hidden');setTimeout(()=>m.classList.add('hidden'),3500);}
 function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 async function loadSkills(){
     const el=document.getElementById('skills-list');
     const data=await (await fetch('/api/skills')).json();
     const sk=data.skills||[];
-    if(!sk.length){el.innerHTML='<p class="text-gray-500">No skills defined yet.</p>';return;}
-    el.innerHTML=sk.map(s=>`<div class="flex items-center justify-between border-b border-gray-100 py-1">
-        <span>${esc(s.name)}${s.category?` <span class="text-xs text-gray-400">${esc(s.category)}</span>`:''}<span class="text-xs text-gray-400 ml-2">${s.achieved_count} earned</span></span>
-        <button onclick="delSkill(${s.id})" class="text-red-500 hover:text-red-700 text-xs">&times;</button></div>`).join('');
+    if(!sk.length){el.innerHTML='<p class="text-ink-3">No skills defined yet.</p>';return;}
+    el.innerHTML=sk.map(s=>`<div class="flex items-center justify-between border-b border-line last:border-0 py-1">
+        <span class="text-ink-2">${esc(s.name)}${s.category?` <span class="text-xs text-ink-3">${esc(s.category)}</span>`:''}<span class="text-xs text-ink-3 ml-2">${s.achieved_count} earned</span></span>
+        <button onclick="delSkill(${s.id})" class="text-danger hover:opacity-70 text-xs">&times;</button></div>`).join('');
 }
 async function createSkill(){
     const name=prompt('Skill / level name (e.g. Pirouette, Level 2):');if(!name)return;
@@ -60,10 +57,10 @@ async function loadStudentSkills(){
     if(!sid){el.innerHTML='Pick a dancer to mark skills.';return;}
     const data=await (await fetch(`/api/students/${sid}/skills`)).json();
     const sk=data.skills||[];
-    if(!sk.length){el.innerHTML='<p class="text-gray-500">No skills defined yet.</p>';return;}
+    if(!sk.length){el.innerHTML='<p class="text-ink-3">No skills defined yet.</p>';return;}
     el.innerHTML=sk.map(s=>`<label class="flex items-center justify-between py-1 cursor-pointer">
-        <span>${esc(s.name)}${s.category?` <span class="text-xs text-gray-400">${esc(s.category)}</span>`:''}</span>
-        <input type="checkbox" ${s.achieved?'checked':''} onchange="toggleSkill(${sid},${s.id})"></label>`).join('')
+        <span class="text-ink-2">${esc(s.name)}${s.category?` <span class="text-xs text-ink-3">${esc(s.category)}</span>`:''}</span>
+        <input type="checkbox" class="accent-primary-500" ${s.achieved?'checked':''} onchange="toggleSkill(${sid},${s.id})"></label>`).join('')
         + `<a href="/students/${sid}/certificate" target="_blank" class="inline-block mt-3 text-sm text-primary-600 hover:underline"><i class="fas fa-award mr-1"></i>View certificate</a>`;
 }
 async function toggleSkill(sid,skid){await fetch(`/api/students/${sid}/skills/${skid}/toggle`,{method:'POST'});loadSkills();}

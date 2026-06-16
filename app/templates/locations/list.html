@@ -1,71 +1,67 @@
 {% extends "base.html" %}
 
-{% block content %}
-<div class="min-h-full">
-    <div class="bg-white shadow">
-        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between">
-                <div>
-                    <h1 class="text-3xl font-bold text-gray-900">Locations</h1>
-                    <p class="mt-1 text-sm text-gray-600">Manage studio and rehearsal locations</p>
-                </div>
-                <button onclick="openAddModal()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
-                    <i class="fas fa-plus mr-2"></i>Add Location
-                </button>
-            </div>
-        </div>
-    </div>
+{% set INPUT = "mt-1 block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
+{% set LABEL = "block text-sm font-medium text-ink-2" %}
 
-    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div id="locations-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div class="col-span-full text-center text-gray-500 py-8">Loading locations...</div>
-        </div>
+{% block content %}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+    <div>
+        <div class="text-[11px] font-bold uppercase tracking-[.09em] text-primary-600">Studio</div>
+        <h1 class="font-display text-3xl text-ink leading-tight mt-1">Locations</h1>
+        <p class="mt-1 text-sm text-ink-2">Manage studio and rehearsal locations</p>
     </div>
+    <button onclick="openAddModal()" class="inline-flex items-center px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">
+        <i class="fas fa-plus mr-2"></i>Add Location
+    </button>
+</div>
+
+<div id="locations-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div class="col-span-full text-center text-ink-3 py-8">Loading locations...</div>
 </div>
 
 <!-- Add/Edit Modal -->
 <div id="location-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
     <div class="flex items-center justify-center min-h-screen px-4">
-        <div class="fixed inset-0 bg-gray-500 bg-opacity-75" onclick="closeModal()"></div>
-        <div class="relative bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
-            <h3 id="modal-title" class="text-lg font-medium text-gray-900 mb-4">Add Location</h3>
+        <div class="fixed inset-0 bg-ink/40" onclick="closeModal()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-lg w-full p-6">
+            <h3 id="modal-title" class="font-display text-2xl text-ink mb-4">Add Location</h3>
             <form id="location-form" onsubmit="saveLocation(event)">
                 <input type="hidden" id="location-id">
                 <div class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Name *</label>
-                        <input type="text" id="loc-name" required placeholder="e.g. Oak Park Rec Center" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                        <label class="{{ LABEL }}">Name *</label>
+                        <input type="text" id="loc-name" required placeholder="e.g. Oak Park Rec Center" class="{{ INPUT }}">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Address</label>
-                        <input type="text" id="loc-address" placeholder="123 Main St" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                        <label class="{{ LABEL }}">Address</label>
+                        <input type="text" id="loc-address" placeholder="123 Main St" class="{{ INPUT }}">
                     </div>
                     <div class="grid grid-cols-6 gap-3">
                         <div class="col-span-3">
-                            <label class="block text-sm font-medium text-gray-700">City</label>
-                            <input type="text" id="loc-city" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                            <label class="{{ LABEL }}">City</label>
+                            <input type="text" id="loc-city" class="{{ INPUT }}">
                         </div>
                         <div class="col-span-1">
-                            <label class="block text-sm font-medium text-gray-700">State</label>
-                            <input type="text" id="loc-state" maxlength="2" placeholder="CA" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                            <label class="{{ LABEL }}">State</label>
+                            <input type="text" id="loc-state" maxlength="2" placeholder="CA" class="{{ INPUT }}">
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-sm font-medium text-gray-700">Zip</label>
-                            <input type="text" id="loc-zip" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                            <label class="{{ LABEL }}">Zip</label>
+                            <input type="text" id="loc-zip" class="{{ INPUT }}">
                         </div>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Phone</label>
-                        <input type="tel" id="loc-phone" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                        <label class="{{ LABEL }}">Phone</label>
+                        <input type="tel" id="loc-phone" class="{{ INPUT }}">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Notes</label>
-                        <textarea id="loc-notes" rows="2" placeholder="Hours, parking info, room details..." class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"></textarea>
+                        <label class="{{ LABEL }}">Notes</label>
+                        <textarea id="loc-notes" rows="2" placeholder="Hours, parking info, room details..." class="{{ INPUT }}"></textarea>
                     </div>
                 </div>
                 <div class="mt-6 flex justify-end space-x-3">
-                    <button type="button" onclick="closeModal()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-                    <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">Save</button>
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl border border-line-2 text-ink-2 font-bold hover:bg-surface-2 text-sm">Cancel</button>
+                    <button type="submit" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Save</button>
                 </div>
             </form>
         </div>
@@ -91,40 +87,40 @@ async function loadLocations() {
         renderLocations(allLocations);
     } catch (err) {
         document.getElementById('locations-grid').innerHTML =
-            '<div class="col-span-full text-center text-red-500 py-8">Failed to load locations</div>';
+            '<div class="col-span-full text-center text-danger py-8">Failed to load locations</div>';
     }
 }
 
 function renderLocations(locations) {
     const grid = document.getElementById('locations-grid');
     if (!locations.length) {
-        grid.innerHTML = '<div class="col-span-full text-center text-gray-500 py-8">No locations yet. Click "Add Location" to get started.</div>';
+        grid.innerHTML = '<div class="col-span-full text-center text-ink-3 py-8">No locations yet. Click "Add Location" to get started.</div>';
         return;
     }
     grid.innerHTML = locations.map(loc => `
-        <div class="bg-white shadow-lg rounded-lg overflow-hidden card-hover">
+        <div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden card-hover">
             <div class="p-5">
                 <div class="flex items-start justify-between">
                     <div class="flex items-center">
-                        <div class="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                            <i class="fas fa-map-marker-alt text-green-600"></i>
+                        <div class="h-10 w-10 rounded-full bg-ok/10 flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-map-marker-alt text-ok"></i>
                         </div>
                         <div class="ml-3">
-                            <h3 class="text-lg font-semibold text-gray-900">${esc(loc.name)}</h3>
-                            ${loc.full_address ? `<p class="text-sm text-gray-500">${esc(loc.full_address)}</p>` : ''}
+                            <h3 class="font-bold text-ink">${esc(loc.name)}</h3>
+                            ${loc.full_address ? `<p class="text-sm text-ink-3">${esc(loc.full_address)}</p>` : ''}
                         </div>
                     </div>
                     <div class="flex space-x-2">
-                        <button data-id="${loc.id}" class="edit-btn text-primary-600 hover:text-primary-900" title="Edit"><i class="fas fa-edit"></i></button>
-                        <button data-id="${loc.id}" data-name="${esc(loc.name)}" class="delete-btn text-red-600 hover:text-red-900" title="Deactivate"><i class="fas fa-trash"></i></button>
+                        <button data-id="${loc.id}" class="edit-btn text-primary-600 hover:text-primary-800" title="Edit"><i class="fas fa-edit"></i></button>
+                        <button data-id="${loc.id}" data-name="${esc(loc.name)}" class="delete-btn text-danger hover:opacity-70" title="Deactivate"><i class="fas fa-trash"></i></button>
                     </div>
                 </div>
                 <div class="mt-4 space-y-1">
-                    ${loc.phone ? `<p class="text-sm text-gray-600"><i class="fas fa-phone text-gray-400 w-4 mr-2"></i>${esc(loc.phone)}</p>` : ''}
-                    ${loc.notes ? `<p class="text-sm text-gray-600"><i class="fas fa-sticky-note text-gray-400 w-4 mr-2"></i>${esc(loc.notes)}</p>` : ''}
+                    ${loc.phone ? `<p class="text-sm text-ink-2"><i class="fas fa-phone text-ink-3 w-4 mr-2"></i>${esc(loc.phone)}</p>` : ''}
+                    ${loc.notes ? `<p class="text-sm text-ink-2"><i class="fas fa-sticky-note text-ink-3 w-4 mr-2"></i>${esc(loc.notes)}</p>` : ''}
                 </div>
-                <div class="mt-4 pt-3 border-t border-gray-100">
-                    <span class="inline-flex items-center text-sm text-gray-500">
+                <div class="mt-4 pt-3 border-t border-line">
+                    <span class="inline-flex items-center text-sm text-ink-3">
                         <i class="fas fa-calendar-alt mr-1"></i>${loc.class_count} active class${loc.class_count !== 1 ? 'es' : ''}
                     </span>
                 </div>

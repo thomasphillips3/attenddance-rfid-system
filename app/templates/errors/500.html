@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="min-h-full flex items-center justify-center py-12">
+<div class="min-h-full flex items-center justify-center py-12 bg-canvas">
     <div class="text-center">
-        <h1 class="text-6xl font-bold text-red-500">500</h1>
-        <p class="mt-4 text-xl text-gray-600">Something went wrong</p>
-        <a href="{{ url_for('main.index') }}" class="mt-6 inline-block px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">Go Home</a>
+        <i class="fas fa-shoe-prints text-primary-500 text-4xl mb-4"></i>
+        <h1 class="font-display text-6xl text-ink">500</h1>
+        <p class="mt-4 text-xl text-ink-2">Something went wrong</p>
+        <a href="{{ url_for('main.index') }}" class="mt-6 inline-block px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Go Home</a>
     </div>
 </div>
 {% endblock %}

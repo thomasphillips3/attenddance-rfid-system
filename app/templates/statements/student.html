@@ -3,45 +3,45 @@
 <div class="max-w-3xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
     <div class="flex justify-between items-center mb-4 print:hidden">
         <div class="flex gap-2 items-center">
-            <label class="text-sm text-gray-600">Year</label>
-            <select onchange="location.href='?year='+this.value" class="border border-gray-300 rounded px-2 py-1 text-sm">
+            <label class="text-sm text-ink-2">Year</label>
+            <select onchange="location.href='?year='+this.value" class="bg-surface border border-line-2 rounded-xl px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
                 {% for y in range(2024, year + 2) %}
                 <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
                 {% endfor %}
             </select>
         </div>
-        <button onclick="window.print()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-print mr-2"></i>Print / Save PDF</button>
+        <button onclick="window.print()" class="px-4 py-2 bg-primary-500 text-white rounded-xl text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-print mr-2"></i>Print / Save PDF</button>
     </div>
 
-    <div class="bg-white shadow rounded-lg p-8 print:shadow-none">
-        <div class="flex justify-between items-start border-b pb-4 mb-4">
+    <div class="bg-surface border border-line rounded-2xl shadow-soft p-8 print:shadow-none print:border-0">
+        <div class="flex justify-between items-start border-b border-line pb-4 mb-4">
             <div>
-                <h1 class="text-2xl font-bold text-gray-900">{{ APP_NAME }}</h1>
-                <p class="text-sm text-gray-600">LaShelle's School of Dance</p>
+                <h1 class="font-display text-2xl text-ink">{{ APP_NAME }}</h1>
+                <p class="text-sm text-ink-2">LaShelle's School of Dance</p>
             </div>
             <div class="text-right">
-                <h2 class="text-lg font-semibold text-gray-900">{{ year }} Account Statement</h2>
-                <p class="text-sm text-gray-600">{{ student.full_name }}</p>
+                <h2 class="font-display text-lg text-ink">{{ year }} Account Statement</h2>
+                <p class="text-sm text-ink-2">{{ student.full_name }}</p>
             </div>
         </div>
 
         <table class="min-w-full text-sm mb-4">
-            <thead><tr class="text-xs text-gray-500 uppercase border-b">
+            <thead><tr class="text-xs text-ink-3 uppercase border-b border-line">
                 <th class="text-left py-2">Date</th><th class="text-left py-2">Description</th>
                 <th class="text-right py-2">Charge</th><th class="text-right py-2">Payment</th><th class="text-right py-2">Balance</th>
             </tr></thead>
             <tbody>
-                <tr class="border-b border-gray-100">
-                    <td class="py-2 text-gray-400" colspan="4">Balance brought forward into {{ year }}</td>
-                    <td class="py-2 text-right font-medium">${{ '%.2f' % prior_balance }}</td>
+                <tr class="border-b border-line last:border-0">
+                    <td class="py-2 text-ink-3" colspan="4">Balance brought forward into {{ year }}</td>
+                    <td class="py-2 text-right font-medium tabular-nums">${{ '%.2f' % prior_balance }}</td>
                 </tr>
                 {% for r in rows %}
-                <tr class="border-b border-gray-100">
-                    <td class="py-2">{{ r.t.transaction_date.strftime('%b %d') }}</td>
-                    <td class="py-2">{{ r.t.description or r.t.category }}{% if r.t.type == 'payment' and r.t.payment_method and r.t.payment_method != 'n/a' %} <span class="text-gray-400">({{ r.t.payment_method }})</span>{% endif %}</td>
-                    <td class="py-2 text-right">{% if r.t.type == 'charge' %}${{ '%.2f' % r.t.amount }}{% endif %}</td>
-                    <td class="py-2 text-right">{% if r.t.type == 'payment' %}${{ '%.2f' % r.t.amount }}{% endif %}</td>
-                    <td class="py-2 text-right">${{ '%.2f' % r.running }}</td>
+                <tr class="border-b border-line last:border-0">
+                    <td class="py-2 tabular-nums">{{ r.t.transaction_date.strftime('%b %d') }}</td>
+                    <td class="py-2">{{ r.t.description or r.t.category }}{% if r.t.type == 'payment' and r.t.payment_method and r.t.payment_method != 'n/a' %} <span class="text-ink-3">({{ r.t.payment_method }})</span>{% endif %}</td>
+                    <td class="py-2 text-right tabular-nums">{% if r.t.type == 'charge' %}${{ '%.2f' % r.t.amount }}{% endif %}</td>
+                    <td class="py-2 text-right tabular-nums">{% if r.t.type == 'payment' %}${{ '%.2f' % r.t.amount }}{% endif %}</td>
+                    <td class="py-2 text-right tabular-nums">${{ '%.2f' % r.running }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -49,12 +49,12 @@
 
         <div class="flex justify-end">
             <table class="text-sm">
-                <tr><td class="pr-8 py-1 text-gray-600">Total charged {{ year }}</td><td class="text-right py-1">${{ '%.2f' % total_charges }}</td></tr>
-                <tr><td class="pr-8 py-1 text-gray-600">Total paid {{ year }}</td><td class="text-right py-1">${{ '%.2f' % total_payments }}</td></tr>
-                <tr class="border-t font-bold"><td class="pr-8 py-1">Ending balance</td><td class="text-right py-1">${{ '%.2f' % ending_balance }}</td></tr>
+                <tr><td class="pr-8 py-1 text-ink-2">Total charged {{ year }}</td><td class="text-right py-1 tabular-nums">${{ '%.2f' % total_charges }}</td></tr>
+                <tr><td class="pr-8 py-1 text-ink-2">Total paid {{ year }}</td><td class="text-right py-1 tabular-nums">${{ '%.2f' % total_payments }}</td></tr>
+                <tr class="border-t border-line font-bold"><td class="pr-8 py-1 text-ink">Ending balance</td><td class="text-right py-1 tabular-nums">${{ '%.2f' % ending_balance }}</td></tr>
             </table>
         </div>
-        <p class="text-xs text-gray-400 mt-6">Generated from AttenDANCE. Keep for your records.</p>
+        <p class="text-xs text-ink-3 mt-6">Generated from AttenDANCE. Keep for your records.</p>
     </div>
 </div>
 {% endblock %}

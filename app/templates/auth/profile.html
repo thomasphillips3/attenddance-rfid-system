@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="max-w-2xl mx-auto py-8 px-4">
-    <h1 class="text-3xl font-bold text-gray-900 mb-6">Your Profile</h1>
-    <div class="bg-white shadow-lg rounded-lg p-6">
+    <h1 class="font-display text-3xl text-ink mb-6">Your Profile</h1>
+    <div class="bg-surface border border-line rounded-2xl shadow-soft p-6">
         <div class="space-y-4">
-            <div><span class="text-sm font-medium text-gray-500">Name:</span> <span class="text-gray-900">{{ user.full_name }}</span></div>
-            <div><span class="text-sm font-medium text-gray-500">Username:</span> <span class="text-gray-900">{{ user.username }}</span></div>
-            <div><span class="text-sm font-medium text-gray-500">Email:</span> <span class="text-gray-900">{{ user.email }}</span></div>
-            <div><span class="text-sm font-medium text-gray-500">Role:</span> <span class="text-gray-900">{{ 'Admin' if user.is_admin else 'Teacher' }}</span></div>
-            <div><span class="text-sm font-medium text-gray-500">Last Login:</span> <span class="text-gray-900">{{ user.last_login.strftime('%b %d, %Y %I:%M %p') if user.last_login else 'Never' }}</span></div>
+            <div><span class="text-sm font-medium text-ink-3">Name:</span> <span class="text-ink">{{ user.full_name }}</span></div>
+            <div><span class="text-sm font-medium text-ink-3">Username:</span> <span class="text-ink">{{ user.username }}</span></div>
+            <div><span class="text-sm font-medium text-ink-3">Email:</span> <span class="text-ink">{{ user.email }}</span></div>
+            <div><span class="text-sm font-medium text-ink-3">Role:</span> <span class="text-ink">{{ 'Admin' if user.is_admin else 'Teacher' }}</span></div>
+            <div><span class="text-sm font-medium text-ink-3">Last Login:</span> <span class="text-ink">{{ user.last_login.strftime('%b %d, %Y %I:%M %p') if user.last_login else 'Never' }}</span></div>
         </div>
         <div class="mt-6">
-            <a href="{{ url_for('auth.change_password') }}" class="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 text-sm font-medium">
+            <a href="{{ url_for('auth.change_password') }}" class="inline-flex items-center px-4 py-2 rounded-xl bg-primary-500 text-white hover:bg-primary-600 text-sm font-bold shadow-sm">
                 <i class="fas fa-key mr-2"></i>Change Password
             </a>
         </div>

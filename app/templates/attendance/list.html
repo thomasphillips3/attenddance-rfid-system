@@ -1,70 +1,65 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="min-h-full">
-    <div class="bg-white shadow">
-        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between">
-                <div>
-                    <h1 class="text-3xl font-bold text-gray-900">Attendance</h1>
-                    <p class="mt-1 text-sm text-gray-600">Track student check-ins</p>
-                </div>
-                <button onclick="openCheckinModal()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
-                    <i class="fas fa-hand-paper mr-2"></i>Manual Check-in
-                </button>
-            </div>
-        </div>
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+    <div>
+        <div class="text-[11px] font-bold uppercase tracking-[.09em] text-primary-600">Classes &amp; Attendance</div>
+        <h1 class="font-display text-3xl text-ink leading-tight mt-1">Attendance</h1>
+        <p class="mt-1 text-sm text-ink-2">Track student check-ins</p>
     </div>
+    <button onclick="openCheckinModal()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">
+        <i class="fas fa-hand-paper"></i>Manual Check-in
+    </button>
+</div>
 
-    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div class="bg-white shadow-lg rounded-lg overflow-hidden mb-6">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <h3 class="text-lg font-medium text-gray-900"><i class="fas fa-calendar-day text-primary-500 mr-2"></i>Today's Attendance</h3>
-            </div>
-            <div id="today-attendance" class="px-6 py-4"><p class="text-gray-500">Loading...</p></div>
-        </div>
+<div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden mb-6">
+    <div class="px-6 py-4 border-b border-line">
+        <h3 class="font-display text-xl text-ink"><i class="fas fa-calendar-day text-primary-500 mr-2"></i>Today's Attendance</h3>
+    </div>
+    <div id="today-attendance" class="px-6 py-4"><p class="text-ink-3">Loading…</p></div>
+</div>
 
-        <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <h3 class="text-lg font-medium text-gray-900"><i class="fas fa-history text-primary-500 mr-2"></i>Attendance History</h3>
-            </div>
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Class</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Method</th>
-                    </tr>
-                </thead>
-                <tbody id="attendance-table" class="bg-white divide-y divide-gray-200">
-                    <tr><td colspan="5" class="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
-                </tbody>
-            </table>
-        </div>
+<div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
+    <div class="px-6 py-4 border-b border-line">
+        <h3 class="font-display text-xl text-ink"><i class="fas fa-history text-primary-500 mr-2"></i>Attendance History</h3>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead class="bg-surface-2 border-b border-line">
+                <tr>
+                    <th class="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Student</th>
+                    <th class="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Class</th>
+                    <th class="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Date</th>
+                    <th class="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Time</th>
+                    <th class="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Method</th>
+                </tr>
+            </thead>
+            <tbody id="attendance-table">
+                <tr><td colspan="5" class="px-5 py-8 text-center text-ink-3">Loading…</td></tr>
+            </tbody>
+        </table>
     </div>
 </div>
 
 <div id="checkin-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
     <div class="flex items-center justify-center min-h-screen px-4">
-        <div class="fixed inset-0 bg-gray-500 bg-opacity-75" onclick="closeCheckinModal()"></div>
-        <div class="relative bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
-            <h3 class="text-lg font-medium text-gray-900 mb-4">Manual Check-in</h3>
+        <div class="fixed inset-0 bg-ink/40" onclick="closeCheckinModal()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-lg w-full p-6">
+            <h3 class="font-display text-2xl text-ink mb-4">Manual Check-in</h3>
             <form id="checkin-form" onsubmit="doCheckin(event)">
                 <div class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Student *</label>
-                        <select id="checkin-student" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"><option value="">Select student...</option></select>
+                        <label class="block text-sm font-medium text-ink-2">Student *</label>
+                        <select id="checkin-student" required class="mt-1 block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400"><option value="">Select student...</option></select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Class *</label>
-                        <select id="checkin-class" required class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"><option value="">Select class...</option></select>
+                        <label class="block text-sm font-medium text-ink-2">Class *</label>
+                        <select id="checkin-class" required class="mt-1 block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400"><option value="">Select class...</option></select>
                     </div>
                 </div>
                 <div class="mt-6 flex justify-end space-x-3">
-                    <button type="button" onclick="closeCheckinModal()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-                    <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">Check In</button>
+                    <button type="button" onclick="closeCheckinModal()" class="px-4 py-2 rounded-xl border border-line-2 text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                    <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Check In</button>
                 </div>
             </form>
         </div>
@@ -81,10 +76,10 @@ async function loadToday() {
         const res = await fetch('/api/attendance/today');
         const data = await res.json();
         const el = document.getElementById('today-attendance');
-        if (!data.attendance.length) { el.innerHTML = '<p class="text-gray-500">No check-ins today yet.</p>'; return; }
-        el.innerHTML = `<p class="text-sm text-gray-600 mb-3">${data.count} check-in(s) today</p>` +
-            data.attendance.map(a => `<div class="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"><span class="text-sm font-medium text-gray-900">${esc(a.student_name)}</span><span class="text-sm text-gray-500">${esc(a.class_name)} - ${new Date(a.check_in_time).toLocaleTimeString()}</span></div>`).join('');
-    } catch (err) { document.getElementById('today-attendance').innerHTML = '<p class="text-red-500">Failed to load</p>'; }
+        if (!data.attendance.length) { el.innerHTML = '<p class="text-ink-3">No check-ins today yet.</p>'; return; }
+        el.innerHTML = `<p class="text-sm text-ink-2 mb-3">${data.count} check-in(s) today</p>` +
+            data.attendance.map(a => `<div class="flex items-center justify-between py-2 border-b border-line last:border-0"><span class="text-sm font-medium text-ink">${esc(a.student_name)}</span><span class="text-sm text-ink-3">${esc(a.class_name)} - ${new Date(a.check_in_time).toLocaleTimeString()}</span></div>`).join('');
+    } catch (err) { document.getElementById('today-attendance').innerHTML = '<p class="text-danger">Failed to load</p>'; }
 }
 
 async function loadHistory() {
@@ -92,21 +87,21 @@ async function loadHistory() {
         const res = await fetch('/api/attendance?per_page=50');
         const data = await res.json();
         const tbody = document.getElementById('attendance-table');
-        if (!data.attendance.length) { tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-8 text-center text-gray-500">No attendance records yet.</td></tr>'; return; }
+        if (!data.attendance.length) { tbody.innerHTML = '<tr><td colspan="5" class="px-5 py-8 text-center text-ink-3">No attendance records yet.</td></tr>'; return; }
         tbody.innerHTML = data.attendance.map(a => `
-            <tr>
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${esc(a.student_name)}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${esc(a.class_name)}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${a.attendance_date}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${new Date(a.check_in_time).toLocaleTimeString()}</td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${a.check_in_method === 'rfid' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}">
+            <tr class="border-b border-line last:border-0">
+                <td class="px-5 py-3.5 whitespace-nowrap text-sm font-medium text-ink">${esc(a.student_name)}</td>
+                <td class="px-5 py-3.5 whitespace-nowrap text-sm text-ink-3">${esc(a.class_name)}</td>
+                <td class="px-5 py-3.5 whitespace-nowrap text-sm text-ink-3">${a.attendance_date}</td>
+                <td class="px-5 py-3.5 whitespace-nowrap text-sm text-ink-3">${new Date(a.check_in_time).toLocaleTimeString()}</td>
+                <td class="px-5 py-3.5 whitespace-nowrap">
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${a.check_in_method === 'rfid' ? 'bg-info/10 text-info' : 'bg-surface-2 text-ink-2'}">
                         <i class="fas fa-${a.check_in_method === 'rfid' ? 'credit-card' : 'hand-paper'} mr-1"></i>${a.check_in_method}
                     </span>
                 </td>
             </tr>
         `).join('');
-    } catch (err) { document.getElementById('attendance-table').innerHTML = '<tr><td colspan="5" class="px-6 py-8 text-center text-red-500">Failed to load</td></tr>'; }
+    } catch (err) { document.getElementById('attendance-table').innerHTML = '<tr><td colspan="5" class="px-5 py-8 text-center text-danger">Failed to load</td></tr>'; }
 }
 
 async function openCheckinModal() {

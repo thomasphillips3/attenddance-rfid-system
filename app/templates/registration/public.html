@@ -26,45 +26,45 @@
             <p class="text-ink-2">Registration</p>
         </div>
 
-        <div id="closed" class="hidden bg-white rounded-lg shadow p-8 text-center text-gray-600">
-            <i class="fas fa-door-closed text-3xl text-gray-300 mb-3"></i>
+        <div id="closed" class="hidden bg-surface border border-line rounded-2xl shadow-soft p-8 text-center text-ink-2">
+            <i class="fas fa-door-closed text-3xl text-ink-3 mb-3"></i>
             <p class="text-lg font-medium">Registration is currently closed.</p>
             <p class="text-sm mt-2">Please check back soon or contact the studio.</p>
         </div>
 
-        <div id="done" class="hidden bg-white rounded-lg shadow p-8 text-center">
+        <div id="done" class="hidden bg-surface border border-line rounded-2xl shadow-soft p-8 text-center">
             <i class="fas fa-circle-check text-4xl text-green-500 mb-3"></i>
-            <p id="done-msg" class="text-lg text-gray-800"></p>
+            <p id="done-msg" class="text-lg text-ink"></p>
         </div>
 
-        <form id="reg-form" class="hidden bg-white rounded-lg shadow p-6 space-y-5">
-            <p id="welcome" class="text-sm text-gray-600"></p>
+        <form id="reg-form" class="hidden bg-surface border border-line rounded-2xl shadow-soft p-6 space-y-5">
+            <p id="welcome" class="text-sm text-ink-2"></p>
 
             <div>
-                <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Parent / Guardian</h2>
+                <h2 class="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-2">Parent / Guardian</h2>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <input id="p-name" placeholder="Your full name *" class="border border-gray-300 rounded-md px-3 py-2 text-sm">
-                    <input id="p-email" type="email" placeholder="Email *" class="border border-gray-300 rounded-md px-3 py-2 text-sm">
-                    <input id="p-phone" placeholder="Phone" class="border border-gray-300 rounded-md px-3 py-2 text-sm sm:col-span-2">
+                    <input id="p-name" placeholder="Your full name *" class="border border-line-2 rounded-md px-3 py-2 text-sm">
+                    <input id="p-email" type="email" placeholder="Email *" class="border border-line-2 rounded-md px-3 py-2 text-sm">
+                    <input id="p-phone" placeholder="Phone" class="border border-line-2 rounded-md px-3 py-2 text-sm sm:col-span-2">
                 </div>
             </div>
 
             <div>
                 <div class="flex items-center justify-between mb-2">
-                    <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Dancer(s)</h2>
+                    <h2 class="text-sm font-semibold text-ink-2 uppercase tracking-wider">Dancer(s)</h2>
                     <button type="button" onclick="addStudent()" class="text-xs text-primary-600 hover:underline"><i class="fas fa-plus mr-1"></i>Add dancer</button>
                 </div>
                 <div id="students"></div>
             </div>
 
             <div id="class-section">
-                <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Classes of interest (optional)</h2>
+                <h2 class="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-2">Classes of interest (optional)</h2>
                 <div id="classes" class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm"></div>
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700">Anything else?</label>
-                <textarea id="note" rows="2" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"></textarea>
+                <label class="block text-sm font-medium text-ink-2">Anything else?</label>
+                <textarea id="note" rows="2" class="mt-1 block w-full border border-line-2 rounded-md px-3 py-2 text-sm"></textarea>
             </div>
 
             <div id="err" class="hidden text-sm text-red-600"></div>
@@ -79,18 +79,18 @@ function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 function addStudent(){
     studentIdx++;
     const div = document.createElement('div');
-    div.className = 'border border-gray-200 rounded-md p-3 mb-2';
+    div.className = 'border border-line rounded-md p-3 mb-2';
     div.dataset.idx = studentIdx;
     div.innerHTML = `
         <div class="flex justify-between items-center mb-2">
-            <span class="text-xs font-medium text-gray-500">Dancer ${studentIdx}</span>
+            <span class="text-xs font-medium text-ink-3">Dancer ${studentIdx}</span>
             ${studentIdx > 1 ? `<button type="button" onclick="this.closest('[data-idx]').remove()" class="text-xs text-red-500">Remove</button>` : ''}
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <input class="s-first border border-gray-300 rounded px-2 py-1.5 text-sm" placeholder="First name *">
-            <input class="s-last border border-gray-300 rounded px-2 py-1.5 text-sm" placeholder="Last name">
-            <label class="text-xs text-gray-500">Date of birth<input type="date" class="s-dob border border-gray-300 rounded px-2 py-1.5 text-sm w-full"></label>
-            <input class="s-allergies border border-gray-300 rounded px-2 py-1.5 text-sm" placeholder="Allergies / notes">
+            <input class="s-first border border-line-2 rounded px-2 py-1.5 text-sm" placeholder="First name *">
+            <input class="s-last border border-line-2 rounded px-2 py-1.5 text-sm" placeholder="Last name">
+            <label class="text-xs text-ink-3">Date of birth<input type="date" class="s-dob border border-line-2 rounded px-2 py-1.5 text-sm w-full"></label>
+            <input class="s-allergies border border-line-2 rounded px-2 py-1.5 text-sm" placeholder="Allergies / notes">
         </div>`;
     document.getElementById('students').appendChild(div);
 }
@@ -105,7 +105,7 @@ async function init(){
         if ((info.classes||[]).length){
             cl.innerHTML = info.classes.map(c=>`<label class="flex items-center ${c.full?'opacity-50':''}">
                 <input type="checkbox" class="c-box mr-2" value="${c.id}" ${c.full?'disabled':''}>
-                ${esc(c.name)} <span class="text-gray-400 ml-1">(${esc(c.day_name)} ${esc(c.start_time)})${c.full?' — full':''}</span></label>`).join('');
+                ${esc(c.name)} <span class="text-ink-3 ml-1">(${esc(c.day_name)} ${esc(c.start_time)})${c.full?' — full':''}</span></label>`).join('');
         } else { document.getElementById('class-section').classList.add('hidden'); }
         addStudent();
     } catch { document.getElementById('closed').classList.remove('hidden'); }

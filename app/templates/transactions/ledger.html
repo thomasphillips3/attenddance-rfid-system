@@ -1,65 +1,59 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="min-h-full">
-    <div class="bg-white shadow">
-        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between">
-                <div>
-                    <a href="{{ url_for('main.transactions') }}" class="text-sm text-primary-600 hover:text-primary-900"><i class="fas fa-arrow-left mr-1"></i>Back to Billing</a>
-                    <h1 class="text-3xl font-bold text-gray-900 mt-1">{{ student.full_name }}</h1>
-                    <p class="mt-1 text-sm text-gray-600">Account ledger — all charges and payments</p>
-                </div>
-                <div id="balance-badge" class="text-right">
-                    <button id="send-invoice-btn" onclick="sendInvoice()" class="hidden inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 mt-2">
-                        <i class="fas fa-paper-plane mr-2"></i>Send Invoice
-                    </button>
-                </div>
-            </div>
-        </div>
+<div class="flex flex-wrap items-start justify-between gap-3 mb-6">
+    <div>
+        <a href="{{ url_for('main.transactions') }}" class="text-sm text-ink-2 hover:text-ink"><i class="fas fa-arrow-left mr-1"></i>Back to Billing</a>
+        <h1 class="font-display text-3xl text-ink mt-1">{{ student.full_name }}</h1>
+        <p class="mt-1 text-sm text-ink-2">Account ledger — all charges and payments</p>
     </div>
+    <div id="balance-badge" class="text-right">
+        <button id="send-invoice-btn" onclick="sendInvoice()" class="hidden inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm mt-2">
+            <i class="fas fa-paper-plane"></i>Send Invoice
+        </button>
+    </div>
+</div>
 
-    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <!-- Summary Cards -->
-        <div class="grid grid-cols-3 gap-4 mb-6">
-            <div class="bg-white rounded-lg shadow p-4 text-center">
-                <p class="text-xs font-medium text-gray-500 uppercase">Total Charges</p>
-                <p id="sum-charges" class="text-2xl font-bold text-red-600">-</p>
-            </div>
-            <div class="bg-white rounded-lg shadow p-4 text-center">
-                <p class="text-xs font-medium text-gray-500 uppercase">Total Payments</p>
-                <p id="sum-payments" class="text-2xl font-bold text-green-600">-</p>
-            </div>
-            <div class="bg-white rounded-lg shadow p-4 text-center">
-                <p class="text-xs font-medium text-gray-500 uppercase">Balance</p>
-                <p id="sum-balance" class="text-2xl font-bold">-</p>
-            </div>
-        </div>
+<!-- Summary Cards -->
+<div class="grid grid-cols-3 gap-4 mb-6">
+    <div class="bg-surface border border-line rounded-2xl shadow-soft p-4 text-center">
+        <p class="text-xs font-medium text-ink-3 uppercase">Total Charges</p>
+        <p id="sum-charges" class="text-2xl font-bold text-danger tabular-nums">-</p>
+    </div>
+    <div class="bg-surface border border-line rounded-2xl shadow-soft p-4 text-center">
+        <p class="text-xs font-medium text-ink-3 uppercase">Total Payments</p>
+        <p id="sum-payments" class="text-2xl font-bold text-ok tabular-nums">-</p>
+    </div>
+    <div class="bg-surface border border-line rounded-2xl shadow-soft p-4 text-center">
+        <p class="text-xs font-medium text-ink-3 uppercase">Balance</p>
+        <p id="sum-balance" class="text-2xl font-bold tabular-nums">-</p>
+    </div>
+</div>
 
-        <!-- Per-Category Balances -->
-        <div id="category-breakdown" class="hidden mb-6">
-            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Balance by Category</h3>
-            <div id="category-cards" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
-        </div>
+<!-- Per-Category Balances -->
+<div id="category-breakdown" class="hidden mb-6">
+    <h3 class="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-2">Balance by Category</h3>
+    <div id="category-cards" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+</div>
 
-        <!-- Ledger Table -->
-        <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Charge</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Payment</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
-                    </tr>
-                </thead>
-                <tbody id="ledger-table" class="bg-white divide-y divide-gray-200">
-                    <tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
-                </tbody>
-            </table>
-        </div>
+<!-- Ledger Table -->
+<div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead class="bg-surface-2 border-b border-line">
+                <tr>
+                    <th class="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Date</th>
+                    <th class="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Description</th>
+                    <th class="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Category</th>
+                    <th class="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Charge</th>
+                    <th class="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Payment</th>
+                    <th class="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Balance</th>
+                </tr>
+            </thead>
+            <tbody id="ledger-table">
+                <tr><td colspan="6" class="px-5 py-8 text-center text-ink-3">Loading...</td></tr>
+            </tbody>
+        </table>
     </div>
 </div>
 {% endblock %}
@@ -67,7 +61,7 @@
 {% block extra_js %}
 <script>
 function esc(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
-const categoryColors = { tuition: 'bg-blue-100 text-blue-800', costumes: 'bg-pink-100 text-pink-800', shoes: 'bg-yellow-100 text-yellow-800', other: 'bg-gray-100 text-gray-800' };
+const categoryColors = { tuition: 'bg-info/10 text-info', costumes: 'bg-primary-50 text-primary-700', shoes: 'bg-warn/10 text-warn', other: 'bg-surface-2 text-ink-2' };
 const methodLabels = { cash: 'Cash', zelle: 'Zelle', venmo: 'Venmo', cashapp: 'Cash App', card: 'Card', tap: 'Tap' };
 
 async function loadLedger() {
@@ -80,39 +74,39 @@ async function loadLedger() {
         const bal = parseFloat(data.balance);
         const balEl = document.getElementById('sum-balance');
         balEl.textContent = bal > 0 ? '$' + bal.toFixed(2) + ' due' : bal < 0 ? '$' + Math.abs(bal).toFixed(2) + ' credit' : 'Paid up';
-        balEl.className = 'text-2xl font-bold ' + (bal > 0 ? 'text-red-600' : bal < 0 ? 'text-green-600' : 'text-gray-900');
+        balEl.className = 'text-2xl font-bold tabular-nums ' + (bal > 0 ? 'text-danger' : bal < 0 ? 'text-info' : 'text-ink');
 
         const badge = document.getElementById('balance-badge');
         badge.innerHTML = bal > 0
-            ? `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-red-100 text-red-800">$${bal.toFixed(2)} due</span>`
-            : `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-green-100 text-green-800">Paid up</span>`;
+            ? `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-danger/10 text-danger tabular-nums">$${bal.toFixed(2)} due</span>`
+            : `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-ok/10 text-ok">Paid up</span>`;
 
         renderLedger(data.ledger);
         renderCategoryBreakdown(data.by_category || {});
     } catch (err) {
-        document.getElementById('ledger-table').innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-red-500">Failed to load ledger</td></tr>';
+        document.getElementById('ledger-table').innerHTML = '<tr><td colspan="6" class="px-5 py-8 text-center text-danger">Failed to load ledger</td></tr>';
     }
 }
 
 function renderLedger(rows) {
     const tbody = document.getElementById('ledger-table');
     if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">No transactions yet.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="px-5 py-8 text-center text-ink-3">No transactions yet.</td></tr>';
         return;
     }
     tbody.innerHTML = rows.map(r => {
         const isCharge = r.type === 'charge';
         const runBal = parseFloat(r.running_balance);
-        const balClass = runBal > 0 ? 'text-red-600 font-semibold' : runBal < 0 ? 'text-green-600' : 'text-gray-900';
+        const balClass = runBal > 0 ? 'text-danger font-semibold' : runBal < 0 ? 'text-info' : 'text-ink';
         const desc = r.description || r.category;
         const method = r.payment_method ? ' (' + (methodLabels[r.payment_method] || r.payment_method) + ')' : '';
-        return `<tr>
-            <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900">${esc(r.transaction_date)}</td>
-            <td class="px-6 py-3 text-sm text-gray-700">${esc(desc)}${isCharge ? '' : '<span class="text-gray-400 text-xs">' + esc(method) + '</span>'}</td>
-            <td class="px-6 py-3 whitespace-nowrap"><span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${categoryColors[r.category] || categoryColors.other}">${esc(r.category)}</span></td>
-            <td class="px-6 py-3 whitespace-nowrap text-sm text-right ${isCharge ? 'text-red-600' : ''}">${isCharge ? '$' + parseFloat(r.amount).toFixed(2) : ''}</td>
-            <td class="px-6 py-3 whitespace-nowrap text-sm text-right ${!isCharge ? 'text-green-600' : ''}">${!isCharge ? '$' + parseFloat(r.amount).toFixed(2) : ''}</td>
-            <td class="px-6 py-3 whitespace-nowrap text-sm text-right ${balClass}">$${runBal.toFixed(2)}</td>
+        return `<tr class="border-b border-line last:border-0">
+            <td class="px-5 py-3.5 whitespace-nowrap text-sm text-ink tabular-nums">${esc(r.transaction_date)}</td>
+            <td class="px-5 py-3.5 text-sm text-ink-2">${esc(desc)}${isCharge ? '' : '<span class="text-ink-3 text-xs">' + esc(method) + '</span>'}</td>
+            <td class="px-5 py-3.5 whitespace-nowrap"><span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${categoryColors[r.category] || categoryColors.other}">${esc(r.category)}</span></td>
+            <td class="px-5 py-3.5 whitespace-nowrap text-sm text-right tabular-nums ${isCharge ? 'text-danger' : ''}">${isCharge ? '$' + parseFloat(r.amount).toFixed(2) : ''}</td>
+            <td class="px-5 py-3.5 whitespace-nowrap text-sm text-right tabular-nums ${!isCharge ? 'text-ok' : ''}">${!isCharge ? '$' + parseFloat(r.amount).toFixed(2) : ''}</td>
+            <td class="px-5 py-3.5 whitespace-nowrap text-sm text-right tabular-nums ${balClass}">$${runBal.toFixed(2)}</td>
         </tr>`;
     }).join('');
 }
@@ -121,16 +115,16 @@ function renderCategoryBreakdown(cats) {
     const keys = Object.keys(cats);
     if (keys.length < 2) { document.getElementById('category-breakdown').classList.add('hidden'); return; }
     document.getElementById('category-breakdown').classList.remove('hidden');
-    const colors = { tuition: 'border-blue-400', costumes: 'border-pink-400', shoes: 'border-yellow-400', other: 'border-gray-400' };
+    const colors = { tuition: 'border-info', costumes: 'border-primary-400', shoes: 'border-warn', other: 'border-line-2' };
     document.getElementById('category-cards').innerHTML = keys.map(cat => {
         const c = cats[cat];
         const bal = parseFloat(c.balance);
-        const balClass = bal > 0 ? 'text-red-600' : bal < 0 ? 'text-green-600' : 'text-gray-900';
+        const balClass = bal > 0 ? 'text-danger' : bal < 0 ? 'text-info' : 'text-ink';
         const balText = bal > 0 ? '$' + bal.toFixed(2) + ' due' : bal < 0 ? '$' + Math.abs(bal).toFixed(2) + ' credit' : 'Paid';
-        return `<div class="bg-white rounded-lg shadow p-3 border-l-4 ${colors[cat] || colors.other}">
-            <p class="text-xs font-medium text-gray-500 uppercase">${esc(cat)}</p>
-            <p class="text-lg font-bold ${balClass}">${balText}</p>
-            <p class="text-xs text-gray-400">$${parseFloat(c.charges).toFixed(2)} charged &middot; $${parseFloat(c.payments).toFixed(2)} paid</p>
+        return `<div class="bg-surface border border-line rounded-2xl shadow-soft p-3 border-l-4 ${colors[cat] || colors.other}">
+            <p class="text-xs font-medium text-ink-3 uppercase">${esc(cat)}</p>
+            <p class="text-lg font-bold tabular-nums ${balClass}">${balText}</p>
+            <p class="text-xs text-ink-3 tabular-nums">$${parseFloat(c.charges).toFixed(2)} charged &middot; $${parseFloat(c.payments).toFixed(2)} paid</p>
         </div>`;
     }).join('');
 }
@@ -164,7 +158,7 @@ async function sendInvoice() {
         if (res.ok) {
             alert(data.message + (data.invoice_url ? '\n\nInvoice URL: ' + data.invoice_url : ''));
             btn.innerHTML = '<i class="fas fa-check mr-2"></i>Invoice Sent';
-            btn.className = btn.className.replace('bg-primary-600 hover:bg-primary-700', 'bg-green-600');
+            btn.className = btn.className.replace('bg-primary-500 hover:bg-primary-600', 'bg-ok');
         } else {
             alert(data.error || 'Failed to send invoice');
             btn.disabled = false;

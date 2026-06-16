@@ -1,202 +1,203 @@
 {% extends "base.html" %}
 
+{% set inp = "mt-1 block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
+{% set inpmono = "mt-1 block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
+{% set lbl = "block text-sm font-medium text-ink-2" %}
+
 {% block content %}
-<div class="min-h-full">
-    <div class="bg-white shadow">
-        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-            <h1 class="text-3xl font-bold text-gray-900">Settings</h1>
-            <p class="mt-1 text-sm text-gray-600">Configure billing and payment options</p>
-        </div>
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+    <div>
+        <div class="text-[11px] font-bold uppercase tracking-[.09em] text-primary-600">Money</div>
+        <h1 class="font-display text-3xl text-ink leading-tight mt-1">Settings</h1>
+        <p class="mt-1 text-sm text-ink-2">Configure billing and payment options</p>
     </div>
+</div>
 
-    <div class="max-w-3xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div id="status-msg" class="hidden mb-4 p-3 rounded-md text-sm font-medium"></div>
+<div id="status-msg" class="hidden mb-4 p-3 rounded-xl text-sm font-medium"></div>
 
-        <!-- Zelle -->
-        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div class="flex items-center">
-                    <span class="text-lg font-semibold text-gray-900 mr-3">Zelle</span>
-                    <span class="text-xs text-gray-500">Parents scan the QR code to pay</span>
-                </div>
-                <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="zelle-enabled" class="sr-only peer" onchange="saveSettings()">
-                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                </label>
-            </div>
-            <div class="px-6 py-4 space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Display Name</label>
-                    <input type="text" id="zelle-name" placeholder="LASHELLE S SCHOOL OF DANCE" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Memo instruction shown to parents</label>
-                    <input type="text" id="zelle-memo" placeholder="Put your dancer's full name in the memo so we can match your payment." class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                    <p class="mt-1 text-xs text-gray-500">Helps you reconcile which payment belongs to which dancer.</p>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">QR Code Image</label>
-                    <div class="flex items-start space-x-4">
-                        <div id="qr-preview" class="w-32 h-32 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-gray-50 overflow-hidden">
-                            <span class="text-gray-400 text-xs text-center px-2">No QR uploaded</span>
-                        </div>
-                        <div>
-                            <input type="file" id="qr-file" accept="image/*" class="hidden" onchange="uploadQR()">
-                            <button type="button" onclick="document.getElementById('qr-file').click()" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                                <i class="fas fa-upload mr-2"></i>Upload QR Code
-                            </button>
-                            <button type="button" id="qr-remove" onclick="removeQR()" class="hidden ml-2 inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-red-600 bg-white hover:bg-red-50">
-                                <i class="fas fa-trash mr-2"></i>Remove
-                            </button>
-                            <p class="mt-1 text-xs text-gray-500">PNG or JPG, max 2MB. Shown to parents.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+<!-- Zelle -->
+<div class="bg-surface border border-line rounded-2xl shadow-soft mb-6 overflow-hidden">
+    <div class="px-6 py-4 border-b border-line flex items-center justify-between">
+        <div class="flex items-center">
+            <span class="font-display text-xl text-ink mr-3">Zelle</span>
+            <span class="text-xs text-ink-3">Parents scan the QR code to pay</span>
         </div>
-
-        <!-- Cash App -->
-        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div class="flex items-center">
-                    <span class="text-lg font-semibold text-gray-900 mr-3">Cash App</span>
-                    <span class="text-xs text-gray-500">Link parents directly to your Cash App</span>
-                </div>
-                <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="cashapp-enabled" class="sr-only peer" onchange="saveSettings()">
-                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                </label>
-            </div>
-            <div class="px-6 py-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Cashtag</label>
-                    <div class="mt-1 flex rounded-md shadow-sm">
-                        <span class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">$</span>
-                        <input type="text" id="cashapp-tag" placeholder="Lashellesdance" class="flex-1 block w-full border border-gray-300 rounded-none rounded-r-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                    </div>
-                    <p class="mt-1 text-xs text-gray-500">Parents are deep-linked to <code>cash.app/$tag</code> with the amount prefilled.</p>
-                </div>
-            </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="zelle-enabled" class="sr-only peer" onchange="saveSettings()">
+            <div class="w-11 h-6 bg-line-2 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-line after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+        </label>
+    </div>
+    <div class="px-6 py-4 space-y-4">
+        <div>
+            <label class="{{ lbl }}">Display Name</label>
+            <input type="text" id="zelle-name" placeholder="LASHELLE S SCHOOL OF DANCE" class="{{ inp }}">
         </div>
-
-        <!-- Square -->
-        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div class="flex items-center">
-                    <span class="text-lg font-semibold text-gray-900 mr-3">Square</span>
-                    <span class="text-xs text-gray-500">Send invoices parents can pay online</span>
-                </div>
-                <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="square-enabled" class="sr-only peer" onchange="saveSettings()">
-                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                </label>
-            </div>
-            <div class="px-6 py-4 space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Access Token</label>
-                    <input type="password" id="square-token" autocomplete="off" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                    <div class="mt-1 flex items-center justify-between">
-                        <p class="text-xs text-gray-500">From <a href="https://developer.squareup.com/apps" target="_blank" class="text-primary-600 hover:underline">Square Developer Dashboard</a>. Stored encrypted.</p>
-                        <button type="button" id="token-clear" onclick="clearToken()" class="hidden text-xs text-red-600 hover:underline">Clear token</button>
-                    </div>
+        <div>
+            <label class="{{ lbl }}">Memo instruction shown to parents</label>
+            <input type="text" id="zelle-memo" placeholder="Put your dancer's full name in the memo so we can match your payment." class="{{ inp }}">
+            <p class="mt-1 text-xs text-ink-3">Helps you reconcile which payment belongs to which dancer.</p>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-ink-2 mb-1">QR Code Image</label>
+            <div class="flex items-start space-x-4">
+                <div id="qr-preview" class="w-32 h-32 border-2 border-dashed border-line-2 rounded-xl flex items-center justify-center bg-surface-2 overflow-hidden">
+                    <span class="text-ink-3 text-xs text-center px-2">No QR uploaded</span>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Location ID</label>
-                    <input type="text" id="square-location" placeholder="e.g. LXXXXXXXXXXXXXXXXX" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Environment</label>
-                    <select id="square-env" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                        <option value="sandbox">Sandbox (testing)</option>
-                        <option value="production">Production (live)</option>
-                    </select>
-                </div>
-                <div>
-                    <button type="button" onclick="testSquare()" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                        <i class="fas fa-plug mr-2"></i>Test Connection
+                    <input type="file" id="qr-file" accept="image/*" class="hidden" onchange="uploadQR()">
+                    <button type="button" onclick="document.getElementById('qr-file').click()" class="inline-flex items-center rounded-xl border border-line-2 text-ink-2 font-bold px-3 py-2 text-sm hover:bg-surface-2">
+                        <i class="fas fa-upload mr-2"></i>Upload QR Code
                     </button>
-                    <span id="square-test-result" class="ml-3 text-sm"></span>
-                    <p class="mt-1 text-xs text-gray-500">Save first, then test.</p>
+                    <button type="button" id="qr-remove" onclick="removeQR()" class="hidden ml-2 inline-flex items-center rounded-xl border border-line-2 text-danger font-bold px-3 py-2 text-sm hover:bg-danger/10">
+                        <i class="fas fa-trash mr-2"></i>Remove
+                    </button>
+                    <p class="mt-1 text-xs text-ink-3">PNG or JPG, max 2MB. Shown to parents.</p>
                 </div>
-
-                <details class="border-t border-gray-100 pt-3">
-                    <summary class="text-sm font-medium text-gray-700 cursor-pointer">Advanced: auto-reconcile webhook</summary>
-                    <div class="mt-3 space-y-2">
-                        <p class="text-xs text-gray-500">In Square Dashboard → Webhooks, add this URL and subscribe to <code>invoice.payment_made</code>. Then paste the signature key below so paid invoices auto-record.</p>
-                        <div class="flex items-center gap-2">
-                            <input type="text" id="webhook-url" readonly class="flex-1 block w-full border border-gray-200 bg-gray-50 rounded-md px-3 py-2 text-xs font-mono text-gray-600">
-                            <button type="button" onclick="copyWebhook()" class="px-2 py-2 border border-gray-300 rounded-md text-xs text-gray-600 hover:bg-gray-50"><i class="fas fa-copy"></i></button>
-                        </div>
-                        <label class="block text-sm font-medium text-gray-700">Webhook Signature Key</label>
-                        <input type="password" id="square-webhook-key" autocomplete="off" class="block w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                    </div>
-                </details>
             </div>
-        </div>
-
-        <!-- SMS / Twilio -->
-        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div class="flex items-center"><span class="text-lg font-semibold text-gray-900 mr-3">Text Messages (SMS)</span><span class="text-xs text-gray-500">Twilio — reminders &amp; alerts by text</span></div>
-                <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="sms-enabled" class="sr-only peer" onchange="saveSettings()">
-                    <div class="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                </label>
-            </div>
-            <div class="px-6 py-4 space-y-4">
-                <div><label class="block text-sm font-medium text-gray-700">Account SID</label><input type="text" id="sms-sid" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono"></div>
-                <div><label class="block text-sm font-medium text-gray-700">Auth Token</label><input type="password" id="sms-token" autocomplete="off" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono"><p class="mt-1 text-xs text-gray-500">Stored encrypted.</p></div>
-                <div><label class="block text-sm font-medium text-gray-700">From Number</label><input type="text" id="sms-from" placeholder="+13135551234" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono"></div>
-                <div><button type="button" onclick="testSms()" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"><i class="fas fa-plug mr-2"></i>Test Connection</button><span id="sms-test-result" class="ml-3 text-sm"></span></div>
-            </div>
-        </div>
-
-        <!-- Auto-reminders -->
-        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div class="flex items-center"><span class="text-lg font-semibold text-gray-900 mr-3">Automatic Reminders</span><span class="text-xs text-gray-500">Nudge overdue families automatically</span></div>
-                <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="rem-enabled" class="sr-only peer" onchange="saveSettings()">
-                    <div class="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                </label>
-            </div>
-            <div class="px-6 py-4 grid grid-cols-2 gap-4">
-                <div><label class="block text-sm font-medium text-gray-700">Send on day of month</label><input type="number" id="rem-day" min="1" max="28" value="1" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"></div>
-                <div><label class="block text-sm font-medium text-gray-700">Only if balance over ($)</label><input type="number" id="rem-min" step="0.01" value="0" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"></div>
-                <div class="col-span-2"><label class="inline-flex items-center text-sm text-gray-700"><input type="checkbox" id="rem-sms" class="mr-2"> Also send by text (SMS)</label></div>
-            </div>
-        </div>
-
-        <!-- Late fees -->
-        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200"><span class="text-lg font-semibold text-gray-900">Late Fees</span><span class="text-xs text-gray-500 ml-3">Defaults for the "Apply late fees" button</span></div>
-            <div class="px-6 py-4 grid grid-cols-2 gap-4">
-                <div><label class="block text-sm font-medium text-gray-700">Late fee amount ($)</label><input type="number" id="late-amount" step="0.01" value="0" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"></div>
-                <div><label class="block text-sm font-medium text-gray-700">Only if balance over ($)</label><input type="number" id="late-min" step="0.01" value="0" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"></div>
-            </div>
-        </div>
-
-        <!-- Donations -->
-        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div class="flex items-center"><span class="text-lg font-semibold text-gray-900 mr-3">Foundation Donations</span><span class="text-xs text-gray-500">Let parents donate from the portal</span></div>
-                <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="don-enabled" class="sr-only peer" onchange="saveSettings()">
-                    <div class="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                </label>
-            </div>
-            <div class="px-6 py-4 grid grid-cols-2 gap-4">
-                <div><label class="block text-sm font-medium text-gray-700">Organization name</label><input type="text" id="don-org" placeholder="LSODance Foundation" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"></div>
-                <div><label class="block text-sm font-medium text-gray-700">EIN (for giving statements)</label><input type="text" id="don-ein" placeholder="XX-XXXXXXX" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"></div>
-            </div>
-        </div>
-
-        <div class="flex justify-end">
-            <button onclick="saveSettings()" class="inline-flex items-center px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
-                <i class="fas fa-save mr-2"></i>Save Settings
-            </button>
         </div>
     </div>
+</div>
+
+<!-- Cash App -->
+<div class="bg-surface border border-line rounded-2xl shadow-soft mb-6 overflow-hidden">
+    <div class="px-6 py-4 border-b border-line flex items-center justify-between">
+        <div class="flex items-center">
+            <span class="font-display text-xl text-ink mr-3">Cash App</span>
+            <span class="text-xs text-ink-3">Link parents directly to your Cash App</span>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="cashapp-enabled" class="sr-only peer" onchange="saveSettings()">
+            <div class="w-11 h-6 bg-line-2 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-line after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+        </label>
+    </div>
+    <div class="px-6 py-4">
+        <div>
+            <label class="{{ lbl }}">Cashtag</label>
+            <div class="mt-1 flex rounded-xl shadow-sm">
+                <span class="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-line-2 bg-surface-2 text-ink-3 text-sm">$</span>
+                <input type="text" id="cashapp-tag" placeholder="Lashellesdance" class="flex-1 block w-full bg-surface border border-line-2 rounded-none rounded-r-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+            </div>
+            <p class="mt-1 text-xs text-ink-3">Parents are deep-linked to <code>cash.app/$tag</code> with the amount prefilled.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Square -->
+<div class="bg-surface border border-line rounded-2xl shadow-soft mb-6 overflow-hidden">
+    <div class="px-6 py-4 border-b border-line flex items-center justify-between">
+        <div class="flex items-center">
+            <span class="font-display text-xl text-ink mr-3">Square</span>
+            <span class="text-xs text-ink-3">Send invoices parents can pay online</span>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="square-enabled" class="sr-only peer" onchange="saveSettings()">
+            <div class="w-11 h-6 bg-line-2 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-line after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+        </label>
+    </div>
+    <div class="px-6 py-4 space-y-4">
+        <div>
+            <label class="{{ lbl }}">Access Token</label>
+            <input type="password" id="square-token" autocomplete="off" class="{{ inpmono }}">
+            <div class="mt-1 flex items-center justify-between">
+                <p class="text-xs text-ink-3">From <a href="https://developer.squareup.com/apps" target="_blank" class="text-primary-600 hover:underline">Square Developer Dashboard</a>. Stored encrypted.</p>
+                <button type="button" id="token-clear" onclick="clearToken()" class="hidden text-xs text-danger hover:underline">Clear token</button>
+            </div>
+        </div>
+        <div>
+            <label class="{{ lbl }}">Location ID</label>
+            <input type="text" id="square-location" placeholder="e.g. LXXXXXXXXXXXXXXXXX" class="{{ inpmono }}">
+        </div>
+        <div>
+            <label class="{{ lbl }}">Environment</label>
+            <select id="square-env" class="{{ inp }}">
+                <option value="sandbox">Sandbox (testing)</option>
+                <option value="production">Production (live)</option>
+            </select>
+        </div>
+        <div>
+            <button type="button" onclick="testSquare()" class="inline-flex items-center rounded-xl border border-line-2 text-ink-2 font-bold px-3 py-2 text-sm hover:bg-surface-2">
+                <i class="fas fa-plug mr-2"></i>Test Connection
+            </button>
+            <span id="square-test-result" class="ml-3 text-sm"></span>
+            <p class="mt-1 text-xs text-ink-3">Save first, then test.</p>
+        </div>
+
+        <details class="border-t border-line pt-3">
+            <summary class="text-sm font-medium text-ink-2 cursor-pointer">Advanced: auto-reconcile webhook</summary>
+            <div class="mt-3 space-y-2">
+                <p class="text-xs text-ink-3">In Square Dashboard → Webhooks, add this URL and subscribe to <code>invoice.payment_made</code>. Then paste the signature key below so paid invoices auto-record.</p>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="webhook-url" readonly class="flex-1 block w-full border border-line bg-surface-2 rounded-xl px-3 py-2 text-xs font-mono text-ink-2">
+                    <button type="button" onclick="copyWebhook()" class="rounded-xl border border-line-2 text-ink-2 px-2 py-2 text-xs hover:bg-surface-2"><i class="fas fa-copy"></i></button>
+                </div>
+                <label class="{{ lbl }}">Webhook Signature Key</label>
+                <input type="password" id="square-webhook-key" autocomplete="off" class="block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+            </div>
+        </details>
+    </div>
+</div>
+
+<!-- SMS / Twilio -->
+<div class="bg-surface border border-line rounded-2xl shadow-soft mb-6 overflow-hidden">
+    <div class="px-6 py-4 border-b border-line flex items-center justify-between">
+        <div class="flex items-center"><span class="font-display text-xl text-ink mr-3">Text Messages (SMS)</span><span class="text-xs text-ink-3">Twilio — reminders &amp; alerts by text</span></div>
+        <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="sms-enabled" class="sr-only peer" onchange="saveSettings()">
+            <div class="w-11 h-6 bg-line-2 peer-focus:ring-4 peer-focus:ring-primary-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+        </label>
+    </div>
+    <div class="px-6 py-4 space-y-4">
+        <div><label class="{{ lbl }}">Account SID</label><input type="text" id="sms-sid" class="{{ inpmono }}"></div>
+        <div><label class="{{ lbl }}">Auth Token</label><input type="password" id="sms-token" autocomplete="off" class="{{ inpmono }}"><p class="mt-1 text-xs text-ink-3">Stored encrypted.</p></div>
+        <div><label class="{{ lbl }}">From Number</label><input type="text" id="sms-from" placeholder="+13135551234" class="{{ inpmono }}"></div>
+        <div><button type="button" onclick="testSms()" class="inline-flex items-center rounded-xl border border-line-2 text-ink-2 font-bold px-3 py-2 text-sm hover:bg-surface-2"><i class="fas fa-plug mr-2"></i>Test Connection</button><span id="sms-test-result" class="ml-3 text-sm"></span></div>
+    </div>
+</div>
+
+<!-- Auto-reminders -->
+<div class="bg-surface border border-line rounded-2xl shadow-soft mb-6 overflow-hidden">
+    <div class="px-6 py-4 border-b border-line flex items-center justify-between">
+        <div class="flex items-center"><span class="font-display text-xl text-ink mr-3">Automatic Reminders</span><span class="text-xs text-ink-3">Nudge overdue families automatically</span></div>
+        <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="rem-enabled" class="sr-only peer" onchange="saveSettings()">
+            <div class="w-11 h-6 bg-line-2 peer-focus:ring-4 peer-focus:ring-primary-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+        </label>
+    </div>
+    <div class="px-6 py-4 grid grid-cols-2 gap-4">
+        <div><label class="{{ lbl }}">Send on day of month</label><input type="number" id="rem-day" min="1" max="28" value="1" class="{{ inp }}"></div>
+        <div><label class="{{ lbl }}">Only if balance over ($)</label><input type="number" id="rem-min" step="0.01" value="0" class="{{ inp }}"></div>
+        <div class="col-span-2"><label class="inline-flex items-center text-sm text-ink-2"><input type="checkbox" id="rem-sms" class="mr-2"> Also send by text (SMS)</label></div>
+    </div>
+</div>
+
+<!-- Late fees -->
+<div class="bg-surface border border-line rounded-2xl shadow-soft mb-6 overflow-hidden">
+    <div class="px-6 py-4 border-b border-line"><span class="font-display text-xl text-ink">Late Fees</span><span class="text-xs text-ink-3 ml-3">Defaults for the "Apply late fees" button</span></div>
+    <div class="px-6 py-4 grid grid-cols-2 gap-4">
+        <div><label class="{{ lbl }}">Late fee amount ($)</label><input type="number" id="late-amount" step="0.01" value="0" class="{{ inp }}"></div>
+        <div><label class="{{ lbl }}">Only if balance over ($)</label><input type="number" id="late-min" step="0.01" value="0" class="{{ inp }}"></div>
+    </div>
+</div>
+
+<!-- Donations -->
+<div class="bg-surface border border-line rounded-2xl shadow-soft mb-6 overflow-hidden">
+    <div class="px-6 py-4 border-b border-line flex items-center justify-between">
+        <div class="flex items-center"><span class="font-display text-xl text-ink mr-3">Foundation Donations</span><span class="text-xs text-ink-3">Let parents donate from the portal</span></div>
+        <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="don-enabled" class="sr-only peer" onchange="saveSettings()">
+            <div class="w-11 h-6 bg-line-2 peer-focus:ring-4 peer-focus:ring-primary-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+        </label>
+    </div>
+    <div class="px-6 py-4 grid grid-cols-2 gap-4">
+        <div><label class="{{ lbl }}">Organization name</label><input type="text" id="don-org" placeholder="LSODance Foundation" class="{{ inp }}"></div>
+        <div><label class="{{ lbl }}">EIN (for giving statements)</label><input type="text" id="don-ein" placeholder="XX-XXXXXXX" class="{{ inp }}"></div>
+    </div>
+</div>
+
+<div class="flex justify-end">
+    <button onclick="saveSettings()" class="inline-flex items-center px-6 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">
+        <i class="fas fa-save mr-2"></i>Save Settings
+    </button>
 </div>
 {% endblock %}
 
@@ -207,7 +208,7 @@ let hasToken = false, hasWebhookKey = false, hasSmsToken = false;
 function showMsg(text, ok) {
     const m = document.getElementById('status-msg');
     m.textContent = text;
-    m.className = 'mb-4 p-3 rounded-md text-sm font-medium ' + (ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800');
+    m.className = 'mb-4 p-3 rounded-xl text-sm font-medium ' + (ok ? 'bg-ok/10 text-ok' : 'bg-danger/10 text-danger');
     m.classList.remove('hidden');
     setTimeout(() => m.classList.add('hidden'), 3500);
 }
@@ -219,7 +220,7 @@ function renderQR(dataOrPath) {
         prev.innerHTML = `<img src="${dataOrPath}" class="w-full h-full object-contain">`;
         removeBtn.classList.remove('hidden');
     } else {
-        prev.innerHTML = '<span class="text-gray-400 text-xs text-center px-2">No QR uploaded</span>';
+        prev.innerHTML = '<span class="text-ink-3 text-xs text-center px-2">No QR uploaded</span>';
         removeBtn.classList.add('hidden');
     }
 }
@@ -359,13 +360,13 @@ async function clearToken() {
 async function testSquare() {
     const el = document.getElementById('square-test-result');
     el.textContent = 'Testing…';
-    el.className = 'ml-3 text-sm text-gray-500';
+    el.className = 'ml-3 text-sm text-ink-3';
     try {
         const res = await fetch('/api/settings/payments/test-square', {method: 'POST'});
         const d = await res.json();
         el.textContent = d.message;
-        el.className = 'ml-3 text-sm ' + (d.ok ? 'text-green-600' : 'text-red-600');
-    } catch { el.textContent = 'Network error'; el.className = 'ml-3 text-sm text-red-600'; }
+        el.className = 'ml-3 text-sm ' + (d.ok ? 'text-ok' : 'text-danger');
+    } catch { el.textContent = 'Network error'; el.className = 'ml-3 text-sm text-danger'; }
 }
 
 function copyWebhook() {
@@ -375,12 +376,12 @@ function copyWebhook() {
 
 async function testSms() {
     const el = document.getElementById('sms-test-result');
-    el.textContent = 'Testing…'; el.className = 'ml-3 text-sm text-gray-500';
+    el.textContent = 'Testing…'; el.className = 'ml-3 text-sm text-ink-3';
     try {
         const res = await fetch('/api/settings/sms/test', {method: 'POST'});
         const d = await res.json();
-        el.textContent = d.message; el.className = 'ml-3 text-sm ' + (d.ok ? 'text-green-600' : 'text-red-600');
-    } catch { el.textContent = 'Network error'; el.className = 'ml-3 text-sm text-red-600'; }
+        el.textContent = d.message; el.className = 'ml-3 text-sm ' + (d.ok ? 'text-ok' : 'text-danger');
+    } catch { el.textContent = 'Network error'; el.className = 'ml-3 text-sm text-danger'; }
 }
 
 loadSettings();

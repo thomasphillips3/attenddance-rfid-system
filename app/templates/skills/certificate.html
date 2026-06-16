@@ -1,30 +1,30 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-3xl mx-auto py-6 px-4">
+<div class="max-w-3xl mx-auto">
     <div class="flex justify-end mb-4 print:hidden">
-        <button onclick="window.print()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-print mr-2"></i>Print / Save PDF</button>
+        <button onclick="window.print()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-print mr-2"></i>Print / Save PDF</button>
     </div>
-    <div class="bg-white shadow-lg rounded-lg p-10 text-center border-4 border-primary-100 print:shadow-none print:border-primary-300">
-        <i class="fas fa-award text-5xl text-amber-400 mb-3"></i>
-        <h1 class="text-3xl font-bold text-gray-900">Certificate of Achievement</h1>
-        <p class="text-gray-500 mt-1">LaShelle's School of Dance</p>
-        <p class="mt-8 text-lg text-gray-700">This certifies that</p>
-        <p class="text-2xl font-bold text-primary-700 my-2">{{ student.full_name }}</p>
-        <p class="text-gray-700">has demonstrated mastery of the following skills:</p>
+    <div class="bg-surface shadow-soft rounded-2xl p-10 text-center border-4 border-primary-200 print:shadow-none print:border-primary-300">
+        <i class="fas fa-award text-5xl text-gold-500 mb-3"></i>
+        <h1 class="font-display text-4xl text-ink">Certificate of Achievement</h1>
+        <p class="text-ink-3 mt-1">LaShelle's School of Dance</p>
+        <p class="mt-8 text-lg text-ink-2">This certifies that</p>
+        <p class="font-display text-3xl text-primary-700 my-2">{{ student.full_name }}</p>
+        <p class="text-ink-2">has demonstrated mastery of the following skills:</p>
 
         {% if skills %}
         <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-2 text-left max-w-xl mx-auto">
             {% for s in skills %}
-            <div class="flex items-center"><i class="fas fa-star text-amber-400 mr-2"></i><span class="text-gray-800">{{ s.name }}{% if s.category %} <span class="text-xs text-gray-400">({{ s.category }})</span>{% endif %}</span></div>
+            <div class="flex items-center"><i class="fas fa-star text-gold-500 mr-2"></i><span class="text-ink">{{ s.name }}{% if s.category %} <span class="text-xs text-ink-3">({{ s.category }})</span>{% endif %}</span></div>
             {% endfor %}
         </div>
         {% else %}
-        <p class="mt-6 text-gray-400">No skills recorded yet.</p>
+        <p class="mt-6 text-ink-3">No skills recorded yet.</p>
         {% endif %}
 
         <div class="mt-10 flex justify-between items-end max-w-md mx-auto">
-            <div class="border-t border-gray-400 w-40 pt-1 text-xs text-gray-500">Instructor</div>
-            <div class="border-t border-gray-400 w-40 pt-1 text-xs text-gray-500">Date</div>
+            <div class="border-t border-line-2 w-40 pt-1 text-xs text-ink-3">Instructor</div>
+            <div class="border-t border-line-2 w-40 pt-1 text-xs text-ink-3">Date</div>
         </div>
     </div>
 </div>

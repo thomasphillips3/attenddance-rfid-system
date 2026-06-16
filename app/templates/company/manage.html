@@ -1,45 +1,42 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="min-h-full" x-data="{ tab: 'groups' }">
-    <div class="bg-white shadow">
-        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-            <h1 class="text-3xl font-bold text-gray-900"><i class="fas fa-star text-amber-400 mr-2"></i>Performance Company</h1>
-            <p class="mt-1 text-sm text-gray-600">Companies & teams, auditions, and performances</p>
-            <div class="mt-4 flex gap-2 border-b border-gray-200">
-                <button @click="tab='groups'" :class="tab==='groups' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500'" class="px-4 py-2 border-b-2 text-sm font-medium">Companies</button>
-                <button @click="tab='auditions'" :class="tab==='auditions' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500'" class="px-4 py-2 border-b-2 text-sm font-medium">Auditions</button>
-                <button @click="tab='performances'" :class="tab==='performances' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500'" class="px-4 py-2 border-b-2 text-sm font-medium">Performances</button>
-            </div>
+<div x-data="{ tab: 'groups' }">
+    <div class="mb-6">
+        <div class="text-[11px] font-bold uppercase tracking-[.09em] text-primary-600">Performance</div>
+        <h1 class="font-display text-3xl text-ink leading-tight mt-1"><i class="fas fa-star text-gold-500 mr-2"></i>Performance Company</h1>
+        <p class="mt-1 text-sm text-ink-2">Companies &amp; teams, auditions, and performances</p>
+        <div class="mt-4 flex gap-2 border-b border-line">
+            <button @click="tab='groups'" :class="tab==='groups' ? 'border-primary-500 text-primary-600' : 'border-transparent text-ink-3'" class="px-4 py-2 border-b-2 text-sm font-medium">Companies</button>
+            <button @click="tab='auditions'" :class="tab==='auditions' ? 'border-primary-500 text-primary-600' : 'border-transparent text-ink-3'" class="px-4 py-2 border-b-2 text-sm font-medium">Auditions</button>
+            <button @click="tab='performances'" :class="tab==='performances' ? 'border-primary-500 text-primary-600' : 'border-transparent text-ink-3'" class="px-4 py-2 border-b-2 text-sm font-medium">Performances</button>
         </div>
     </div>
 
-    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div id="msg" class="hidden mb-4 p-3 rounded-md text-sm font-medium"></div>
+    <div id="msg" class="hidden mb-4 p-3 rounded-xl text-sm font-bold"></div>
 
-        <!-- COMPANIES -->
-        <div x-show="tab==='groups'">
-            <div class="flex justify-end mb-3">
-                <button onclick="createGroup()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-plus mr-2"></i>New Company</button>
-            </div>
-            <div id="groups-list" class="space-y-4"><p class="text-gray-500">Loading…</p></div>
+    <!-- COMPANIES -->
+    <div x-show="tab==='groups'">
+        <div class="flex justify-end mb-3">
+            <button onclick="createGroup()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-2"></i>New Company</button>
         </div>
+        <div id="groups-list" class="space-y-4"><p class="text-ink-3">Loading…</p></div>
+    </div>
 
-        <!-- AUDITIONS -->
-        <div x-show="tab==='auditions'" style="display:none">
-            <div class="flex justify-end mb-3">
-                <button onclick="createAudition()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-plus mr-2"></i>New Audition</button>
-            </div>
-            <div id="auditions-list" class="space-y-4"><p class="text-gray-500">Loading…</p></div>
+    <!-- AUDITIONS -->
+    <div x-show="tab==='auditions'" style="display:none">
+        <div class="flex justify-end mb-3">
+            <button onclick="createAudition()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-2"></i>New Audition</button>
         </div>
+        <div id="auditions-list" class="space-y-4"><p class="text-ink-3">Loading…</p></div>
+    </div>
 
-        <!-- PERFORMANCES -->
-        <div x-show="tab==='performances'" style="display:none">
-            <div class="flex justify-end mb-3">
-                <button onclick="createPerformance()" class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-700"><i class="fas fa-plus mr-2"></i>New Performance</button>
-            </div>
-            <div id="performances-list" class="space-y-4"><p class="text-gray-500">Loading…</p></div>
+    <!-- PERFORMANCES -->
+    <div x-show="tab==='performances'" style="display:none">
+        <div class="flex justify-end mb-3">
+            <button onclick="createPerformance()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-2"></i>New Performance</button>
         </div>
+        <div id="performances-list" class="space-y-4"><p class="text-ink-3">Loading…</p></div>
     </div>
 </div>
 
@@ -50,13 +47,14 @@ const STUDENTS = [{% for s in students %}{id:{{ s.id }}, name:"{{ s.full_name|e 
 
 {% block extra_js %}
 <script>
+const INP = "bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400";
 function msg(t, ok) {
     const m = document.getElementById('msg');
-    m.textContent = t; m.className = 'mb-4 p-3 rounded-md text-sm font-medium ' + (ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800');
+    m.textContent = t; m.className = 'mb-4 p-3 rounded-xl text-sm font-bold ' + (ok ? 'bg-ok/10 text-ok' : 'bg-danger/10 text-danger');
     m.classList.remove('hidden'); setTimeout(() => m.classList.add('hidden'), 4000);
 }
 function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function studentPicker(id){return `<select id="${id}" class="border border-gray-300 rounded px-2 py-1 text-sm"><option value="">Pick a student…</option>${STUDENTS.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>`;}
+function studentPicker(id){return `<select id="${id}" class="${INP}"><option value="">Pick a student…</option>${STUDENTS.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>`;}
 async function jpost(url, body){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});}
 async function jput(url, body){return fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});}
 
@@ -65,20 +63,20 @@ async function loadGroups(){
     const el = document.getElementById('groups-list');
     const data = await (await fetch('/api/performance/groups')).json();
     const groups = data.groups||[];
-    if(!groups.length){el.innerHTML='<p class="text-gray-500">No companies yet. Create one to get started.</p>';return;}
+    if(!groups.length){el.innerHTML='<p class="text-ink-3">No companies yet. Create one to get started.</p>';return;}
     el.innerHTML = groups.map(g=>`
-        <div class="bg-white shadow rounded-lg overflow-hidden">
-            <div class="px-5 py-3 border-b flex items-center justify-between">
-                <div><span class="font-semibold text-gray-900">${esc(g.name)}</span> <span class="text-xs text-gray-500 ml-2">${g.member_count} members</span>
-                    ${g.description?`<p class="text-xs text-gray-500">${esc(g.description)}</p>`:''}</div>
-                <button onclick="deleteGroup(${g.id},'${esc(g.name)}')" class="text-xs text-red-600 hover:underline">Archive</button>
+        <div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
+            <div class="px-5 py-3 border-b border-line flex items-center justify-between">
+                <div><span class="font-bold text-ink">${esc(g.name)}</span> <span class="text-xs text-ink-3 ml-2">${g.member_count} members</span>
+                    ${g.description?`<p class="text-xs text-ink-3">${esc(g.description)}</p>`:''}</div>
+                <button onclick="deleteGroup(${g.id},'${esc(g.name)}')" class="text-xs text-danger hover:underline">Archive</button>
             </div>
             <div class="px-5 py-3">
-                <div id="members-${g.id}" class="text-sm text-gray-500 mb-3">Loading members…</div>
+                <div id="members-${g.id}" class="text-sm text-ink-3 mb-3">Loading members…</div>
                 <div class="flex items-center gap-2">
                     ${studentPicker('addmem-'+g.id)}
-                    <input id="role-${g.id}" placeholder="Role (e.g. Captain)" class="border border-gray-300 rounded px-2 py-1 text-sm w-36">
-                    <button onclick="addMember(${g.id})" class="px-3 py-1 bg-primary-600 text-white rounded text-sm">Add member</button>
+                    <input id="role-${g.id}" placeholder="Role (e.g. Captain)" class="${INP} w-36">
+                    <button onclick="addMember(${g.id})" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Add member</button>
                 </div>
             </div>
         </div>`).join('');
@@ -88,10 +86,10 @@ async function loadMembers(gid){
     const el = document.getElementById('members-'+gid);
     const data = await (await fetch(`/api/performance/groups/${gid}/members`)).json();
     const m = data.members||[];
-    if(!m.length){el.innerHTML='<span class="text-gray-400">No members yet.</span>';return;}
-    el.innerHTML = m.map(x=>`<span class="inline-flex items-center bg-amber-50 border border-amber-200 rounded-full px-3 py-1 mr-2 mb-2">
-        ${esc(x.student_name)} <span class="text-xs text-amber-600 ml-1">${esc(x.role)}</span>
-        <button onclick="removeMember(${x.id})" class="ml-2 text-red-500 hover:text-red-700">&times;</button></span>`).join('');
+    if(!m.length){el.innerHTML='<span class="text-ink-3">No members yet.</span>';return;}
+    el.innerHTML = m.map(x=>`<span class="inline-flex items-center bg-gold-300/30 border border-gold-400 rounded-full px-2.5 py-1 mr-2 mb-2 text-xs font-bold">
+        ${esc(x.student_name)} <span class="text-xs text-gold-ink ml-1">${esc(x.role)}</span>
+        <button onclick="removeMember(${x.id})" class="ml-2 text-danger hover:opacity-70">&times;</button></span>`).join('');
 }
 async function createGroup(){
     const name = prompt('Company name (e.g. LSODance Company):'); if(!name)return;
@@ -113,20 +111,20 @@ async function loadAuditions(){
     const el=document.getElementById('auditions-list');
     const data=await (await fetch('/api/performance/auditions')).json();
     const a=data.auditions||[];
-    if(!a.length){el.innerHTML='<p class="text-gray-500">No auditions yet.</p>';return;}
+    if(!a.length){el.innerHTML='<p class="text-ink-3">No auditions yet.</p>';return;}
     el.innerHTML=a.map(x=>`
-        <div class="bg-white shadow rounded-lg overflow-hidden">
-            <div class="px-5 py-3 border-b flex items-center justify-between">
-                <div><span class="font-semibold text-gray-900">${esc(x.title)}</span>
-                    ${x.group_name?`<span class="text-xs text-amber-600 ml-2">${esc(x.group_name)}</span>`:''}
-                    <span class="text-xs ${x.is_open?'text-green-600':'text-gray-400'} ml-2">${x.is_open?'Open':'Closed'}</span>
-                    <p class="text-xs text-gray-500">${x.audition_date?new Date(x.audition_date+'T00:00').toLocaleDateString():'No date'} ${x.location_text?'· '+esc(x.location_text):''} · ${x.signup_count} signups</p></div>
+        <div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
+            <div class="px-5 py-3 border-b border-line flex items-center justify-between">
+                <div><span class="font-bold text-ink">${esc(x.title)}</span>
+                    ${x.group_name?`<span class="text-xs text-gold-ink ml-2">${esc(x.group_name)}</span>`:''}
+                    <span class="text-xs ${x.is_open?'text-ok':'text-ink-3'} ml-2">${x.is_open?'Open':'Closed'}</span>
+                    <p class="text-xs text-ink-3">${x.audition_date?new Date(x.audition_date+'T00:00').toLocaleDateString():'No date'} ${x.location_text?'· '+esc(x.location_text):''} · ${x.signup_count} signups</p></div>
                 <div class="flex gap-2">
-                    <button onclick="toggleAudition(${x.id},${!x.is_open})" class="text-xs text-gray-600 hover:underline">${x.is_open?'Close':'Reopen'}</button>
-                    <button onclick="deleteAudition(${x.id})" class="text-xs text-red-600 hover:underline">Delete</button>
+                    <button onclick="toggleAudition(${x.id},${!x.is_open})" class="text-xs text-ink-2 hover:underline">${x.is_open?'Close':'Reopen'}</button>
+                    <button onclick="deleteAudition(${x.id})" class="text-xs text-danger hover:underline">Delete</button>
                 </div>
             </div>
-            <div class="px-5 py-3"><div id="signups-${x.id}" class="text-sm text-gray-500">Loading signups…</div></div>
+            <div class="px-5 py-3"><div id="signups-${x.id}" class="text-sm text-ink-3">Loading signups…</div></div>
         </div>`).join('');
     a.forEach(x=>loadSignups(x.id));
 }
@@ -134,16 +132,16 @@ async function loadSignups(aid){
     const el=document.getElementById('signups-'+aid);
     const data=await (await fetch(`/api/performance/auditions/${aid}/signups`)).json();
     const s=data.signups||[];
-    if(!s.length){el.innerHTML='<span class="text-gray-400">No signups yet.</span>';return;}
-    const badge=st=>({signed_up:'bg-blue-100 text-blue-800',accepted:'bg-green-100 text-green-800',declined:'bg-gray-200 text-gray-600',waitlist:'bg-amber-100 text-amber-800'}[st]||'');
-    el.innerHTML=`<table class="min-w-full text-sm"><tbody>${s.map(x=>`<tr class="border-b border-gray-100">
-        <td class="py-1 pr-4">${esc(x.student_name)}</td>
-        <td class="py-1 pr-4"><span class="px-2 py-0.5 rounded-full text-xs ${badge(x.status)}">${x.status.replace('_',' ')}</span></td>
+    if(!s.length){el.innerHTML='<span class="text-ink-3">No signups yet.</span>';return;}
+    const badge=st=>({signed_up:'bg-info/10 text-info',accepted:'bg-ok/10 text-ok',declined:'bg-surface-2 text-ink-2',waitlist:'bg-warn/10 text-warn'}[st]||'');
+    el.innerHTML=`<div class="overflow-x-auto"><table class="min-w-full text-sm"><tbody>${s.map(x=>`<tr class="border-b border-line last:border-0">
+        <td class="py-1 pr-4 text-ink">${esc(x.student_name)}</td>
+        <td class="py-1 pr-4"><span class="px-2.5 py-1 rounded-full text-xs font-bold ${badge(x.status)}">${x.status.replace('_',' ')}</span></td>
         <td class="py-1 text-right">
-            <button onclick="setStatus(${x.id},'accepted',${aid})" class="text-xs text-green-600 hover:underline mr-2">Accept</button>
-            <button onclick="setStatus(${x.id},'waitlist',${aid})" class="text-xs text-amber-600 hover:underline mr-2">Waitlist</button>
-            <button onclick="setStatus(${x.id},'declined',${aid})" class="text-xs text-gray-500 hover:underline">Decline</button>
-        </td></tr>`).join('')}</tbody></table>`;
+            <button onclick="setStatus(${x.id},'accepted',${aid})" class="text-xs text-ok hover:underline mr-2">Accept</button>
+            <button onclick="setStatus(${x.id},'waitlist',${aid})" class="text-xs text-warn hover:underline mr-2">Waitlist</button>
+            <button onclick="setStatus(${x.id},'declined',${aid})" class="text-xs text-ink-3 hover:underline">Decline</button>
+        </td></tr>`).join('')}</tbody></table></div>`;
 }
 async function createAudition(){
     const title=prompt('Audition title:');if(!title)return;
@@ -164,21 +162,21 @@ async function loadPerformances(){
     const el=document.getElementById('performances-list');
     const data=await (await fetch('/api/performance/performances')).json();
     const p=data.performances||[];
-    if(!p.length){el.innerHTML='<p class="text-gray-500">No performances scheduled.</p>';return;}
+    if(!p.length){el.innerHTML='<p class="text-ink-3">No performances scheduled.</p>';return;}
     el.innerHTML=p.map(x=>`
-        <div class="bg-white shadow rounded-lg overflow-hidden">
-            <div class="px-5 py-3 border-b flex items-center justify-between">
-                <div><span class="font-semibold text-gray-900">${esc(x.title)}</span>
-                    <span class="text-xs text-amber-600 ml-2">${esc(x.group_name)}</span>
-                    <p class="text-xs text-gray-500">${x.performance_date?new Date(x.performance_date+'T00:00').toLocaleDateString():'No date'} ${x.call_time?'· call '+esc(x.call_time):''} ${x.venue?'· '+esc(x.venue):''} · ${x.assignment_count} dancers</p></div>
-                <button onclick="deletePerformance(${x.id})" class="text-xs text-red-600 hover:underline">Delete</button>
+        <div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
+            <div class="px-5 py-3 border-b border-line flex items-center justify-between">
+                <div><span class="font-bold text-ink">${esc(x.title)}</span>
+                    <span class="text-xs text-gold-ink ml-2">${esc(x.group_name)}</span>
+                    <p class="text-xs text-ink-3">${x.performance_date?new Date(x.performance_date+'T00:00').toLocaleDateString():'No date'} ${x.call_time?'· call '+esc(x.call_time):''} ${x.venue?'· '+esc(x.venue):''} · ${x.assignment_count} dancers</p></div>
+                <button onclick="deletePerformance(${x.id})" class="text-xs text-danger hover:underline">Delete</button>
             </div>
             <div class="px-5 py-3">
-                <div id="assign-${x.id}" class="text-sm text-gray-500 mb-3">Loading lineup…</div>
+                <div id="assign-${x.id}" class="text-sm text-ink-3 mb-3">Loading lineup…</div>
                 <div class="flex items-center gap-2 flex-wrap">
                     ${studentPicker('addassign-'+x.id)}
-                    <button onclick="addAssign(${x.id})" class="px-3 py-1 bg-primary-600 text-white rounded text-sm">Add dancer</button>
-                    ${x.group_id?`<button onclick="assignGroup(${x.id})" class="px-3 py-1 bg-amber-500 text-white rounded text-sm">Add whole company</button>`:''}
+                    <button onclick="addAssign(${x.id})" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Add dancer</button>
+                    ${x.group_id?`<button onclick="assignGroup(${x.id})" class="px-4 py-2 rounded-xl bg-gold-500 text-white text-sm font-bold hover:opacity-90 shadow-sm">Add whole company</button>`:''}
                 </div>
             </div>
         </div>`).join('');
@@ -188,9 +186,9 @@ async function loadAssign(pid){
     const el=document.getElementById('assign-'+pid);
     const data=await (await fetch(`/api/performance/performances/${pid}/assignments`)).json();
     const a=data.assignments||[];
-    if(!a.length){el.innerHTML='<span class="text-gray-400">No dancers assigned.</span>';return;}
-    el.innerHTML=a.map(x=>`<span class="inline-flex items-center bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1 mr-2 mb-2">${esc(x.student_name)}
-        <button onclick="removeAssign(${x.id},${pid})" class="ml-2 text-red-500 hover:text-red-700">&times;</button></span>`).join('');
+    if(!a.length){el.innerHTML='<span class="text-ink-3">No dancers assigned.</span>';return;}
+    el.innerHTML=a.map(x=>`<span class="inline-flex items-center bg-primary-50 border border-primary-200 rounded-full px-2.5 py-1 mr-2 mb-2 text-xs font-bold text-ink">${esc(x.student_name)}
+        <button onclick="removeAssign(${x.id},${pid})" class="ml-2 text-danger hover:opacity-70">&times;</button></span>`).join('');
 }
 async function createPerformance(){
     const title=prompt('Performance title (e.g. 22nd Annual Recital):');if(!title)return;

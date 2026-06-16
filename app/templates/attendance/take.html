@@ -25,9 +25,9 @@
         background: white;
     }
     .week-box.current-week {
-        border-color: #6366f1;
+        border-color: #8f2db5;
         border-width: 3px;
-        background: #f0f0ff;
+        background: #f6ecfa;
     }
     .week-box.marked {
         background: #fef3c7;
@@ -35,9 +35,9 @@
         color: #92400e;
     }
     .week-box.marked.current-week {
-        background: #c7d2fe;
-        border-color: #4338ca;
-        color: #3730a3;
+        background: #ead2f3;
+        border-color: #7c249f;
+        color: #5c1976;
     }
     .week-box.tappable:hover {
         transform: scale(1.1);
@@ -59,22 +59,22 @@
         width: 44px;
     }
     .today-banner {
-        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        background: linear-gradient(135deg, #8f2db5 0%, #ad5ccf 100%);
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="min-h-full">
+<div>
     <!-- Header -->
-    <div class="today-banner shadow">
-        <div class="max-w-3xl mx-auto py-5 px-4">
+    <div class="today-banner shadow-soft rounded-2xl mb-6">
+        <div class="py-5 px-6">
             <div class="flex items-center justify-between">
                 <div>
                     <a href="{{ url_for('main.take_attendance') }}" class="text-white text-opacity-80 text-sm hover:text-opacity-100">
                         <i class="fas fa-arrow-left mr-1"></i> Back
                     </a>
-                    <h1 class="text-2xl font-bold text-white mt-1">{{ dance_class.name }}</h1>
+                    <h1 class="font-display text-3xl text-white mt-1">{{ dance_class.name }}</h1>
                     <p class="text-white text-opacity-80">
                         {{ dance_class.day_name }} &middot; {{ dance_class.start_time.strftime('%I:%M %p') }} - {{ dance_class.end_time.strftime('%I:%M %p') }}
                     </p>
@@ -88,11 +88,11 @@
     </div>
 
     <!-- Attendance Cards -->
-    <div class="max-w-3xl mx-auto py-6 px-4">
+    <div>
         {% if not students %}
-        <div class="text-center py-12 bg-white rounded-xl shadow">
-            <i class="fas fa-user-plus text-gray-300 text-5xl mb-4"></i>
-            <p class="text-xl text-gray-500">No students enrolled in this class</p>
+        <div class="text-center py-12 bg-surface border border-line rounded-2xl shadow-soft">
+            <i class="fas fa-user-plus text-ink-3 text-5xl mb-4"></i>
+            <p class="text-xl text-ink-3">No students enrolled in this class</p>
             <a href="{{ url_for('main.classes') }}" class="text-primary-600 hover:text-primary-500 mt-2 inline-block">
                 Go to Classes to enroll students
             </a>
@@ -101,7 +101,7 @@
 
         <!-- Tap instruction -->
         <div class="text-center mb-4">
-            <p class="text-gray-500 text-sm"><i class="fas fa-hand-pointer mr-1"></i> Tap the highlighted box to mark present</p>
+            <p class="text-ink-3 text-sm"><i class="fas fa-hand-pointer mr-1"></i> Tap the highlighted box to mark present</p>
         </div>
 
         <div class="space-y-4" id="cards-container">
@@ -110,7 +110,7 @@
                 <!-- Student Name -->
                 <div class="flex items-center justify-between mb-3">
                     <p class="student-name">{{ student.full_name }}</p>
-                    <span id="status-{{ student.id }}" class="text-sm font-medium {% if today_checked[student.id] %}text-green-600{% else %}text-gray-400{% endif %}">
+                    <span id="status-{{ student.id }}" class="text-sm font-medium {% if today_checked[student.id] %}text-ok{% else %}text-ink-3{% endif %}">
                         {% if today_checked[student.id] %}
                             <i class="fas fa-check-circle"></i> Here
                         {% else %}
@@ -142,7 +142,7 @@
 
         <!-- Mark All Button -->
         <div class="mt-6 text-center">
-            <button onclick="markAllPresent()" class="px-8 py-4 bg-green-600 text-white rounded-xl text-lg font-bold shadow-lg hover:bg-green-700 active:scale-95 transition-transform">
+            <button onclick="markAllPresent()" class="px-8 py-4 bg-ok text-white rounded-xl text-lg font-bold shadow-soft hover:opacity-90 active:scale-95 transition-transform">
                 <i class="fas fa-check-double mr-2"></i> Mark Everyone Present
             </button>
         </div>
@@ -174,12 +174,12 @@ async function toggleMark(el) {
         if (data.present) {
             el.classList.add('marked');
             el.innerHTML = '\u2717';
-            status.className = 'text-sm font-medium text-green-600';
+            status.className = 'text-sm font-medium text-ok';
             status.innerHTML = '<i class="fas fa-check-circle"></i> Here';
         } else {
             el.classList.remove('marked');
             el.innerHTML = '';
-            status.className = 'text-sm font-medium text-gray-400';
+            status.className = 'text-sm font-medium text-ink-3';
             status.innerHTML = '&mdash;';
         }
         updateCount();
