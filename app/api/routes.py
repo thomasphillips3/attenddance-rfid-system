@@ -4,6 +4,7 @@ import logging
 import os
 import secrets
 import tempfile
+import threading
 from datetime import date, datetime, timedelta
 
 from flask import current_app, jsonify, request, send_file
@@ -3768,6 +3769,16 @@ def cron_run():
     return jsonify({'status': 'ok', 'ran': ran})
 
 
+# Serializes concurrent late-fee runs. The per-student "already charged this
+# month?" check below is idempotent for a *sequential* re-run, but two
+# *concurrent* runs (a double-click) both read the pre-charge state and each
+# charge every over-threshold family — double late fees. Holding this lock across
+# the check+commit makes the second run see the first's committed charges and
+# skip them. Valid because the app runs a single gunicorn worker (see the deploy
+# note); it would need a DB-level guard if workers were ever scaled up.
+_late_fee_lock = threading.Lock()
+
+
 @bp.route('/balances/apply-late-fees', methods=['POST'])
 @login_required
 def apply_late_fees():
@@ -3785,33 +3796,34 @@ def apply_late_fees():
     if amount <= 0:
         return jsonify({'error': 'Set a late fee amount greater than $0'}), 400
 
-    students = Student.query.filter_by(is_active=True).all()
-    balances = calc_balance_bulk([s.id for s in students])
-    month_start = date.today().replace(day=1)
-    applied = 0
-    skipped = 0
-    for s in students:
-        if balances[s.id]['balance'] <= min_balance:
-            continue
-        # Idempotency: never stack a second late fee on a student in the same
-        # calendar month. Without this, a double-click or a refresh that re-POSTs
-        # charges every over-threshold family twice.
-        already = Transaction.query.filter_by(
-            student_id=s.id, type='charge', category='late fee',
-        ).filter(Transaction.transaction_date >= month_start).first()
-        if already:
-            skipped += 1
-            continue
-        db.session.add(Transaction(
-            student_id=s.id, type='charge', amount=amount, category='late fee',
-            payment_method='n/a', description='Late fee', transaction_date=date.today(),
-            created_by=current_user.id,
-        ))
-        applied += 1
-    AuditLog.record(current_user.id, 'late_fee.apply',
-                    f'Applied ${amount:.2f} late fee to {applied} students '
-                    f'({skipped} already charged this month; balance > ${min_balance:.2f})')
-    db.session.commit()
+    with _late_fee_lock:
+        students = Student.query.filter_by(is_active=True).all()
+        balances = calc_balance_bulk([s.id for s in students])
+        month_start = date.today().replace(day=1)
+        applied = 0
+        skipped = 0
+        for s in students:
+            if balances[s.id]['balance'] <= min_balance:
+                continue
+            # Idempotency: never stack a second late fee on a student in the same
+            # calendar month. Without this, a double-click or a refresh that
+            # re-POSTs charges every over-threshold family twice.
+            already = Transaction.query.filter_by(
+                student_id=s.id, type='charge', category='late fee',
+            ).filter(Transaction.transaction_date >= month_start).first()
+            if already:
+                skipped += 1
+                continue
+            db.session.add(Transaction(
+                student_id=s.id, type='charge', amount=amount, category='late fee',
+                payment_method='n/a', description='Late fee', transaction_date=date.today(),
+                created_by=current_user.id,
+            ))
+            applied += 1
+        AuditLog.record(current_user.id, 'late_fee.apply',
+                        f'Applied ${amount:.2f} late fee to {applied} students '
+                        f'({skipped} already charged this month; balance > ${min_balance:.2f})')
+        db.session.commit()
     msg = f'Applied ${amount:.2f} late fee to {applied} students'
     if skipped:
         msg += f' ({skipped} already had one this month — skipped)'

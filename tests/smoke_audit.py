@@ -2290,6 +2290,52 @@ def run_attendance_race():
            f"attendance_rows={n} codes={sorted(codes)}", "P1")
 
 
+def run_late_fee_race():
+    """Bulk late-fee application has a per-student per-month idempotency check, so
+    a sequential re-run is safe — but it's check-then-act, so two concurrent runs
+    (a double-click) both read the pre-charge state and each charge every
+    over-threshold family (double late fees = real money). A process lock must
+    serialize the runs. Fire two simultaneous applications at one over-threshold
+    student and assert exactly one late-fee charge."""
+    import threading
+    from datetime import date as _date
+    from app.models import Student, Family, Transaction
+    with app.app_context():
+        fam = Family(name="Late Fam", primary_email="late@x.com")
+        db.session.add(fam)
+        db.session.flush()
+        st = Student(first_name="Owes", last_name="Fee", family_id=fam.id, is_active=True)
+        db.session.add(st)
+        db.session.flush()
+        db.session.add(Transaction(student_id=st.id, type="charge", amount=100.0,
+                                   category="tuition", payment_method="n/a",
+                                   description="tuition", transaction_date=_date.today()))
+        db.session.commit()
+        sid = st.id
+
+    barrier = threading.Barrier(2)
+    codes = []
+
+    def worker():
+        with app.test_client() as c:
+            login(c, "admin", "admin123")
+            barrier.wait()
+            codes.append(c.post("/api/balances/apply-late-fees",
+                                json={"amount": 25, "min_balance": 0}).status_code)
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    with app.app_context():
+        n = Transaction.query.filter_by(student_id=sid, category="late fee").count()
+    record("Concurrent late-fee application charges each family exactly once",
+           n == 1 and all(code < 500 for code in codes),
+           f"late_fee_charges={n} codes={sorted(codes)}", "P1")
+
+
 def run_xss_guard():
     """Static guard: user-controlled name/text fields must never be interpolated
     into a JS template literal without esc(). These fields come from public
@@ -2466,6 +2512,7 @@ def main():
     run_confirm_payment_race()
     run_registration_approve_race()
     run_attendance_race()
+    run_late_fee_race()
     run_js_syntax()
     run_smoke()
     run_empty_state()
