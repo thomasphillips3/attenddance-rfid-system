@@ -2942,9 +2942,9 @@ def run_withdraw_frees_enrollment():
 
 def run_parent_portal_classes():
     """The parent portal must show each child's class schedule (a basic parent
-    need). Enroll a child in one class + cancel another they were in; the portal
-    shows the active class and NOT the cancelled one (the cancel cascade
-    deactivated its enrollment)."""
+    need), ordered like a weekly schedule (weekday then time), and must hide a
+    cancelled class (the cancel cascade deactivates its enrollment). Enroll a
+    child in a Wed + a Mon class (Mon added second) plus a class we then cancel."""
     from datetime import time as _time
     from app.models import (User, DanceClass, Student, Family, ClassEnrollment, ParentStudent)
     with app.app_context():
@@ -2958,13 +2958,17 @@ def run_parent_portal_classes():
         db.session.add(kid)
         db.session.flush()
         db.session.add(ParentStudent(parent_id=p.id, student_id=kid.id))
-        active = DanceClass(name="ZzActiveClass", day_of_week=1, start_time=_time(16, 0),
-                            end_time=_time(17, 0), instructor_id=adm.id)
-        cancelled = DanceClass(name="ZzCancelledClass2", day_of_week=2, start_time=_time(16, 0),
+        wed = DanceClass(name="ZzActiveWed", day_of_week=2, start_time=_time(16, 0),
+                         end_time=_time(17, 0), instructor_id=adm.id)
+        mon = DanceClass(name="ZzActiveMon", day_of_week=0, start_time=_time(16, 0),
+                         end_time=_time(17, 0), instructor_id=adm.id)
+        cancelled = DanceClass(name="ZzCancelledClass2", day_of_week=1, start_time=_time(16, 0),
                                end_time=_time(17, 0), instructor_id=adm.id)
-        db.session.add_all([active, cancelled])
+        db.session.add_all([wed, mon, cancelled])
         db.session.flush()
-        db.session.add(ClassEnrollment(student_id=kid.id, class_id=active.id))
+        # Enroll Wed first, then Mon — so DB order != schedule order.
+        db.session.add(ClassEnrollment(student_id=kid.id, class_id=wed.id))
+        db.session.add(ClassEnrollment(student_id=kid.id, class_id=mon.id))
         db.session.add(ClassEnrollment(student_id=kid.id, class_id=cancelled.id))
         db.session.commit()
         ccid = cancelled.id
@@ -2975,8 +2979,12 @@ def run_parent_portal_classes():
         login(c, "sched_parent", "pw")
         body = c.get("/parent").get_data(as_text=True)
     record("Parent portal shows the child's active class schedule, hides a cancelled class",
-           "ZzActiveClass" in body and "ZzCancelledClass2" not in body,
-           f"active_shown={'ZzActiveClass' in body} cancelled_shown={'ZzCancelledClass2' in body}", "P2")
+           "ZzActiveMon" in body and "ZzActiveWed" in body and "ZzCancelledClass2" not in body,
+           f"mon={'ZzActiveMon' in body} wed={'ZzActiveWed' in body} cancelled={'ZzCancelledClass2' in body}", "P2")
+    record("Parent portal orders classes by weekday (Mon before Wed despite reverse enroll order)",
+           "ZzActiveMon" in body and "ZzActiveWed" in body
+           and body.index("ZzActiveMon") < body.index("ZzActiveWed"),
+           f"mon_idx={body.find('ZzActiveMon')} wed_idx={body.find('ZzActiveWed')}", "P3")
 
 
 def run_skill_archive_safe():

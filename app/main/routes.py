@@ -123,13 +123,19 @@ def parent_dashboard():
         # The child's current class schedule — active enrollments in still-active
         # classes (a cancelled class's enrollment is deactivated, so it won't show).
         enr = ClassEnrollment.query.filter_by(student_id=child.id, is_active=True).all()
+        # Order by weekday then start time so it reads like a weekly schedule,
+        # not DB insertion order.
+        active_enr = sorted(
+            (e for e in enr if e.dance_class and e.dance_class.is_active),
+            key=lambda e: (e.dance_class.day_of_week, e.dance_class.start_time),
+        )
         child_classes = [{
             'name': e.dance_class.name,
             'day_name': e.dance_class.day_name,
             'start_time': e.dance_class.start_time.strftime('%-I:%M %p'),
             'end_time': e.dance_class.end_time.strftime('%-I:%M %p'),
             'location': e.dance_class.location.name if e.dance_class.location else None,
-        } for e in enr if e.dance_class and e.dance_class.is_active]
+        } for e in active_enr]
         child_data.append({
             'student': child,
             'balance': bal['balance'],
