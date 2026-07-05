@@ -753,6 +753,62 @@ def run_parent_input_robustness(ids):
                    not bad, f"failed: {bad}", "P2")
 
 
+def run_parent_write_authz(ids):
+    """Object-level authorization on the parent-ALLOWED writes: a parent may
+    write (claim payment, sign waiver, acknowledge rule, request makeup, audition
+    signup, ticket order) — but ONLY against their own child. Acting on another
+    family's child must be blocked (403/404). This is the IDOR-in-writes companion
+    to run_idor's read sweep. Attacker = parent_b, target = parent_a's child_a."""
+    from app.models import (WaiverTemplate, Rule, Audition, Performance,
+                            TicketType, PerformanceGroup)
+    victim = ids["child_a"]      # parent_a's child
+    victim_fam = ids["fam_a"]
+    with app.app_context():
+        grp = PerformanceGroup(name="Authz Co")
+        db.session.add(grp)
+        db.session.flush()
+        wt = WaiverTemplate(title="Authz Waiver", body="...", allow_decline=True)
+        rule = Rule(text="Authz rule", display_order=98)
+        aud = Audition(title="Authz Aud", group_id=grp.id, is_open=True)
+        perf = Performance(title="Authz Show", group_id=grp.id)
+        db.session.add_all([wt, rule, aud, perf])
+        db.session.flush()
+        tt = TicketType(performance_id=perf.id, name="GA", price=10)
+        db.session.add(tt)
+        db.session.commit()
+        wtid, rid, aid, pid, ttid = wt.id, rule.id, aud.id, perf.id, tt.id
+
+    attacks = [
+        ("POST", "/api/payments/claim",
+         {"method": "zelle", "amount": 50, "student_id": victim}, "claim payment for another child"),
+        ("POST", "/api/payments/claim",
+         {"method": "zelle", "amount": 50, "family_id": victim_fam}, "claim payment for another family"),
+        ("POST", f"/api/students/{victim}/waivers/{wtid}/sign",
+         {"signed_name": "Attacker", "consent": True}, "sign waiver for another child"),
+        ("POST", f"/api/rules/{rid}/acknowledge",
+         {"student_id": victim, "initials": "XX"}, "acknowledge rule for another child"),
+        ("POST", "/api/makeups",
+         {"student_id": victim, "missed_date": "2026-07-01"}, "request makeup for another child"),
+        ("POST", f"/api/performance/auditions/{aid}/signup",
+         {"student_id": victim}, "audition signup for another child"),
+        ("POST", f"/api/performances/{pid}/ticket-orders",
+         {"ticket_type_id": ttid, "student_id": victim}, "ticket order for another child"),
+    ]
+    with app.test_client() as c:
+        login(c, "parent_b", "pw")
+        for method, path, body, desc in attacks:
+            r = c.open(path, method=method, json=body)
+            blocked = r.status_code in (401, 403, 404)
+            record(f"IDOR-write blocked: {desc} [{path}] -> {r.status_code}",
+                   blocked, f"got {r.status_code}, expected 403/404", "P0")
+        # claim_payment must not 500 on a garbage id (parent-reachable).
+        for bad in ({"method": "zelle", "amount": 50, "student_id": "xyz"},
+                    {"method": "zelle", "amount": 50, "family_id": "xyz"}):
+            r = c.post("/api/payments/claim", json=bad)
+            record(f"claim_payment handles bad id without 500 -> {r.status_code}",
+                   r.status_code != 500, f"got {r.status_code}", "P2")
+
+
 def run_csv_exports(ids):
     """CSV exports: staff get a well-formed CSV; parents are blocked."""
     # Parent blocked.
@@ -885,6 +941,7 @@ def main():
     run_amount_validation(ids)
     run_input_robustness(ids)
     run_parent_input_robustness(ids)
+    run_parent_write_authz(ids)
     run_csv_exports(ids)
     run_xss_guard()
     run_js_syntax()

@@ -2133,22 +2133,30 @@ def claim_payment():
     family_id = data.get('family_id')
     if not student_id and not family_id:
         return jsonify({'error': 'student_id or family_id is required'}), 400
+    if student_id:
+        student_id, serr = _valid_id(student_id)
+        if serr:
+            return serr
+    if family_id:
+        family_id, ferr = _valid_id(family_id)
+        if ferr:
+            return ferr
 
     # Authorization: parents may only claim for their own children/families
     if current_user.is_parent:
         my_students = _parent_student_ids(current_user)
-        if student_id and int(student_id) not in my_students:
+        if student_id and student_id not in my_students:
             return jsonify({'error': 'Not authorized for this student'}), 403
         if family_id:
             my_families = {Student.query.get(sid).family_id for sid in my_students}
-            if int(family_id) not in my_families:
+            if family_id not in my_families:
                 return jsonify({'error': 'Not authorized for this family'}), 403
     elif not current_user.is_staff:
         return jsonify({'error': 'Not authorized'}), 403
 
     p = PendingPayment(
-        student_id=int(student_id) if student_id else None,
-        family_id=int(family_id) if family_id else None,
+        student_id=student_id if student_id else None,
+        family_id=family_id if family_id else None,
         parent_id=current_user.id,
         amount=amount,
         method=method,
