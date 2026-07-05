@@ -246,5 +246,8 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 22 — DONE (verified live)
 - **Staff UX: donations admin → modal.** The record-donation flow (4 prompts) is now a modal (donor name/email, amount, method dropdown). Verified live (POST 201). Donations are recorded *during* the fall/foundation season, so this was the last fall-used prompt flow — **every flow the studio touches in fall is now prompt-free.**
 
+### Iteration 23 — DONE (verified live)
+- **Staff UX: skills + waivers-admin → modals.** Skills add (2 prompts) → modal; waivers-admin new/edit form (title/body/opt-out prompts + a confirm) → one modal with a proper opt-out checkbox and a body textarea. Verified live (skill add POST 201); both node-checked clean. **Only the two spring-only recital templates still use browser prompts** — the entire rest of the app is prompt-free.
+
 ### Remaining for next iterations
-- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~24 remaining staff-side `prompt()` flows → modals — **all spring/off-season now** (recital, waivers-admin, skills); every fall-used flow is prompt-free. P3-4 SRI (deferred — see above) prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
+- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), only the **recital** screens (spring-only) still use `prompt()`; the rest of the app is prompt-free. P3-4 SRI (deferred — see above) prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.

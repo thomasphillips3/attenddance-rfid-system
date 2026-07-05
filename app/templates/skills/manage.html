@@ -27,6 +27,29 @@
         <div id="student-skills" class="space-y-2 text-sm text-ink-3">Pick a dancer to mark skills.</div>
     </div>
 </div>
+
+{% set lbl = "block text-sm font-medium text-ink-2 mb-1" %}
+{% set fld = "block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
+<!-- Add skill modal -->
+<div id="skill-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="closeSkillModal()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="font-display text-2xl text-ink">Add a skill</h3>
+                <button onclick="closeSkillModal()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div><label class="{{ lbl }}" for="sk-name">Skill / level name *</label><input id="sk-name" class="{{ fld }}" placeholder="e.g. Pirouette, Level 2"></div>
+                <div><label class="{{ lbl }}" for="sk-cat">Category</label><input id="sk-cat" class="{{ fld }}" placeholder="e.g. Ballet, Technique"></div>
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+                <button onclick="closeSkillModal()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="submitSkill()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Add skill</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 {% block extra_js %}
 <script>
@@ -43,10 +66,19 @@ async function loadSkills(){
         <span class="text-ink-2">${esc(s.name)}${s.category?` <span class="text-xs text-ink-3">${esc(s.category)}</span>`:''}<span class="text-xs text-ink-3 ml-2">${s.achieved_count} earned</span></span>
         <button aria-label="Delete skill" onclick="delSkill(${s.id})" class="text-danger hover:opacity-70 text-xs">&times;</button></div>`).join('');
 }
-async function createSkill(){
-    const name=prompt('Skill / level name (e.g. Pirouette, Level 2):');if(!name)return;
-    const category=prompt('Category (optional, e.g. Ballet, Technique):')||'';
+function createSkill(){
+    document.getElementById('sk-name').value='';
+    document.getElementById('sk-cat').value='';
+    document.getElementById('skill-modal').classList.remove('hidden');
+    document.getElementById('sk-name').focus();
+}
+function closeSkillModal(){document.getElementById('skill-modal').classList.add('hidden');}
+async function submitSkill(){
+    const name=document.getElementById('sk-name').value.trim();
+    if(!name){msg('A skill name is required',false);return;}
+    const category=document.getElementById('sk-cat').value.trim();
     const r=await fetch('/api/skills',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,category})});
+    if(r.ok)closeSkillModal();
     msg(r.ok?'Skill added':'Error',r.ok);if(r.ok)loadSkills();
 }
 async function delSkill(id){if(!confirm('Archive this skill?'))return;const r=await fetch(`/api/skills/${id}`,{method:'DELETE'});if(r.ok){loadSkills();loadStudentSkills();}}
