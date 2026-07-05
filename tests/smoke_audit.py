@@ -708,6 +708,46 @@ def run_attendance(ids):
                f"got {r.status_code}", "P0")
 
 
+def run_timeclock():
+    """Staff time clock feeds payroll. Verify: can't clock out without clocking
+    in, no double clock-in, hours compute correctly, the report is admin-only and
+    aggregates hours, and displayed timestamps are UTC-marked ('Z') so the browser
+    shows the right local time instead of a UTC-shifted one."""
+    from datetime import datetime as _dt, time as _time
+    from app.models import User, DanceClass, Attendance, TimeClockEntry
+    with app.test_client() as c:
+        login(c, "admin", "admin123")  # admin is staff
+        r0 = c.post("/api/timeclock/clock-out")
+        record(f"Clock-out with no open entry rejected -> {r0.status_code}", r0.status_code == 400,
+               f"got {r0.status_code}", "P3")
+        r1 = c.post("/api/timeclock/clock-in")
+        record(f"Clock-in -> {r1.status_code}", r1.status_code == 201, r1.get_data(as_text=True)[:60], "P2")
+        record("Clock-in timestamp is UTC-marked ('Z')",
+               str((r1.get_json() or {}).get("clock_in", "")).endswith("Z"),
+               f"got {(r1.get_json() or {}).get('clock_in')}", "P2")
+        r2 = c.post("/api/timeclock/clock-in")
+        record(f"Double clock-in rejected -> {r2.status_code}", r2.status_code == 400,
+               f"got {r2.status_code}", "P2")
+        r3 = c.post("/api/timeclock/clock-out")
+        record(f"Clock-out -> {r3.status_code} (hours present)",
+               r3.status_code == 200 and "hours" in (r3.get_json() or {}), r3.get_data(as_text=True)[:60], "P2")
+        # Hours math: seed a known 2.5h shift, confirm the report sums it.
+        with app.app_context():
+            adm = User.query.filter_by(username="admin").first()
+            db.session.add(TimeClockEntry(user_id=adm.id, clock_in=_dt(2026, 7, 1, 20, 0, 0),
+                                          clock_out=_dt(2026, 7, 1, 22, 30, 0)))
+            db.session.commit()
+        rep = c.get("/api/timeclock/report?start=2026-07-01&end=2026-07-01").get_json()
+        record(f"Payroll report sums the 2.5h shift (total={rep.get('total_hours')})",
+               rep.get("total_hours", 0) >= 2.5, str(rep)[:80], "P2")
+    # Parent cannot use the time clock.
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        rp = c.post("/api/timeclock/clock-in")
+        record(f"Parent cannot clock in -> {rp.status_code}", rp.status_code in (401, 403),
+               f"got {rp.status_code}", "P1")
+
+
 def run_auto_reminders():
     """Auto-reminders email/SMS families with balances, and run on every boot +
     cron (the machine wakes/sleeps all day). They MUST fire at most once per
@@ -1529,6 +1569,7 @@ def main():
     run_waiver_signing(ids)
     run_attendance(ids)
     run_message_blast()
+    run_timeclock()
     run_auto_reminders()
     run_multichild_invite_merge()
     run_square_webhook(ids)

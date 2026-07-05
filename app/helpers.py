@@ -260,8 +260,8 @@ def student_to_dict(student) -> dict:
         'enrollment_date': student.enrollment_date.isoformat(),
         'notes': student.notes,
         'medical_notes': student.medical_notes,
-        'created_at': student.created_at.isoformat(),
-        'updated_at': student.updated_at.isoformat(),
+        'created_at': _utc_iso(student.created_at),
+        'updated_at': _utc_iso(student.updated_at),
     }
 
 
@@ -283,9 +283,16 @@ def class_to_dict(dance_class) -> dict:
         'level': dance_class.level,
         'age_group': dance_class.age_group,
         'is_active': dance_class.is_active,
-        'created_at': dance_class.created_at.isoformat(),
-        'updated_at': dance_class.updated_at.isoformat(),
+        'created_at': _utc_iso(dance_class.created_at),
+        'updated_at': _utc_iso(dance_class.updated_at),
     }
+
+
+def _utc_iso(dt):
+    """ISO-8601 for a naive UTC datetime, marked with 'Z' so the browser's
+    new Date() converts it to local time instead of misreading it as local
+    (which shifts a displayed time by the whole UTC offset)."""
+    return (dt.isoformat() + 'Z') if dt else None
 
 
 def attendance_to_dict(attendance) -> dict:
@@ -295,8 +302,8 @@ def attendance_to_dict(attendance) -> dict:
         'student_name': attendance.student.full_name if attendance.student else None,
         'class_id': attendance.class_id,
         'class_name': attendance.dance_class.name if attendance.dance_class else None,
-        'check_in_time': attendance.check_in_time.isoformat(),
-        'check_out_time': attendance.check_out_time.isoformat() if attendance.check_out_time else None,
+        'check_in_time': _utc_iso(attendance.check_in_time),
+        'check_out_time': _utc_iso(attendance.check_out_time),
         'check_in_method': attendance.check_in_method,
         'notes': attendance.notes,
         'is_present': attendance.is_present,
@@ -317,7 +324,7 @@ def transaction_to_dict(t) -> dict:
         'description': t.description,
         'transaction_date': t.transaction_date.isoformat(),
         'created_by': t.creator.full_name if t.creator else None,
-        'created_at': t.created_at.isoformat(),
+        'created_at': _utc_iso(t.created_at),
     }
 
 
@@ -331,7 +338,7 @@ def recurring_to_dict(rc) -> dict:
         'description': rc.description,
         'day_of_month': rc.day_of_month,
         'is_active': rc.is_active,
-        'created_at': rc.created_at.isoformat(),
+        'created_at': _utc_iso(rc.created_at),
     }
 
 

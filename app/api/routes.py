@@ -143,6 +143,14 @@ def _valid_amount(raw):
     return amt, None
 
 
+def _utc_iso(dt):
+    """ISO-8601 for a naive UTC datetime (datetime.utcnow), marked with a 'Z' so
+    the browser's `new Date()` converts it to local time. Without the suffix, JS
+    reads a naive datetime string as LOCAL, so a UTC time renders shifted by the
+    whole UTC offset (e.g. a 5pm clock-in shown as 9pm)."""
+    return (dt.isoformat() + 'Z') if dt else None
+
+
 def _opt_int(raw):
     """Coerce an optional FK id to a positive int, or None if absent/un-parseable.
     For links whose render path already null-guards the relationship (group_id,
@@ -255,7 +263,7 @@ def api_current_user():
         'first_name': current_user.first_name,
         'last_name': current_user.last_name,
         'is_admin': current_user.is_admin,
-        'last_login': current_user.last_login.isoformat() if current_user.last_login else None,
+        'last_login': _utc_iso(current_user.last_login),
     })
 
 
@@ -1587,9 +1595,9 @@ def get_messages():
         'id': m.id, 'subject': m.subject, 'body': m.body,
         'recipient_type': m.recipient_type, 'recipient_filter': m.recipient_filter,
         'recipient_count': m.recipient_count, 'recipient_emails': m.recipient_emails,
-        'sent': m.sent, 'sent_at': m.sent_at.isoformat() if m.sent_at else None,
+        'sent': m.sent, 'sent_at': _utc_iso(m.sent_at),
         'created_by': m.creator.full_name if m.creator else None,
-        'created_at': m.created_at.isoformat(),
+        'created_at': _utc_iso(m.created_at),
     } for m in msgs]})
 
 
@@ -1793,8 +1801,8 @@ def _staff_to_dict(u):
         'role': u.role,
         'is_admin': u.is_admin,
         'is_active': u.is_active,
-        'last_login': u.last_login.isoformat() if u.last_login else None,
-        'created_at': u.created_at.isoformat(),
+        'last_login': _utc_iso(u.last_login),
+        'created_at': _utc_iso(u.created_at),
     }
 
 
@@ -1912,7 +1920,7 @@ def _location_to_dict(loc):
         'notes': loc.notes,
         'is_active': loc.is_active,
         'class_count': loc.classes.filter_by(is_active=True).count(),
-        'created_at': loc.created_at.isoformat(),
+        'created_at': _utc_iso(loc.created_at),
     }
 
 
@@ -2201,7 +2209,7 @@ def get_audit_log():
         'action': r.action,
         'detail': r.detail,
         'user': r.user.full_name if r.user else 'System',
-        'created_at': r.created_at.isoformat(),
+        'created_at': _utc_iso(r.created_at),
     } for r in rows]})
 
 
@@ -2235,8 +2243,8 @@ def _pending_to_dict(p) -> dict:
         'note': p.note,
         'status': p.status,
         'admin_note': p.admin_note,
-        'created_at': p.created_at.isoformat(),
-        'reviewed_at': p.reviewed_at.isoformat() if p.reviewed_at else None,
+        'created_at': _utc_iso(p.created_at),
+        'reviewed_at': _utc_iso(p.reviewed_at),
         'reviewed_by': p.reviewer.full_name if p.reviewer else None,
     }
 
@@ -2890,7 +2898,7 @@ def list_audition_signups(aid):
         'student_name': s.student.full_name if s.student else None,
         'status': s.status,
         'notes': s.notes,
-        'created_at': s.created_at.isoformat(),
+        'created_at': _utc_iso(s.created_at),
     } for s in a.signups.order_by(AuditionSignup.created_at).all()]})
 
 
@@ -3257,7 +3265,7 @@ def get_student_waivers(student_id):
             'signed': sig is not None,
             'consent': sig.consent if sig else None,
             'signed_name': sig.signed_name if sig else None,
-            'signed_at': sig.signed_at.isoformat() if sig else None,
+            'signed_at': _utc_iso(sig.signed_at) if sig else None,
         })
     return jsonify({'student_id': student.id, 'student_name': student.full_name, 'waivers': out})
 
@@ -3592,7 +3600,7 @@ def list_ticket_orders(pid):
             'amount': f'{float(o.amount):.2f}',
             'paid': o.paid,
             'note': o.note,
-            'created_at': o.created_at.isoformat(),
+            'created_at': _utc_iso(o.created_at),
         } for o in orders],
         'summary': {'total_tickets': total_qty, 'revenue': f'{revenue:.2f}', 'pending': f'{pending:.2f}'},
     })
@@ -4062,7 +4070,7 @@ def list_registrations():
         out.append({
             'id': r.id, 'parent_name': r.parent_name, 'parent_email': r.parent_email,
             'parent_phone': r.parent_phone, 'students': students, 'class_names': class_names,
-            'note': r.note, 'status': r.status, 'created_at': r.created_at.isoformat(),
+            'note': r.note, 'status': r.status, 'created_at': _utc_iso(r.created_at),
         })
     return jsonify({'registrations': out})
 
@@ -4162,7 +4170,7 @@ def get_waitlist(class_id):
             .order_by(WaitlistEntry.created_at).all())
     return jsonify({'waitlist': [{
         'id': w.id, 'student_id': w.student_id, 'student_name': w.student.full_name if w.student else None,
-        'position': i + 1, 'created_at': w.created_at.isoformat(),
+        'position': i + 1, 'created_at': _utc_iso(w.created_at),
     } for i, w in enumerate(rows)]})
 
 
@@ -4324,7 +4332,7 @@ def _makeup_to_dict(m):
         'makeup_date': m.makeup_date.isoformat() if m.makeup_date else None,
         'status': m.status,
         'note': m.note,
-        'created_at': m.created_at.isoformat(),
+        'created_at': _utc_iso(m.created_at),
     }
 
 
@@ -4434,7 +4442,7 @@ def _lead_to_dict(l):
         'id': l.id, 'name': l.name, 'email': l.email, 'phone': l.phone,
         'interest': l.interest, 'source': l.source, 'status': l.status,
         'trial_date': l.trial_date.isoformat() if l.trial_date else None,
-        'note': l.note, 'created_at': l.created_at.isoformat(),
+        'note': l.note, 'created_at': _utc_iso(l.created_at),
     }
 
 
@@ -4536,10 +4544,10 @@ def timeclock_me():
               .order_by(desc(TimeClockEntry.clock_in)).limit(20).all())
     return jsonify({
         'open': bool(open_entry),
-        'open_since': open_entry.clock_in.isoformat() if open_entry else None,
+        'open_since': _utc_iso(open_entry.clock_in) if open_entry else None,
         'entries': [{
-            'id': e.id, 'clock_in': e.clock_in.isoformat(),
-            'clock_out': e.clock_out.isoformat() if e.clock_out else None, 'hours': e.hours,
+            'id': e.id, 'clock_in': _utc_iso(e.clock_in),
+            'clock_out': _utc_iso(e.clock_out), 'hours': e.hours,
         } for e in recent],
     })
 
@@ -4554,7 +4562,7 @@ def clock_in():
     e = TimeClockEntry(user_id=current_user.id)
     db.session.add(e)
     db.session.commit()
-    return jsonify({'message': 'Clocked in', 'clock_in': e.clock_in.isoformat()}), 201
+    return jsonify({'message': 'Clocked in', 'clock_in': _utc_iso(e.clock_in)}), 201
 
 
 @bp.route('/timeclock/clock-out', methods=['POST'])
@@ -4585,7 +4593,8 @@ def timeclock_report():
                .all())
     by_user = {}
     for e in entries:
-        by_user.setdefault(e.user_id, {'name': e.user.full_name, 'hours': 0.0, 'shifts': 0})
+        by_user.setdefault(e.user_id, {
+            'name': e.user.full_name if e.user else '(removed user)', 'hours': 0.0, 'shifts': 0})
         by_user[e.user_id]['hours'] += e.hours or 0
         by_user[e.user_id]['shifts'] += 1
     report = sorted(by_user.values(), key=lambda x: -x['hours'])
