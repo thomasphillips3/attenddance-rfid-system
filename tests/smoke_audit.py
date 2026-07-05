@@ -2753,6 +2753,45 @@ def run_class_instructor_assignment():
            f"listed={listed} created={created_ok} reassigned={reassigned}", "P2")
 
 
+def run_capacity_lifecycle():
+    """Integration: capacity-freeing (withdraw) and capacity-checking (promote)
+    must COMPOSE — the real flow where a full class opens a spot. Full 1/1 class +
+    a waitlisted student: promote is blocked; withdraw the enrolled student to free
+    the spot; now promote succeeds and the waitlisted student takes the seat."""
+    from datetime import time as _time
+    from app.models import (User, DanceClass, Student, Family, ClassEnrollment,
+                            WaitlistEntry)
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        fam = Family(name="Lifecycle Fam", primary_email="lc@x.com")
+        db.session.add(fam)
+        db.session.flush()
+        dc = DanceClass(name="One Spot", day_of_week=1, start_time=_time(16, 0),
+                        end_time=_time(17, 0), instructor_id=adm.id, max_students=1)
+        db.session.add(dc)
+        db.session.flush()
+        enr = Student(first_name="Sitting", last_name="L", family_id=fam.id, is_active=True)
+        wai = Student(first_name="Nextup", last_name="L", family_id=fam.id, is_active=True)
+        db.session.add_all([enr, wai])
+        db.session.flush()
+        db.session.add(ClassEnrollment(student_id=enr.id, class_id=dc.id))
+        w = WaitlistEntry(class_id=dc.id, student_id=wai.id, status="waiting")
+        db.session.add(w)
+        db.session.commit()
+        cid, eid, wid, wai_id = dc.id, enr.id, w.id, wai.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        blocked = c.post(f"/api/waitlist/{wid}/promote").status_code   # full -> 400
+        c.delete(f"/api/students/{eid}")                                # free the spot
+        promoted = c.post(f"/api/waitlist/{wid}/promote").status_code   # now -> 200
+    with app.app_context():
+        active = ClassEnrollment.query.filter_by(class_id=cid, is_active=True).all()
+        roster = [e.student_id for e in active]
+    record(f"Capacity lifecycle: full→block, withdraw frees, promote fills (block={blocked}, promote={promoted})",
+           blocked == 400 and promoted == 200 and roster == [wai_id],
+           f"block={blocked} promote={promoted} roster={roster}", "P1")
+
+
 def run_class_capacity():
     """Enrollment must respect max_students so a class can't be silently
     overbooked (that's what the waitlist is for). Enroll 3 into a max=2 class →
@@ -3268,6 +3307,7 @@ def main():
     run_class_crud()
     run_class_instructor_assignment()
     run_class_capacity()
+    run_capacity_lifecycle()
     run_recurring_charge_edit()
     run_page_route_authz(ids)
     run_admin_role_consistency()
