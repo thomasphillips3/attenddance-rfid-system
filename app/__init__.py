@@ -124,6 +124,24 @@ def create_app(config_name=None):
     app = Flask(__name__)
     app.config.from_object(config[config_name])
 
+    # Fail closed: never run production on a missing or known-default SECRET_KEY.
+    # SECRET_KEY signs session cookies AND derives the Fernet key that encrypts
+    # the Square token at rest (app/crypto.py), so a guessable value means full
+    # admin-session forgery + secret decryption. Set a real one before deploy:
+    #   fly secrets set SECRET_KEY=$(python3 -c 'import secrets;print(secrets.token_hex(32))')
+    if config_name == 'production':
+        sk = app.config.get('SECRET_KEY') or ''
+        weak = {
+            'dev-secret-key-change-in-production-12345',
+            'fly-demo-key-change-for-real-prod',
+        }
+        if sk in weak or len(sk) < 32:
+            raise RuntimeError(
+                'Refusing to start in production with a missing or default '
+                'SECRET_KEY. Set a strong secret (>=32 chars) via '
+                "`fly secrets set SECRET_KEY=...` before deploying."
+            )
+
     db.init_app(app)
     login_manager.init_app(app)
 

@@ -78,6 +78,69 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+# ── Authorization helpers ───────────────────────────────────────────
+# Staff = admin/teacher (User.is_staff). Parents may only touch students
+# and families they are linked to via ParentStudent. These return a
+# (json, status) error tuple to `return` on denial, else None.
+
+def _staff_only():
+    """Deny non-staff (parents). Return error tuple or None."""
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    return None
+
+
+def _child_ids(user) -> set:
+    """Student ids a parent is linked to (empty for staff — staff use _staff_only)."""
+    return {s.id for s in user.get_children()} if getattr(user, 'is_parent', False) else set()
+
+
+def _require_student_access(student_id):
+    """Allow staff, or a parent linked to this student. Error tuple or None."""
+    if current_user.is_staff:
+        return None
+    if current_user.is_parent and int(student_id) in _child_ids(current_user):
+        return None
+    return jsonify({'error': 'Not authorized for this student'}), 403
+
+
+def _require_family_access(family_id):
+    """Allow staff, or a parent with at least one child in this family."""
+    if current_user.is_staff:
+        return None
+    if current_user.is_parent:
+        fam_ids = {s.family_id for s in current_user.get_children() if s.family_id}
+        if int(family_id) in fam_ids:
+            return None
+    return jsonify({'error': 'Not authorized for this family'}), 403
+
+
+# Endpoints a parent may invoke with a mutating method. EVERY other write is
+# staff-only. This is default-deny / fail-closed: a newly added write endpoint
+# is automatically parent-forbidden until explicitly allowlisted here. The
+# allowlisted endpoints still perform their own per-student ownership checks.
+_PARENT_WRITE_ALLOWED = {
+    'api.api_logout',
+    'api.claim_payment',
+    'api.signup_for_audition',
+    'api.sign_waiver',
+    'api.create_ticket_order',
+    'api.create_makeup',
+    'api.create_donation',
+    'api.acknowledge_rule',
+}
+
+
+@bp.before_request
+def _restrict_parent_writes():
+    """Block parents from any mutating API call not on the allowlist."""
+    if request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
+        if current_user.is_authenticated and getattr(current_user, 'is_parent', False):
+            if request.endpoint not in _PARENT_WRITE_ALLOWED:
+                return jsonify({'error': 'Staff access required'}), 403
+    return None
+
+
 # ── Auth endpoints ──────────────────────────────────────────────────
 
 @bp.route('/auth/login', methods=['POST'])
@@ -111,6 +174,9 @@ def api_current_user():
 @bp.route('/students', methods=['GET'])
 @login_required
 def get_students():
+    err = _staff_only()
+    if err:
+        return err
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)
     search = request.args.get('search', '').strip()
@@ -144,12 +210,18 @@ def get_students():
 @bp.route('/students/<int:student_id>', methods=['GET'])
 @login_required
 def get_student(student_id):
+    err = _require_student_access(student_id)
+    if err:
+        return err
     return jsonify(student_to_dict(Student.query.get_or_404(student_id)))
 
 
 @bp.route('/students', methods=['POST'])
 @login_required
 def create_student():
+    err = _staff_only()
+    if err:
+        return err
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -176,6 +248,9 @@ def create_student():
 @bp.route('/students/<int:student_id>', methods=['PUT'])
 @login_required
 def update_student(student_id):
+    err = _staff_only()
+    if err:
+        return err
     student = Student.query.get_or_404(student_id)
     data = request.get_json()
     if not data:
@@ -202,6 +277,9 @@ def update_student(student_id):
 @bp.route('/students/<int:student_id>', methods=['DELETE'])
 @login_required
 def delete_student(student_id):
+    err = _staff_only()
+    if err:
+        return err
     student = Student.query.get_or_404(student_id)
     student.is_active = False
     student.updated_at = datetime.utcnow()
@@ -212,6 +290,9 @@ def delete_student(student_id):
 @bp.route('/students/<int:student_id>/assign-rfid', methods=['POST'])
 @login_required
 def assign_rfid(student_id):
+    err = _staff_only()
+    if err:
+        return err
     student = Student.query.get_or_404(student_id)
     data = request.get_json()
     rfid_uid = data.get('rfid_uid', '').strip() if data else ''
@@ -234,6 +315,9 @@ def assign_rfid(student_id):
 @bp.route('/students/<int:student_id>/remove-rfid', methods=['POST'])
 @login_required
 def remove_rfid(student_id):
+    err = _staff_only()
+    if err:
+        return err
     student = Student.query.get_or_404(student_id)
     student.rfid_uid = None
     student.rfid_assigned_at = None
@@ -299,6 +383,9 @@ def create_class():
 @bp.route('/classes/<int:class_id>/enrollments', methods=['GET'])
 @login_required
 def get_class_enrollments(class_id):
+    err = _staff_only()
+    if err:
+        return err
     dance_class = DanceClass.query.get_or_404(class_id)
     enrollments = (
         ClassEnrollment.query
@@ -411,6 +498,9 @@ def toggle_attendance():
 @bp.route('/attendance', methods=['GET'])
 @login_required
 def get_attendance():
+    err = _staff_only()
+    if err:
+        return err
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 50, type=int), 100)
     date_from = request.args.get('date_from')
@@ -446,6 +536,9 @@ def get_attendance():
 @bp.route('/attendance/today', methods=['GET'])
 @login_required
 def get_todays_attendance():
+    err = _staff_only()
+    if err:
+        return err
     today = date.today()
     class_id = request.args.get('class_id', type=int)
     query = Attendance.query.filter(func.date(Attendance.check_in_time) == today)
@@ -509,6 +602,9 @@ def manual_checkin():
 @bp.route('/rfid/status', methods=['GET'])
 @login_required
 def rfid_status():
+    err = _staff_only()
+    if err:
+        return err
     if not get_rfid_service:
         return jsonify({'service_running': False, 'message': 'RFID not available'})
     stats = get_rfid_service().get_stats()
@@ -540,6 +636,9 @@ def simulate_rfid_scan():
 @bp.route('/rfid/logs', methods=['GET'])
 @login_required
 def get_rfid_logs():
+    err = _staff_only()
+    if err:
+        return err
     from app.models import RFIDLog
 
     page = request.args.get('page', 1, type=int)
@@ -576,6 +675,9 @@ def get_rfid_logs():
 @bp.route('/dashboard/stats', methods=['GET'])
 @login_required
 def dashboard_stats():
+    err = _staff_only()
+    if err:
+        return err
     from app.models import RFIDLog
 
     today = date.today()
@@ -607,6 +709,9 @@ def dashboard_stats():
 @bp.route('/transactions', methods=['GET'])
 @login_required
 def get_transactions():
+    err = _staff_only()
+    if err:
+        return err
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 50, type=int), 100)
     student_id = request.args.get('student_id', type=int)
@@ -675,6 +780,9 @@ def create_transaction():
 @login_required
 def get_balances():
     """Balance summary for all active students — single SQL aggregate."""
+    err = _staff_only()
+    if err:
+        return err
     students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
     student_ids = [s.id for s in students]
     balances_map = calc_balance_bulk(student_ids)
@@ -696,6 +804,9 @@ def get_balances():
 @login_required
 def get_student_ledger(student_id):
     """Full ledger with running balance — single pass."""
+    err = _require_student_access(student_id)
+    if err:
+        return err
     student = Student.query.get_or_404(student_id)
     txns = Transaction.query.filter_by(student_id=student_id).order_by(
         Transaction.transaction_date, Transaction.created_at
@@ -753,6 +864,9 @@ def bulk_charge():
 @bp.route('/recurring-charges', methods=['GET'])
 @login_required
 def get_recurring_charges():
+    err = _staff_only()
+    if err:
+        return err
     charges = RecurringCharge.query.order_by(RecurringCharge.created_at).all()
     return jsonify({'recurring_charges': [recurring_to_dict(rc) for rc in charges]})
 
@@ -810,12 +924,18 @@ def process_recurring_charges():
 @bp.route('/square/status', methods=['GET'])
 @login_required
 def square_status():
+    err = _staff_only()
+    if err:
+        return err
     return jsonify({'configured': square_service.is_configured()})
 
 
 @bp.route('/students/<int:student_id>/send-invoice', methods=['POST'])
 @login_required
 def send_student_invoice(student_id):
+    err = _staff_only()
+    if err:
+        return err
     if not square_service.is_configured():
         return jsonify({'error': 'Square is not configured. Set SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID in environment.'}), 400
 
@@ -825,15 +945,17 @@ def send_student_invoice(student_id):
     if bal['balance'] <= 0:
         return jsonify({'error': 'No outstanding balance to invoice'}), 400
 
-    # Build line items from charges
-    charges = Transaction.query.filter_by(student_id=student_id, type='charge').all()
+    # Square derives the order total from the SUM of line items (amount_cents is
+    # ignored by the SDK), so the line items must sum to the OUTSTANDING balance,
+    # not to gross charges — otherwise a family that has paid down their balance
+    # gets billed the full original amount. Invoice the net balance as one line.
+    amount_cents = int(round(bal['balance'] * 100))
     line_items = [{
-        'name': t.description or t.category,
-        'amount_cents': int(float(t.amount) * 100),
-    } for t in charges]
+        'name': 'Outstanding balance',
+        'amount_cents': amount_cents,
+    }]
 
     due = date.today() + timedelta(days=14)
-    amount_cents = int(round(bal['balance'] * 100))
     try:
         result = square_service.send_invoice(
             student=student,
@@ -991,6 +1113,9 @@ def delete_rule(rule_id):
 @bp.route('/students/<int:student_id>/rules-status', methods=['GET'])
 @login_required
 def get_student_rules_status(student_id):
+    err = _require_student_access(student_id)
+    if err:
+        return err
     student = Student.query.get_or_404(student_id)
     rules = Rule.query.filter_by(is_active=True).order_by(Rule.display_order).all()
     acks = RuleAcknowledgment.query.filter_by(student_id=student_id).all()
@@ -1029,6 +1154,10 @@ def acknowledge_rule(rule_id):
     if not student_id or not initials:
         return jsonify({'error': 'student_id and initials are required'}), 400
 
+    err = _require_student_access(student_id)
+    if err:
+        return err
+
     Rule.query.get_or_404(rule_id)
     Student.query.get_or_404(student_id)
 
@@ -1052,6 +1181,9 @@ def acknowledge_rule(rule_id):
 @bp.route('/messages', methods=['GET'])
 @login_required
 def get_messages():
+    err = _staff_only()
+    if err:
+        return err
     msgs = Message.query.order_by(desc(Message.created_at)).limit(50).all()
     return jsonify({'messages': [{
         'id': m.id, 'subject': m.subject, 'body': m.body,
@@ -1165,6 +1297,9 @@ def _resolve_recipient_emails(rtype: str, recipient_filter) -> set | tuple:
 @login_required
 def get_families():
     """Get all families with balances — bulk query."""
+    err = _staff_only()
+    if err:
+        return err
     families = Family.query.filter_by(is_active=True).order_by(Family.name).all()
 
     # Collect all student IDs across all families
@@ -1215,6 +1350,9 @@ def create_family():
 @login_required
 def get_family_ledger(family_id):
     """Combined ledger for all students in a family — single pass."""
+    err = _require_family_access(family_id)
+    if err:
+        return err
     family = Family.query.get_or_404(family_id)
     students = family.students.filter_by(is_active=True).all()
     student_ids = [s.id for s in students]
