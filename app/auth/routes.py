@@ -222,3 +222,74 @@ def register_parent():
         return redirect(url_for('main.parent_dashboard'))
 
     return render_template('auth/register.html')
+
+
+def _reset_serializer():
+    from flask import current_app
+    from itsdangerous import URLSafeTimedSerializer
+    return URLSafeTimedSerializer(current_app.config['SECRET_KEY'], salt='password-reset')
+
+
+@bp.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    """Request a password reset. Emails a signed, 1-hour link if email is
+    configured; otherwise tells the user to contact the studio. Always shows a
+    generic message so it can't be used to enumerate which emails have accounts."""
+    if current_user.is_authenticated:
+        return redirect(url_for('main.dashboard'))
+    if request.method == 'POST':
+        from app import email as email_service
+        email = request.form.get('email', '').strip()
+        if not email_service.is_configured():
+            flash("Email isn't set up yet — please contact the studio at "
+                  "LaShellesDance@gmail.com to reset your password.", 'info')
+            return render_template('auth/forgot_password.html')
+        user = User.query.filter_by(email=email, is_active=True).first()
+        if user:
+            token = _reset_serializer().dumps(user.id)
+            link = url_for('auth.reset_password', token=token, _external=True)
+            body = (f"Hi {user.first_name},\n\nSomeone requested a password reset for your "
+                    f"LaShelle's School of Dance account. Use the link below to set a new "
+                    f"password (it expires in 1 hour):\n\n{link}\n\n"
+                    f"If you didn't request this, you can ignore this email.\n")
+            try:
+                email_service.send_email(email, "Reset your password — LaShelle's School of Dance", body)
+            except Exception:
+                pass  # generic response regardless; don't leak send failures
+        flash("If an account exists for that email, a reset link is on its way.", 'success')
+        return render_template('auth/forgot_password.html')
+    return render_template('auth/forgot_password.html')
+
+
+@bp.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    """Complete a password reset from a signed, time-limited token."""
+    if current_user.is_authenticated:
+        return redirect(url_for('main.dashboard'))
+    from itsdangerous import BadSignature, SignatureExpired
+    try:
+        user_id = _reset_serializer().loads(token, max_age=3600)
+    except SignatureExpired:
+        flash('That reset link has expired — please request a new one.', 'error')
+        return redirect(url_for('auth.forgot_password'))
+    except BadSignature:
+        flash('That reset link is invalid.', 'error')
+        return redirect(url_for('auth.forgot_password'))
+    user = User.query.get(user_id)
+    if not user or not user.is_active:
+        flash('That reset link is invalid.', 'error')
+        return redirect(url_for('auth.forgot_password'))
+    if request.method == 'POST':
+        pw = request.form.get('password', '')
+        confirm = request.form.get('confirm_password', '')
+        if len(pw) < 6:
+            flash('Password must be at least 6 characters.', 'error')
+            return render_template('auth/reset_password.html', token=token)
+        if pw != confirm:
+            flash('Passwords do not match.', 'error')
+            return render_template('auth/reset_password.html', token=token)
+        user.set_password(pw)
+        db.session.commit()
+        flash('Password updated — please log in with your new password.', 'success')
+        return redirect(url_for('auth.login'))
+    return render_template('auth/reset_password.html', token=token, user=user)

@@ -225,6 +225,52 @@ def run_multichild_invite_merge():
                "leftover invites", "P2")
 
 
+def run_password_reset():
+    """Self-service password reset: request page degrades gracefully without
+    SMTP, the signed token resets the password, and old creds stop working."""
+    from app.auth.routes import _reset_serializer
+
+    with app.test_client() as c:
+        record(f"Forgot-password page renders -> {c.get('/auth/forgot-password').status_code}",
+               c.get('/auth/forgot-password').status_code == 200, "", "P2")
+        r = c.post('/auth/forgot-password', data={'email': 'a@x.com'}, follow_redirects=True)
+        record("Forgot-password degrades gracefully without SMTP",
+               'contact the studio' in r.get_data(as_text=True).lower(), "no fallback message", "P2")
+
+    with app.app_context():
+        from app.models import User
+        uid = User.query.filter_by(email='a@x.com').first().id
+        token = _reset_serializer().dumps(uid)
+        bad = token[:-3] + 'zzz'
+
+    with app.test_client() as c:
+        record(f"Reset page with valid token -> {c.get('/auth/reset-password/'+token).status_code}",
+               c.get('/auth/reset-password/' + token).status_code == 200, "", "P1")
+    with app.test_client() as c:
+        record(f"Invalid reset token redirected -> {c.get('/auth/reset-password/'+bad).status_code}",
+               c.get('/auth/reset-password/' + bad, follow_redirects=False).status_code == 302, "", "P2")
+    with app.test_client() as c:
+        rr = c.post('/auth/reset-password/' + token,
+                    data={'password': 'brandnewpw', 'confirm_password': 'brandnewpw'},
+                    follow_redirects=False)
+        record(f"Reset sets a new password -> {rr.status_code}", rr.status_code == 302, "", "P1")
+    with app.test_client() as c:  # fresh client (not logged in)
+        ok = c.post('/auth/login', data={'username': 'a@x.com', 'password': 'brandnewpw'},
+                    follow_redirects=False)
+        record(f"New password works after reset -> {ok.status_code}", ok.status_code == 302, "", "P1")
+    with app.test_client() as c:  # fresh client — old password must now fail
+        old = c.post('/auth/login', data={'username': 'a@x.com', 'password': 'pw'},
+                     follow_redirects=False)
+        record(f"Old password rejected after reset -> {old.status_code}", old.status_code == 200,
+               f"got {old.status_code} (302 = old pw still works!)", "P1")
+    # restore parent_a's password so later tests still log in
+    with app.app_context():
+        from app.models import User
+        u = User.query.filter_by(email='a@x.com').first()
+        u.set_password('pw')
+        db.session.commit()
+
+
 def run_login_by_email():
     """Invited parents get an auto-generated `parent-<code>` username they never
     see and register with an email — so login MUST accept email, or they're
@@ -551,6 +597,7 @@ def main():
     run_attendance(ids)
     run_message_blast()
     run_multichild_invite_merge()
+    run_password_reset()
     run_login_by_email()
     run_registration_flow()
     run_amount_validation(ids)
