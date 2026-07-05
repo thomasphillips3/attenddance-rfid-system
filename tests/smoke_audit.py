@@ -2920,6 +2920,36 @@ def run_withdraw_frees_enrollment():
            f"enroll={enroll} wait={wait} bal={bal}", "P1")
 
 
+def run_skill_archive_safe():
+    """Archiving a skill (soft-delete) must PRESERVE its per-student marks (a
+    studio may archive/rename a skill without losing which students earned it)
+    and hide it from the active skills list."""
+    from app.models import Skill, StudentSkill, Student, Family
+    with app.app_context():
+        fam = Family(name="Skill Fam", primary_email="sk@x.com")
+        db.session.add(fam)
+        db.session.flush()
+        sk = Skill(name="ZzPirouetteSkill")
+        st = Student(first_name="Skilled", last_name="Kid", family_id=fam.id, is_active=True)
+        db.session.add_all([sk, st])
+        db.session.flush()
+        db.session.add(StudentSkill(skill_id=sk.id, student_id=st.id))
+        db.session.commit()
+        skid, sid = sk.id, st.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        before = any(s.get("name") == "ZzPirouetteSkill"
+                     for s in (c.get("/api/skills").get_json() or {}).get("skills", []))
+        c.delete(f"/api/skills/{skid}")
+        after = any(s.get("name") == "ZzPirouetteSkill"
+                    for s in (c.get("/api/skills").get_json() or {}).get("skills", []))
+    with app.app_context():
+        mark_kept = StudentSkill.query.filter_by(skill_id=skid, student_id=sid).count()
+    record(f"Archiving a skill hides it from the list but keeps student marks (listed {before}->{after}, marks={mark_kept})",
+           before and not after and mark_kept == 1,
+           f"before={before} after={after} marks={mark_kept}", "P2")
+
+
 def run_withdrawn_student_balance():
     """A withdrawn (is_active=False) student who still owes must stay visible in
     the money views so the studio can collect — the balance can't vanish on
@@ -3303,6 +3333,7 @@ def main():
     run_registrations_pagination()
     run_registration_notify_throttle()
     run_withdrawn_student_balance()
+    run_skill_archive_safe()
     run_withdraw_frees_enrollment()
     run_class_crud()
     run_class_instructor_assignment()
