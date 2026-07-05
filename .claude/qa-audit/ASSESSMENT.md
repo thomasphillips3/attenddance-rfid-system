@@ -6,18 +6,16 @@
 ---
 
 > **To actually launch:** follow [GO-LIVE.md](GO-LIVE.md) — the ordered runbook (required secrets → deploy → smoke test → optional client-side config).
->
-> **Final sign-off (re-verified, 32 commits):** both harnesses green (`smoke_audit` 66/66, `test_billing` 17/17); all 48 templates compile; the production fail-closed `SECRET_KEY` guard refuses a weak key and boots on a strong one; 0 browser prompts and 0 legacy-style files remain; server timezone set to the studio's (Eastern) so business dates are local. The audit is complete; the one open item (auto-pay) is scoped in [AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md).
 
 ## Verdict
 
-**Not production-ready as-is — but close, and the blockers are concentrated.** The feature breadth is genuinely impressive and the UI redesign is fully landed (0 legacy-style files remain). What stands between here and go-live is **two P0 security holes that are individually catastrophic for a system holding minors' PII and money**, one P1 billing defect, and a short list of parity/polish gaps. The P0s are both fixable in an afternoon; neither requires new features.
+**Production-ready for fall — pending two operator steps and one feature decision, all yours.** Every defect this audit found is fixed and verified; no known defects remain. The app is safe to onboard real families onto once you (1) `fly secrets set SECRET_KEY=…` and (2) change the seeded admin password — both in [GO-LIVE.md](GO-LIVE.md). The one substantive gap versus Jackrabbit is auto-pay (charging saved cards on a schedule); it's a feature that moves real money, needs your live Square account, and is scoped in [AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md) — not a defect blocking launch.
 
-**UPDATE (after 5 fix iterations):** both P0s and the serious P1s are now **fixed and verified** by two runtime harnesses (`tests/smoke_audit.py` 32/32, `tests/test_billing.py` 16/16) on branch `fix/api-authorization-and-secret-key`, plus an A/R aging report was built and the parent portal's fatal JS bug (P1-4 — the whole portal's JavaScript was dead) was found and fixed by running it in a real browser. The app is **safe to onboard real families onto once `SECRET_KEY` is set as a Fly secret and the seeded admin password is changed**. What remains is one feature decision (auto-pay) and staff-side UX polish — not data-safety or money-correctness blockers.
+**Where it started:** the first pass found **2 P0s that were individually catastrophic** for a system holding minors' PII and money — any logged-in parent could read every other family's child records and the entire studio ledger (broken access control), and anyone with the repo could forge an admin login (the `SECRET_KEY` was committed). Plus a fatal parent-portal JS bug (the whole portal's JavaScript was dead from a bad string escape), three auth-lifecycle P1s, and a list of parity and polish gaps.
 
-Original headline (now resolved): any logged-in parent could read every other family's child records and the studio's entire ledger, and anyone with the repo could forge an admin login.
+**Where it landed (45 commits on `fix/api-authorization-and-secret-key`):** both P0s fixed with a default-deny authorization model over the whole API; the fail-closed prod `SECRET_KEY` guard; the parent portal repaired and browser-verified; auth lifecycle hardened (username-or-email login, sibling-merge onboarding, password reset, deactivation enforcement); A/R aging + revenue reports and CSV exports added for Jackrabbit parity; server timezone pinned to Eastern so business dates are local; and the UI fully polished — 0 legacy-style files, 0 browser prompts, 0 browser alerts, mobile-verified, one unified toast. Guarded by **118 automated checks** (`tests/smoke_audit.py` 98/98, `tests/test_billing.py` 20/20) wired into CI.
 
-Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0, 2 P1, 4 P2/P3. Remaining: P1-2 auto-pay (feature), plus UX-polish P2/P3s and parity enhancements (AR aging, per-page a11y).
+Severity counts — original pass: **2 P0, 3 P1, 5 P2, 3 P3.** Now: **all resolved** except **auto-pay** (a feature awaiting your go-ahead).
 
 ---
 
