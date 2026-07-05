@@ -63,6 +63,11 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 
 ---
 
+### [P1-5] Invited parents were locked out after logging out — ✅ FIXED
+- **Where:** login was **username-only** (`User.query.filter_by(username=...)`), but the invite flow gives each parent an auto-generated username `parent-<invitecode>` (`api/routes.py`) that they're **never shown**, and they register with email + password. So a parent could register (auto-logged-in), use the portal, log out — and never get back in: they don't know their `parent-A1B2C3D4` username, and login didn't accept email.
+- **Impact:** every invited family locked out of the parent portal after their first session → support tickets during fall enrollment.
+- **Fix:** login now accepts **username OR email** (email is `unique`, so unambiguous); staff username login unchanged. Login form label/placeholder updated to "Username or email." Verified: email login → 302, username → 302, unknown email → rejected. Regression-guarded.
+
 ## P2 — Should fix
 
 - **[P2-9] Stored XSS: two staff/admin views rendered user names unescaped — ✅ FIXED.** A systematic sweep of `innerHTML` interpolations found two spots that injected user-controlled names without `esc()`: the **A/R aging report** (`student_name`/`family_name`) and the **time-clock payroll report** (staff `name`). Student names come from **public self-registration**, so a dancer registered as `<img src=x onerror=…>` would execute in the admin's session when they open the aging report — stored XSS from an untrusted source into an admin context. Both now `esc()` the fields. Added a static regression guard (`run_xss_guard`) that fails if any known user-name field is interpolated without escaping. (Every other view already escaped; the `confirm()` dialogs that also show names are safe — they render text, not HTML.)
@@ -262,6 +267,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 
 ### Iteration 25 — DONE
 - **Scoped the one remaining item — auto-pay** ([AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)): decision-ready design so it can be greenlit/deferred. Grounded in the app's existing Square integration (customer helper + idempotent recurring scheduler already exist), it lays out the Cards-API/Web-Payments-SDK approach, `SavedCard` model, charge-on-schedule + failure handling, PCI (SAQ-A) posture, a ~3–4 day phased build, risks, and the recommendation to launch fall on manual and build auto-pay as the first post-launch project. This turns "what remains" into an actionable decision for the one open item.
+
+### Iteration 32 — DONE (smoke 70/70)
+- **Found + fixed a fall-onboarding lockout (P1-5):** login was username-only, but invited parents get a hidden auto-generated `parent-<code>` username and register with email — so they'd be locked out after logging out. Login now accepts email or username (email is unique). Audited the rest of the invite flow: codes are CSPRNG (`secrets.token_hex`), single-use (nulled after register), and pre-bound to a specific parent+student (no account-takeover vector). Added a 3-check regression.
 
 ### Iteration 31 — DONE (smoke 67/67)
 - **Comprehensive XSS sweep — clean.** Extended the check beyond names to every user free-text field (note, description, body, title, allergies, venue, reference, memo, …) via a precise per-interpolation scan: **0 unescaped** across all templates. Removed a dead `classOptions()` helper (leftover from the makeup prompt→modal conversion) that held the last unescaped `${c.name}`. Broadened the CI `run_xss_guard` to the full field set so any future unescaped free-text interpolation trips it. The client-side rendering is now verifiably XSS-safe. (`status` and similar are server enums, not injectable — excluded.)

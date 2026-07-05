@@ -105,7 +105,7 @@
                 <form class="space-y-6" method="POST" action="{{ url_for('auth.login') }}">
                     <div>
                         <label for="username" class="block text-sm font-medium text-ink-2">
-                            Username
+                            Username or email
                         </label>
                         <div class="mt-1 relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -118,7 +118,7 @@
                                 autocomplete="username" 
                                 required 
                                 class="appearance-none block w-full pl-10 pr-3 py-2 border border-line-2 rounded-md placeholder-ink-3 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
-                                placeholder="Enter your username"
+                                placeholder="Username or email"
                                 value="{{ request.form.username or '' }}"
                             >
                         </div>

@@ -183,6 +183,28 @@ def run_csrf():
                b'Cross-origin' not in resp.data, "blocked a no-Origin request", "P2")
 
 
+def run_login_by_email():
+    """Invited parents get an auto-generated `parent-<code>` username they never
+    see and register with an email — so login MUST accept email, or they're
+    locked out after logging out. Staff keep username login."""
+    with app.test_client() as c:
+        # parent_a was seeded with email a@x.com
+        r = c.post("/auth/login", data={"username": "a@x.com", "password": "pw"},
+                   follow_redirects=False)
+        record(f"Login by email works -> {r.status_code}", r.status_code == 302,
+               f"got {r.status_code} (302=success)", "P1")
+    with app.test_client() as c:
+        r = c.post("/auth/login", data={"username": "parent_a", "password": "pw"},
+                   follow_redirects=False)
+        record(f"Login by username still works -> {r.status_code}", r.status_code == 302,
+               f"got {r.status_code}", "P1")
+    with app.test_client() as c:
+        r = c.post("/auth/login", data={"username": "nobody@x.com", "password": "pw"},
+                   follow_redirects=False)
+        record(f"Login with unknown email rejected -> {r.status_code}", r.status_code == 200,
+               f"got {r.status_code}", "P2")
+
+
 def run_waiver_signing(ids):
     """A parent signs their OWN child's waiver end-to-end (enrollment flow):
     signature records + reads back as signed; decline rules enforced."""
@@ -486,6 +508,7 @@ def main():
     run_waiver_signing(ids)
     run_attendance(ids)
     run_message_blast()
+    run_login_by_email()
     run_registration_flow()
     run_amount_validation(ids)
     run_csv_exports(ids)

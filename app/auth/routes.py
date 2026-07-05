@@ -34,7 +34,13 @@ def login():
             flash(error_msg, 'error')
             return render_template('auth/login.html')
 
+        # Accept username OR email. Invited parents get an auto-generated
+        # `parent-<code>` username they never see, and they register with an
+        # email — so email login is the only way they can get back in after
+        # logging out. Email is unique, so the match is unambiguous.
         user = User.query.filter_by(username=username).first()
+        if user is None and '@' in username:
+            user = User.query.filter_by(email=username).first()
 
         if user is None or not user.check_password(password):
             error_msg = 'Invalid username or password'
