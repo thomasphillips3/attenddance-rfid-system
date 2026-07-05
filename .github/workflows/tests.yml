@@ -1,0 +1,36 @@
+name: tests
+
+# Runs the QA regression harnesses (the same ones used during the production
+# hardening pass) on every push and PR, so future changes to the studio's
+# system can't silently regress access control, billing math, or the flows
+# fall depends on.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies (same set prod runs)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-deploy.txt
+
+      - name: Smoke + security + flow harness
+        env:
+          RFID_ENABLED: "false"
+        run: python tests/smoke_audit.py
+
+      - name: Billing correctness harness
+        env:
+          RFID_ENABLED: "false"
+        run: python tests/test_billing.py

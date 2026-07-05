@@ -74,7 +74,7 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 
 - **[P3-1] 2 `<img>` tags lacked `alt` — ✅ FIXED** (Zelle QR preview + recital ad; 0 remain).
 - **[P3-2] `SECRET_KEY`/`JWT_SECRET_KEY` still have insecure dev fallbacks** in base `Config` — fine for dev, but the prod guard (P0-1) is what makes them safe.
-- **[P3-3] No automated test suite in-repo** (prior smoke harness wasn't kept). `tests/smoke_audit.py` + `tests/test_billing.py` added this pass are the seed of one (39/39 + 16/16); wire into CI.
+- **[P3-3] Automated tests — ✅ IN CI.** `tests/smoke_audit.py` (57) + `tests/test_billing.py` (16) now run on every push/PR via `.github/workflows/tests.yml`, using the same `requirements-deploy.txt` set prod runs. Verified in a clean CI-mirror venv (57/57 + 16/16). The safety net is now durable — future changes can't silently regress access control, billing math, or the fall-critical flows.
 - **[P3-4] CDN scripts load without Subresource Integrity.** `base.html` + report pages pull Tailwind, Alpine, Chart.js, FontAwesome from CDNs without `integrity`/`crossorigin` — a CDN compromise could inject script. Low likelihood (reputable CDNs) but cheap to harden: pin versions + add SRI hashes app-wide (do it consistently, not per-tag).
 
 ---
@@ -208,6 +208,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 
 ### Iteration 15 — DONE (smoke 57/57)
 - **Audited the email/SMS message-blast flow** (studio→families comms — see the Email/SMS section): sound — correct de-duplicated recipient resolution, graceful degradation when SMTP is unconfigured (saves + returns emails to copy). Hardened: non-numeric `recipient_filter` → 400 (was a potential 500). Added 5 regression checks (resolve/degrade/validate/parent-blocked).
+
+### Iteration 16 — DONE
+- **Wired the QA harnesses into CI** (`.github/workflows/tests.yml`): both harnesses (57 + 16 checks) run on every push/PR against the prod dependency set. Verified in a clean CI-mirror venv — 57/57 + 16/16. Makes the whole session's security/billing/flow verification a durable regression gate instead of a one-time pass. (Activates when the branch is pushed.)
 
 ### Remaining for next iterations
 - P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~30 remaining staff-side `prompt()` flows → modals (mostly off-season: recital, waivers, skills, makeups, donations-admin), per-page `aria-label`s, P3-4 Subresource Integrity on CDN scripts prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
