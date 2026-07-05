@@ -2078,6 +2078,61 @@ def run_qr_upload_safety():
                f"got {rb.status_code}", "P3")
 
 
+def run_email_header_injection():
+    """Recipient addresses and subjects can carry user-controlled values (a
+    student/parent name or email from public registration). If a CRLF slips into
+    a header value, an attacker could inject headers (Bcc exfiltration, spoofing).
+    Verify send_email strips CR/LF so no extra header is emitted and the send
+    doesn't raise mid-loop on a CRLF-bearing address."""
+    import smtplib
+    from email import message_from_string
+    from app import email as email_mod
+
+    captured = {}
+
+    class _FakeSMTP:
+        def __init__(self, *a, **k):
+            pass
+        def starttls(self):
+            pass
+        def login(self, *a, **k):
+            pass
+        def sendmail(self, sender, addr, msg):
+            captured["msg"] = msg
+        def quit(self):
+            pass
+
+    orig = smtplib.SMTP
+    smtplib.SMTP = _FakeSMTP
+    try:
+        with app.app_context():
+            app.config["MAIL_SERVER"] = "smtp.example.com"
+            app.config["MAIL_PORT"] = 587
+            app.config["MAIL_USERNAME"] = "studio@example.com"
+            app.config["MAIL_PASSWORD"] = None
+            raised = None
+            try:
+                sent = email_mod.send_email(
+                    "victim@example.com\r\nBcc: attacker@evil.com",
+                    "Receipt\r\nBcc: attacker2@evil.com",
+                    "Your balance is $0.",
+                )
+            except Exception as e:  # noqa: BLE001 - must not raise on CRLF
+                raised = e
+                sent = 0
+    finally:
+        smtplib.SMTP = orig
+        with app.app_context():
+            app.config["MAIL_SERVER"] = None
+
+    parsed = message_from_string(captured.get("msg", "")) if captured.get("msg") else None
+    injected = parsed is not None and parsed.get("Bcc") is not None
+    record("Email header injection blocked (no Bcc emitted from CRLF subject/addr)",
+           raised is None and not injected and sent == 1,
+           f"raised={raised!r} injected_bcc={injected} keys={parsed.keys() if parsed else None}",
+           "P1")
+
+
 def run_xss_guard():
     """Static guard: user-controlled name/text fields must never be interpolated
     into a JS template literal without esc(). These fields come from public
@@ -2250,6 +2305,7 @@ def main():
     run_xss_guard()
     run_cashtag_sanitize()
     run_qr_upload_safety()
+    run_email_header_injection()
     run_js_syntax()
     run_smoke()
     run_empty_state()
