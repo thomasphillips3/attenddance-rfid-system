@@ -199,7 +199,7 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 2 — DONE (verified by `tests/test_billing.py`, 11/11 pass)
 - **Late-fee double-application — FIXED.** `apply_late_fees` had no idempotency guard; an admin double-click / refresh-repost applied a *second* late fee to every over-threshold family. Now skips any student already charged a late fee this calendar month (matches the recurring-charge guard). Verified: second run charges 0, each student ends with exactly one fee.
 - **Billing correctness verified (no change needed):** `allocate_family_payment` loses/invents no pennies across exact/partial/overpayment/odd-cent inputs and caps each child at their balance (money is `Numeric(10,2)` at rest; the `float()` casts in helpers are a smell but safe given 2-decimal values). `confirm_pending_payment` blocks re-confirm (`status != 'pending'`). Square webhook is idempotent (`if rec.paid_at`) and HMAC-verified when keyed.
-- **New P2 logged:** Square webhook records the *full* invoice amount on a `PARTIALLY_PAID` event and then sets `paid_at`, so the later `PAID` event is ignored — over-counts the payment and drops the remainder. Needs a product call on partial-payment semantics; Square isn't active yet so it's not urgent.
+- **P2 logged (now FIXED in iter 40):** Square webhook recorded the *full* invoice amount on a `PARTIALLY_PAID` event and set `paid_at`, so the later `PAID` event was ignored — over-counted the payment and dropped the remainder.
 
 ### Iteration 3 — DONE
 - **Functional/reliability sweep** (migrations idempotency, silent failures, N+1/memory) — clean, no new bugs (see section above).
@@ -275,6 +275,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 
 ### Iteration 25 — DONE
 - **Scoped the one remaining item — auto-pay** ([AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)): decision-ready design so it can be greenlit/deferred. Grounded in the app's existing Square integration (customer helper + idempotent recurring scheduler already exist), it lays out the Cards-API/Web-Payments-SDK approach, `SavedCard` model, charge-on-schedule + failure handling, PCI (SAQ-A) posture, a ~3–4 day phased build, risks, and the recommendation to launch fall on manual and build auto-pay as the first post-launch project. This turns "what remains" into an actionable decision for the one open item.
+
+### Iteration 40 — DONE (smoke 98/98)
+- **Fixed the last known defect — Square webhook `PARTIALLY_PAID` overcount.** The auto-reconcile webhook booked the *full* invoice amount on a partial-payment event and set `paid_at`, which over-counted the payment and then swallowed the eventual `PAID` event. Now it auto-records **only** on full `PAID` (a Square PAID invoice = fully collected); partial payments wait for the PAID event or manual reconciliation. Square isn't live yet, but the go-live runbook enables it, so this would have bitten at turn-on. Verified + regression-guarded (partial ignored, full recorded once, duplicate idempotent). **No known unfixed defects remain.**
 
 ### Iteration 39 — DONE (mobile UX verification)
 - **Mobile UX pass on the phone-first parent portal** (families use their phones). Viewed the parent dashboard + a modal at 375px in the browser: cards stack, the action chips (Rules/Forms/Statement/Progress/Request makeup) wrap cleanly, the child card's balance/attendance sections read well, and the modals fit the mobile viewport with the dimmed overlay — **no horizontal overflow, no cramped/cut-off content**. The responsive design is solid; no fix needed. Confirms the "UX/UI polished" bar holds on the device parents actually use.

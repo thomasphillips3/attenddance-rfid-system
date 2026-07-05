@@ -225,6 +225,44 @@ def run_multichild_invite_merge():
                "leftover invites", "P2")
 
 
+def run_square_webhook(ids):
+    """Square auto-reconcile: a PARTIALLY_PAID event must be ignored (else it
+    books the whole invoice + blocks the final PAID event); a PAID event records
+    the full amount once and is idempotent. No signature key set -> unsigned."""
+    from app.models import SquareInvoice, Transaction
+
+    sid = ids["child_a"]
+    with app.app_context():
+        inv = SquareInvoice(student_id=sid, invoice_id="sqinv_test_1",
+                            amount_cents=8000, status="SENT")
+        db.session.add(inv)
+        db.session.commit()
+
+    def event(status):
+        return {"type": "invoice.updated",
+                "data": {"object": {"invoice": {"id": "sqinv_test_1", "status": status}}}}
+
+    with app.test_client() as c:  # no login — Square calls this
+        r = c.post("/api/webhooks/square", json=event("PARTIALLY_PAID"))
+        with app.app_context():
+            n = Transaction.query.filter(Transaction.description.like("%sqinv_test_1%")).count()
+        record(f"PARTIALLY_PAID ignored (no transaction) -> {r.get_json()}",
+               (r.get_json() or {}).get("status") == "ignored" and n == 0, f"txns={n}", "P2")
+
+        r = c.post("/api/webhooks/square", json=event("PAID"))
+        with app.app_context():
+            txns = Transaction.query.filter(Transaction.description.like("%sqinv_test_1%")).all()
+        record(f"PAID records the full $80 once -> {r.get_json()}",
+               (r.get_json() or {}).get("status") == "recorded" and len(txns) == 1
+               and float(txns[0].amount) == 80.0, f"txns={[float(t.amount) for t in txns]}", "P1")
+
+        r = c.post("/api/webhooks/square", json=event("PAID"))  # duplicate
+        with app.app_context():
+            n = Transaction.query.filter(Transaction.description.like("%sqinv_test_1%")).count()
+        record(f"Duplicate PAID is idempotent (still 1) -> {r.get_json()}",
+               (r.get_json() or {}).get("status") == "already_recorded" and n == 1, f"txns={n}", "P1")
+
+
 def run_reconciliation(ids):
     """The core fall tuition-collection flow: parent claims a payment -> admin
     confirms -> a payment Transaction is created and the balance drops. Confirm
@@ -714,6 +752,7 @@ def main():
     run_attendance(ids)
     run_message_blast()
     run_multichild_invite_merge()
+    run_square_webhook(ids)
     run_reconciliation(ids)
     run_enrollment(ids)
     run_deactivation_revokes_session()

@@ -2419,7 +2419,12 @@ def square_webhook():
     invoice_id = invoice.get('id')
     status = invoice.get('status', '')
 
-    if not invoice_id or status not in ('PAID', 'PARTIALLY_PAID'):
+    # Only auto-record a FULLY paid invoice. A PARTIALLY_PAID event must be
+    # ignored — recording it here would book the whole invoice amount (not the
+    # partial payment) AND set paid_at, which would then swallow the eventual
+    # PAID event. Partial payments are handled by the later PAID event (once the
+    # invoice is fully settled) or by manual reconciliation.
+    if not invoice_id or status != 'PAID':
         return jsonify({'status': 'ignored'}), 200
 
     rec = SquareInvoice.query.filter_by(invoice_id=invoice_id).first()
