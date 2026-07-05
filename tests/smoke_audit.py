@@ -2677,7 +2677,8 @@ def run_class_crud():
     and DELETE deactivates the class AND stops its recurring charge (otherwise
     auto-billing keeps charging families for a cancelled class)."""
     from datetime import time as _time
-    from app.models import User, DanceClass, RecurringCharge
+    from app.models import (User, DanceClass, RecurringCharge, Student, Family,
+                            ClassEnrollment, WaitlistEntry)
     with app.app_context():
         adm = User.query.filter_by(username="admin").first()
         dc = DanceClass(name="Tap 1", day_of_week=1, start_time=_time(16, 0),
@@ -2686,6 +2687,16 @@ def run_class_crud():
         db.session.flush()
         db.session.add(RecurringCharge(class_id=dc.id, amount=90, category="tuition",
                                        day_of_month=1, created_by=adm.id))
+        # An enrolled + a waitlisted student, to check the cancel cascade cleans up.
+        fam = Family(name="Tap Fam", primary_email="tap@x.com")
+        db.session.add(fam)
+        db.session.flush()
+        e_st = Student(first_name="Enrolled", last_name="T", family_id=fam.id, is_active=True)
+        w_st = Student(first_name="Waiting", last_name="T", family_id=fam.id, is_active=True)
+        db.session.add_all([e_st, w_st])
+        db.session.flush()
+        db.session.add(ClassEnrollment(student_id=e_st.id, class_id=dc.id))
+        db.session.add(WaitlistEntry(class_id=dc.id, student_id=w_st.id, status="waiting"))
         db.session.commit()
         cid = dc.id
     with app.test_client() as c:
@@ -2700,10 +2711,14 @@ def run_class_crud():
     with app.app_context():
         cls = DanceClass.query.get(cid)
         rc = RecurringCharge.query.filter_by(class_id=cid).first()
+        live_enroll = ClassEnrollment.query.filter_by(class_id=cid, is_active=True).count()
+        live_wait = WaitlistEntry.query.filter_by(class_id=cid, status="waiting").count()
     record(f"Cancelling a class deactivates it + stops recurring billing -> {r2.status_code}",
            r2.status_code == 200 and cls.is_active is False and rc.is_active is False
            and d2.get("recurring_charges_stopped") == 1,
            f"class_active={cls.is_active} rc_active={rc.is_active} stopped={d2.get('recurring_charges_stopped')}", "P1")
+    record(f"Cancelling a class clears its enrollments + waitlist (enroll={live_enroll}, wait={live_wait})",
+           live_enroll == 0 and live_wait == 0, f"lingering enroll={live_enroll} wait={live_wait}", "P2")
 
 
 def run_class_capacity():

@@ -560,14 +560,22 @@ def update_class(class_id):
 @bp.route('/classes/<int:class_id>', methods=['DELETE'])
 @login_required
 def deactivate_class(class_id):
-    """Cancel a class (soft-delete). Also deactivates its recurring charges —
-    otherwise auto-billing keeps charging enrolled families for a class that no
-    longer runs."""
-    from app.models import RecurringCharge
+    """Cancel a class (soft-delete). Cascades so the cancellation is complete:
+    - deactivate its recurring charges (else auto-billing keeps charging families
+      for a class that no longer runs);
+    - deactivate its enrollments (else the cancelled class lingers in every
+      student's enrolled-classes list, which filters by active enrollment);
+    - clear its waitlist (else those families are stuck waiting for a dead class).
+    Past attendance + ledger charges are left intact (history)."""
+    from app.models import RecurringCharge, WaitlistEntry
     dc = DanceClass.query.get_or_404(class_id)
     dc.is_active = False
     stopped = RecurringCharge.query.filter_by(class_id=class_id, is_active=True).update(
         {'is_active': False}, synchronize_session=False)
+    ClassEnrollment.query.filter_by(class_id=class_id, is_active=True).update(
+        {'is_active': False}, synchronize_session=False)
+    WaitlistEntry.query.filter_by(class_id=class_id, status='waiting').update(
+        {'status': 'removed'}, synchronize_session=False)
     AuditLog.record(current_user.id, 'class.deactivate',
                     f'Cancelled class "{dc.name}" ({stopped} recurring charge(s) stopped)')
     db.session.commit()
