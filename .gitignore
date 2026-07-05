@@ -8,8 +8,11 @@ build/
 # Virtual environment
 venv/
 
-# Database
+# Database (incl. SQLite WAL/SHM sidecar files created in WAL mode)
 data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.db-journal
 
 # Environment
 .env
