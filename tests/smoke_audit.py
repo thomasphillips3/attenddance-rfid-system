@@ -2371,6 +2371,26 @@ def run_transactions_pagination(ids):
                len(p2.get("transactions", [])) == 20, str(p2.get("pagination")), "P2")
 
 
+def run_students_roster_complete():
+    """The students page filters the roster client-side, so it must load EVERY
+    active student, not just the first page — otherwise a >100-student studio
+    silently hides (and can't search for) students past page 1. Mimic the page's
+    loop-fetch with a tiny page size and assert the accumulated count equals the
+    reported total."""
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        first = c.get("/api/students?per_page=1&page=1").get_json() or {}
+        total = (first.get("pagination") or {}).get("total", 0)
+        got, page, pages = [], 1, 1
+        while page <= pages and page <= 50:
+            d = c.get(f"/api/students?per_page=2&page={page}").get_json() or {}
+            got += d.get("students", [])
+            pages = (d.get("pagination") or {}).get("pages", 1)
+            page += 1
+        record(f"Roster loop-fetch returns every active student ({len(got)} of {total})",
+               total >= 1 and len(got) == total, f"got {len(got)} != total {total}", "P2")
+
+
 def run_auth_form_labels():
     """Accessibility guard: every text/email/password field on the standalone auth
     forms (login, change/forgot/reset password) must have an accessible name — an
@@ -2665,6 +2685,7 @@ def main():
     run_dead_handler_guard()
     run_auth_form_labels()
     run_transactions_pagination(ids)
+    run_students_roster_complete()
     run_js_syntax()
     run_smoke()
     run_empty_state()
