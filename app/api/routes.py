@@ -3017,7 +3017,14 @@ def delete_performance(pid):
     if err:
         return err
     p = Performance.query.get_or_404(pid)
-    PerformanceAssignment.query.filter_by(performance_id=pid).delete()
+    # Delete children whose FK to the performance (or its ticket types) is NOT
+    # NULL — otherwise SQLAlchemy tries to null them on delete and hits the
+    # constraint (a performance with ticket types couldn't be deleted at all).
+    PerformanceAssignment.query.filter_by(performance_id=pid).delete(synchronize_session=False)
+    tt_ids = [t.id for t in TicketType.query.filter_by(performance_id=pid).all()]
+    if tt_ids:
+        TicketOrder.query.filter(TicketOrder.ticket_type_id.in_(tt_ids)).delete(synchronize_session=False)
+        TicketType.query.filter_by(performance_id=pid).delete(synchronize_session=False)
     db.session.delete(p)
     db.session.commit()
     return jsonify({'message': 'Performance deleted'})

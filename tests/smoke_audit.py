@@ -1440,6 +1440,11 @@ def run_recital_money(ids):
         record(f"Ticket totals correct (tickets={summ.get('total_tickets')} rev={summ.get('revenue')} pending={summ.get('pending')})",
                summ.get("total_tickets") == 5 and summ.get("revenue") == "37.50"
                and summ.get("pending") == "25.00", str(summ), "P2")
+        # Deleting a performance that HAS ticket types + orders must not fail on
+        # the NOT NULL ticket_type FK — it has to clean up its ticket children.
+        rd = c.delete(f"/api/performance/performances/{pid}")
+        record(f"Delete a performance with ticket types -> {rd.status_code}",
+               rd.status_code == 200, f"got {rd.status_code} (FK cleanup missing)", "P2")
 
 
 def run_transaction_delete(ids):
