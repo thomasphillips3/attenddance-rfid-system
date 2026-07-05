@@ -411,7 +411,7 @@ async function loadMyPayments() {
                     </thead>
                     <tbody>
                         ${hist.map(t => `<tr class="border-b border-line last:border-0">
-                            <td class="px-4 py-2 text-sm text-ink tabular-nums">${new Date(t.transaction_date).toLocaleDateString()}</td>
+                            <td class="px-4 py-2 text-sm text-ink tabular-nums">${new Date(t.transaction_date+'T00:00').toLocaleDateString()}</td>
                             <td class="px-4 py-2 text-sm text-ink">${esc(t.student_name)}</td>
                             <td class="px-4 py-2 text-sm text-ink-2">${esc(t.payment_method || '—')}</td>
                             <td class="px-4 py-2 text-sm text-right font-bold text-ok tabular-nums">$${t.amount}</td>

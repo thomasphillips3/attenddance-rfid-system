@@ -261,6 +261,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 25 — DONE
 - **Scoped the one remaining item — auto-pay** ([AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)): decision-ready design so it can be greenlit/deferred. Grounded in the app's existing Square integration (customer helper + idempotent recurring scheduler already exist), it lays out the Cards-API/Web-Payments-SDK approach, `SavedCard` model, charge-on-schedule + failure handling, PCI (SAQ-A) posture, a ~3–4 day phased build, risks, and the recommendation to launch fall on manual and build auto-pay as the first post-launch project. This turns "what remains" into an actionable decision for the one open item.
 
+### Iteration 29 — DONE (smoke 66/66)
+- **Fixed a parent-facing date off-by-one** (the display counterpart to P2-8). The parent payment-history table rendered `transaction_date` (a date-only string like `2026-07-05`) with bare `new Date(...)`, which JS parses as UTC midnight → **shows the previous day** in the family's Eastern browser. Changed to `new Date(t.transaction_date+'T00:00')` (local parse), matching the safe pattern every other date-only field already used. Swept all templates: this was the only date-only field displayed unsafely; staff views render the raw ISO string (unaffected).
+
 ### Iteration 28 — DONE (billing 17/17)
 - **Verified money precision** — summing 100×$10.01 charges + 50×$3.33 payments returns exactly $834.50 through `calc_balance` and the bulk path (no float drift, despite the `float(SUM(Numeric))` cast — SQLite preserves the decimal and 2dp values are float-exact). Added it as a regression guard so a future column-type change can't silently break money math.
 
