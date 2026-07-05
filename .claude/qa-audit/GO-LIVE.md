@@ -76,8 +76,19 @@ with a "copy these emails" fallback until SMTP is set). Turn them on as ready.
   and race on SQLite migrations). Migrations run automatically on boot.
 - **Data lives on the Fly volume** (`/data/attendance.db`); settings are in the
   prod DB, not env — configure them through the UI, not local scripts.
-- **Regression safety:** every push/PR runs 73 automated checks (access control,
-  billing math, the fall flows) via `.github/workflows/tests.yml`.
+- **Backups — the whole studio is one file, so keep copies.** Two layers:
+  1. **Manual (do this regularly):** `/settings` → **Data & Backup** → **Download
+     backup** pulls a complete, consistent snapshot of everything (families,
+     ledger, recitals) as one `.db` file. Save it off-Fly (your computer, Google
+     Drive). Do it before any big change and, say, monthly. This is also your
+     data-portability path if you ever leave AttenDANCE.
+  2. **Automatic (verify once):** Fly takes daily volume snapshots (default ~5-day
+     retention). Confirm with `flyctl volumes snapshots list attenddance_data`.
+     If you want longer retention, raise it in Fly. The manual download is the
+     one you control, so don't rely on Fly snapshots alone.
+- **Regression safety:** every push/PR runs the full check suite (access control,
+  billing math, input robustness, empty-state, the fall flows) via
+  `.github/workflows/tests.yml`.
 
 ---
 

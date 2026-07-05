@@ -3,9 +3,10 @@
 import logging
 import os
 import secrets
+import tempfile
 from datetime import date, datetime, timedelta
 
-from flask import current_app, jsonify, request
+from flask import current_app, jsonify, request, send_file
 from flask_login import current_user, login_required
 from sqlalchemy import desc, func
 
@@ -977,6 +978,66 @@ def export_transactions_csv():
         t.description or '',
     ] for t in txns)
     return _csv_response(f'transactions-{date.today().isoformat()}.csv', header, rows)
+
+
+@bp.route('/admin/backup', methods=['GET'])
+@login_required
+def download_backup():
+    """Download a complete, consistent snapshot of the database (admin only).
+
+    The whole studio lives in one SQLite file on a Fly volume; this is the
+    studio's disaster-recovery + data-portability safety net — an owner can pull
+    a full backup anytime and store it off-Fly, or take their data if they ever
+    leave. Uses SQLite's online backup API for a point-in-time consistent copy
+    (a raw file copy could be torn mid-write); the snapshot is read fully into
+    memory (a studio DB is a few MB) and the temp file is always cleaned up."""
+    import sqlite3
+    from io import BytesIO
+    from sqlalchemy.engine import make_url
+
+    err = _admin_only()
+    if err:
+        return err
+
+    uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    db_path = make_url(uri).database if uri else None
+    if not uri.startswith('sqlite') or not db_path or db_path == ':memory:':
+        return jsonify({'error': 'Backup is only supported for a file-backed SQLite database'}), 400
+    if not os.path.exists(db_path):
+        return jsonify({'error': 'Database file not found'}), 404
+
+    tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+    tmp.close()
+    src = dst = None
+    try:
+        src = sqlite3.connect(db_path)
+        dst = sqlite3.connect(tmp.name)
+        with dst:
+            src.backup(dst)  # consistent point-in-time snapshot
+        dst.close()
+        dst = None
+        with open(tmp.name, 'rb') as fh:
+            payload = BytesIO(fh.read())
+    finally:
+        if src is not None:
+            src.close()
+        if dst is not None:
+            dst.close()
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+    try:
+        AuditLog.record(current_user.id, 'backup_downloaded',
+                        f'{payload.getbuffer().nbytes} bytes')
+        db.session.commit()
+    except Exception:  # audit is best-effort; never block the backup
+        db.session.rollback()
+
+    payload.seek(0)
+    return send_file(payload, mimetype='application/x-sqlite3', as_attachment=True,
+                     download_name=f'attendance-backup-{date.today().isoformat()}.db')
 
 
 def _month_buckets(n):

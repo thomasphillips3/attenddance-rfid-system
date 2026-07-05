@@ -864,6 +864,42 @@ def run_parent_write_authz(ids):
                    r.status_code != 500, f"got {r.status_code}", "P2")
 
 
+def run_backup(ids):
+    """Admin can download a complete, valid SQLite backup; non-admins can't.
+    This is the studio's disaster-recovery net, so the file must be a real,
+    openable SQLite snapshot that actually contains the data — and it holds ALL
+    families' PII + finances, so it must be admin-only (a parent gets 403)."""
+    import sqlite3
+    # Admin: 200, valid SQLite, contains the seeded students.
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r = c.get("/api/admin/backup")
+        magic = r.data[:16] == b"SQLite format 3\x00"
+        record(f"Admin downloads a backup -> {r.status_code}, {len(r.data)} bytes",
+               r.status_code == 200 and magic, f"status={r.status_code} magic={magic}", "P2")
+        if r.status_code == 200 and magic:
+            bt = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+            bt.write(r.data)
+            bt.close()
+            try:
+                con = sqlite3.connect(bt.name)
+                n = con.execute("SELECT COUNT(*) FROM students").fetchone()[0]
+                con.close()
+                record(f"Backup is a valid DB containing the data ({n} students)",
+                       n >= 2, f"students in backup: {n}", "P2")
+            finally:
+                try:
+                    os.unlink(bt.name)
+                except OSError:
+                    pass
+    # Parent: blocked (the backup holds every family's PII + finances).
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        r = c.get("/api/admin/backup")
+        record(f"Parent blocked from full DB backup -> {r.status_code}",
+               r.status_code in (401, 403), f"got {r.status_code}", "P0")
+
+
 def run_csv_exports(ids):
     """CSV exports: staff get a well-formed CSV; parents are blocked."""
     # Parent blocked.
@@ -1040,6 +1076,7 @@ def main():
     run_parent_input_robustness(ids)
     run_parent_write_authz(ids)
     run_prod_security_config()
+    run_backup(ids)
     run_csv_exports(ids)
     run_xss_guard()
     run_js_syntax()
