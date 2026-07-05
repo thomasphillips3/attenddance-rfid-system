@@ -243,5 +243,8 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 21 — DONE (verified live)
 - **Staff UX: makeups admin page → modals.** The log-makeup flow was 5 chained prompts incl. a *type-an-ID* dancer picker and type-a-class-ID pickers; now a modal with dancer + class dropdowns. The schedule-makeup flow (2 prompts) is a modal too. Verified live (log-makeup POST 201, dropdown populated with 24 students); node-checked clean. Makeups is used *during* the fall session (scheduling parent makeup requests), so this one mattered.
 
+### Iteration 22 — DONE (verified live)
+- **Staff UX: donations admin → modal.** The record-donation flow (4 prompts) is now a modal (donor name/email, amount, method dropdown). Verified live (POST 201). Donations are recorded *during* the fall/foundation season, so this was the last fall-used prompt flow — **every flow the studio touches in fall is now prompt-free.**
+
 ### Remaining for next iterations
-- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~28 remaining staff-side `prompt()` flows → modals (mostly spring-only: recital, waivers-admin, skills, donations-admin), P3-4 SRI (deferred — see above) prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
+- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~24 remaining staff-side `prompt()` flows → modals — **all spring/off-season now** (recital, waivers-admin, skills); every fall-used flow is prompt-free. P3-4 SRI (deferred — see above) prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
