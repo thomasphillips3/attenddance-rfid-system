@@ -1478,11 +1478,15 @@ def _resolve_recipient_emails(rtype: str, recipient_filter) -> set | tuple:
     elif rtype == 'class':
         if not recipient_filter:
             return jsonify({'error': 'recipient_filter (class_id) required for class type'}), 400
+        try:
+            cid = int(recipient_filter)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid class selection'}), 400
         # Use join to avoid N+1
         rows = (
             db.session.query(Student.parent_email, Student.email)
             .join(ClassEnrollment, ClassEnrollment.student_id == Student.id)
-            .filter(ClassEnrollment.class_id == int(recipient_filter), ClassEnrollment.is_active == True)  # noqa: E712
+            .filter(ClassEnrollment.class_id == cid, ClassEnrollment.is_active == True)  # noqa: E712
             .all()
         )
         for parent_email, student_email in rows:
@@ -1493,7 +1497,11 @@ def _resolve_recipient_emails(rtype: str, recipient_filter) -> set | tuple:
     elif rtype == 'individual':
         if not recipient_filter:
             return jsonify({'error': 'recipient_filter (student_id) required for individual type'}), 400
-        s = Student.query.get(int(recipient_filter))
+        try:
+            sid = int(recipient_filter)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid student selection'}), 400
+        s = Student.query.get(sid)
         if s and (s.parent_email or s.email):
             emails.add(s.parent_email or s.email)
     return emails

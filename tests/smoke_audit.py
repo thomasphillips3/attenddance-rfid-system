@@ -47,8 +47,10 @@ def seed():
         db.session.flush()
 
         child_a = Student(first_name="Ava", last_name="Alpha", family_id=fam_a.id,
+                          parent_email="alpha-parent@x.com",
                           allergies="peanuts", special_needs="asthma")
         child_b = Student(first_name="Bo", last_name="Beta", family_id=fam_b.id,
+                          parent_email="beta-parent@x.com",
                           allergies="shellfish", special_needs="epilepsy")
         db.session.add_all([child_a, child_b])
         db.session.flush()
@@ -179,6 +181,34 @@ def run_csrf():
         resp = c.post("/api/classes", json={})
         record(f"No-Origin write not CSRF-blocked -> {resp.status_code}",
                b'Cross-origin' not in resp.data, "blocked a no-Origin request", "P2")
+
+
+def run_message_blast():
+    """Message blasts: validated, resolve recipients, degrade gracefully when
+    SMTP isn't configured (save + return emails), and parents can't send."""
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        # 'all' resolves the two seeded parent emails; SMTP not configured -> saved + emails returned
+        r = c.post("/api/messages", json={"subject": "Hi", "body": "Welcome to fall!",
+                                          "recipient_type": "all"})
+        d = r.get_json() or {}
+        ok = r.status_code == 201 and d.get("recipient_count", 0) >= 2 and "recipient_emails" in d
+        record(f"Blast to 'all' resolves recipients + degrades gracefully -> {r.status_code}",
+               ok, f"status {r.status_code}: {str(d)[:80]}", "P1")
+        # missing subject rejected
+        r = c.post("/api/messages", json={"body": "x", "recipient_type": "all"})
+        record(f"Blast requires subject -> {r.status_code}", r.status_code == 400, f"got {r.status_code}", "P3")
+        # non-numeric class filter -> 400 (not 500)
+        r = c.post("/api/messages", json={"subject": "x", "body": "y",
+                                          "recipient_type": "class", "recipient_filter": "abc"})
+        record(f"Blast rejects bad class filter (no 500) -> {r.status_code}",
+               r.status_code == 400, f"got {r.status_code}", "P2")
+    # parent cannot send a blast (write-guard)
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        r = c.post("/api/messages", json={"subject": "x", "body": "y", "recipient_type": "all"})
+        record(f"Parent cannot send a blast -> {r.status_code}", r.status_code == 403,
+               f"got {r.status_code}", "P0")
 
 
 def run_registration_flow():
@@ -361,6 +391,7 @@ def main():
     ids = seed()
     run_idor(ids)
     run_csrf()
+    run_message_blast()
     run_registration_flow()
     run_amount_validation(ids)
     run_csv_exports(ids)

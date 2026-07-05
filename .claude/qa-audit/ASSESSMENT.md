@@ -79,6 +79,14 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 
 ---
 
+## Email/SMS message blasts (studio→families comms) — audited & verified
+
+The fall communication path was reviewed and comes back **sound**:
+- Recipient resolution for `all` / `class` / `individual` is correct and de-duplicated (a `set`), uses a join to avoid N+1, and prefers parent email over student email.
+- **Graceful degradation:** when SMTP isn't configured (current prod state), the blast is *saved* and the resolved emails are returned for manual copy; an SMTP send failure saves the message and returns the recipients too — nothing is silently lost.
+- Parents can't send (write-guard, 403). Hardened this pass: a non-numeric `recipient_filter` now returns 400 instead of 500.
+- Verified in the harness (blast to `all` resolves 2 recipients + degrades gracefully; missing subject → 400; bad class filter → 400; parent → 403).
+
 ## Public self-registration (fall-enrollment path) — audited & verified
 
 The most-load-bearing untrusted flow for fall was reviewed end-to-end and comes back **sound**:
@@ -197,6 +205,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 
 ### Iteration 14 — DONE (verified live)
 - **Staff UX: whole pending-payments page → modals** (apply-late-fees, new-payment-plan, reject-payment). The payment-plan flow was 5 chained prompts incl. a type-a-number student picker → now a modal with a student dropdown (shows each student's balance). Verified live end-to-end (plan create POST 201, dropdown populated with 24 students). This clears a fall-critical page of all `prompt()`s. node-checked clean.
+
+### Iteration 15 — DONE (smoke 57/57)
+- **Audited the email/SMS message-blast flow** (studio→families comms — see the Email/SMS section): sound — correct de-duplicated recipient resolution, graceful degradation when SMTP is unconfigured (saves + returns emails to copy). Hardened: non-numeric `recipient_filter` → 400 (was a potential 500). Added 5 regression checks (resolve/degrade/validate/parent-blocked).
 
 ### Remaining for next iterations
 - P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~30 remaining staff-side `prompt()` flows → modals (mostly off-season: recital, waivers, skills, makeups, donations-admin), per-page `aria-label`s, P3-4 Subresource Integrity on CDN scripts prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
