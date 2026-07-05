@@ -2202,6 +2202,46 @@ def run_confirm_payment_race():
            f"transactions={n_txn} codes={sorted(codes)}", "P1")
 
 
+def run_registration_approve_race():
+    """Approving a public Registration creates a Family + Students + enrollments,
+    and Family has no natural unique key — so a double-click that fires two
+    concurrent approvals would create two identical families. Fire two
+    simultaneous approvals and assert exactly one family/student is created."""
+    import json as _json
+    import threading
+    from app.models import Registration, Family, Student
+    with app.app_context():
+        before_fams = Family.query.count()
+        reg = Registration(parent_name="Concurrent Doe", parent_email="cdoe@x.com",
+                           parent_phone="555", status="pending", class_ids="",
+                           students_json=_json.dumps([{"first_name": "Cc", "last_name": "Doe"}]))
+        db.session.add(reg)
+        db.session.commit()
+        rid = reg.id
+
+    barrier = threading.Barrier(2)
+    codes = []
+
+    def worker():
+        with app.test_client() as c:
+            login(c, "admin", "admin123")
+            barrier.wait()
+            codes.append(c.post(f"/api/registrations/{rid}/approve", json={}).status_code)
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    with app.app_context():
+        new_fams = Family.query.count() - before_fams
+        kids = Student.query.filter_by(first_name="Cc", last_name="Doe").count()
+    record("Concurrent double-approve creates exactly one family (no duplicate)",
+           new_fams == 1 and kids == 1 and sorted(codes) == [200, 400],
+           f"new_families={new_fams} kids={kids} codes={sorted(codes)}", "P1")
+
+
 def run_xss_guard():
     """Static guard: user-controlled name/text fields must never be interpolated
     into a JS template literal without esc(). These fields come from public
@@ -2376,6 +2416,7 @@ def main():
     run_qr_upload_safety()
     run_email_header_injection()
     run_confirm_payment_race()
+    run_registration_approve_race()
     run_js_syntax()
     run_smoke()
     run_empty_state()

@@ -4187,9 +4187,20 @@ def approve_registration(rid):
             db.session.add(ClassEnrollment(student_id=student.id, class_id=cid))
         created.append(student.full_name)
 
-    reg.status = 'approved'
-    reg.reviewed_at = _dt.utcnow()
-    reg.reviewed_by = current_user.id
+    # Atomically claim the registration — two concurrent approvals (double-click)
+    # both pass the status check above and would otherwise each create a Family
+    # with its own students + enrollments (duplicate family). The conditional
+    # UPDATE re-checks status in the DB; the loser matches 0 rows and rolls back
+    # the family/students it just inserted.
+    claimed = db.session.query(Registration).filter_by(
+        id=rid, status='pending').update({
+            'status': 'approved',
+            'reviewed_at': _dt.utcnow(),
+            'reviewed_by': current_user.id,
+        }, synchronize_session=False)
+    if not claimed:
+        db.session.rollback()
+        return jsonify({'error': 'Already processed'}), 400
     AuditLog.record(current_user.id, 'registration.approve',
                     f'Approved {reg.parent_name}: {", ".join(created)}')
     db.session.commit()
