@@ -201,6 +201,39 @@ def test_recurring_day_gating():
                n == 0, f"{n} != 0 — charged before the due day")
 
 
+def test_recurring_short_month_clamp():
+    """A charge set for the 29th/30th/31st must still fire in a shorter month —
+    on that month's last day — instead of being silently skipped (which would
+    lose the studio that tuition). Inject a February 28 'today' with a day-31
+    charge and assert it fires on the 28th."""
+    from datetime import date as _date, time as _time
+    from app import _process_recurring_charges
+    from app.models import DanceClass, ClassEnrollment, RecurringCharge, Transaction, User
+
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        s = Student(first_name="Clamp", last_name="Test")
+        db.session.add(s)
+        db.session.flush()
+        dc = DanceClass(name="Clamp Class", day_of_week=0, start_time=_time(17, 0),
+                        end_time=_time(18, 0), instructor_id=admin.id)
+        db.session.add(dc)
+        db.session.flush()
+        db.session.add(ClassEnrollment(student_id=s.id, class_id=dc.id))
+        rc = RecurringCharge(class_id=dc.id, amount=50, category="tuition", day_of_month=31)
+        db.session.add(rc)
+        db.session.commit()
+        rcid = rc.id
+        # Feb 28, 2026 — a non-leap February whose last day (28) < the charge's
+        # day_of_month (31). The clamp must fire the charge on the 28th.
+        _process_recurring_charges(today=_date(2026, 2, 28))
+        n = Transaction.query.filter_by(recurring_charge_id=rcid).count()
+        charged = Transaction.query.filter_by(recurring_charge_id=rcid).first()
+        record(f"day-31 charge fires on Feb 28 (clamped); rows={n}",
+               n == 1 and charged is not None and charged.transaction_date == _date(2026, 2, 28),
+               f"{n} rows; date={getattr(charged, 'transaction_date', None)}")
+
+
 def test_money_precision():
     """Summing many cent-level transactions must not drift (guards against a
     future switch away from Numeric columns, or float creeping into the sums)."""
@@ -229,6 +262,7 @@ def main():
     test_aging()
     test_recurring_charge_idempotent()
     test_recurring_day_gating()
+    test_recurring_short_month_clamp()
     test_money_precision()
     fails = [r for r in results if not r[1]]
     print("\n" + "=" * 56)

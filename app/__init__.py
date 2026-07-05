@@ -15,14 +15,19 @@ db = SQLAlchemy()
 login_manager = LoginManager()
 
 
-def _process_recurring_charges():
-    """Create charge transactions for any recurring charges due this month."""
+def _process_recurring_charges(today=None):
+    """Create charge transactions for any recurring charges due this month.
+
+    `today` is injectable for testing (defaults to the real date) so the
+    short-month due-day clamp can be exercised deterministically.
+    """
     import calendar
     from datetime import date
 
     from app.models import ClassEnrollment, RecurringCharge, Transaction
 
-    today = date.today()
+    if today is None:
+        today = date.today()
     month_start = today.replace(day=1)
     last_day = calendar.monthrange(today.year, today.month)[1]
     actives = RecurringCharge.query.filter_by(is_active=True).all()
