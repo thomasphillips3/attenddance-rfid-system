@@ -479,16 +479,19 @@ def enroll_student(class_id):
     if not data:
         return jsonify({'error': 'No data provided'}), 400
 
-    student_ids = data.get('student_ids', [])
-    if not student_ids and data.get('student_id'):
-        student_ids = [int(data['student_id'])]
+    student_ids = data.get('student_ids')
+    if not student_ids and data.get('student_id') is not None:
+        student_ids = [data.get('student_id')]
     if not student_ids:
         return jsonify({'error': 'student_id or student_ids is required'}), 400
 
     enrolled = []
     skipped = []
-    for sid in student_ids:
-        student = Student.query.get(int(sid))
+    for raw in student_ids:
+        sid_val, id_err = _valid_id(raw)
+        if id_err:
+            continue  # skip un-parseable ids rather than 500 the whole batch
+        student = Student.query.get(sid_val)
         if not student:
             continue
         existing = ClassEnrollment.query.filter_by(
@@ -4062,10 +4065,12 @@ def get_waitlist(class_id):
 def add_to_waitlist(class_id):
     DanceClass.query.get_or_404(class_id)
     data = request.get_json() or {}
-    student_id = data.get('student_id')
-    if not student_id:
-        return jsonify({'error': 'student_id is required'}), 400
-    if current_user.is_parent and int(student_id) not in _parent_student_ids(current_user):
+    student_id, serr = _valid_id(data.get('student_id'))
+    if serr:
+        return serr
+    if Student.query.get(student_id) is None:
+        return jsonify({'error': 'student not found'}), 404
+    if current_user.is_parent and student_id not in _parent_student_ids(current_user):
         return jsonify({'error': 'Not authorized for this student'}), 403
     if ClassEnrollment.query.filter_by(class_id=class_id, student_id=student_id, is_active=True).first():
         return jsonify({'error': 'Already enrolled in this class'}), 400
@@ -4076,7 +4081,7 @@ def add_to_waitlist(class_id):
         existing.status = 'waiting'
         existing.created_at = datetime.utcnow()
     else:
-        db.session.add(WaitlistEntry(class_id=class_id, student_id=int(student_id),
+        db.session.add(WaitlistEntry(class_id=class_id, student_id=student_id,
                                      parent_id=current_user.id if current_user.is_parent else None))
     db.session.commit()
     return jsonify({'message': 'Added to the waitlist'}), 201

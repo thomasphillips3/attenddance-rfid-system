@@ -432,6 +432,33 @@ def run_enrollment(ids):
         with app.app_context():
             still = ClassEnrollment.query.filter_by(class_id=cid, is_active=True).count()
         record(f"Unenroll removed the active enrollment (now {still})", still == 0, "", "P1")
+
+        # Robustness: a garbage/nonexistent id must not 500 or create an orphan.
+        rg = c.post(f"/api/classes/{cid}/enroll", json={"student_id": "xyz"})
+        record(f"Enroll garbage student_id handled (no 500) -> {rg.status_code}",
+               rg.status_code < 500, f"got {rg.status_code}", "P2")
+        wn = c.post(f"/api/classes/{cid}/waitlist", json={"student_id": 999999})
+        record(f"Waitlist nonexistent student -> {wn.status_code} (404, no orphan)",
+               wn.status_code == 404, f"got {wn.status_code}", "P2")
+        wg = c.post(f"/api/classes/{cid}/waitlist", json={"student_id": "xyz"})
+        record(f"Waitlist garbage student_id -> {wg.status_code} (400)",
+               wg.status_code == 400, f"got {wg.status_code}", "P3")
+        # Waitlist a real student, confirm the page renders (no orphan 500), promote.
+        bid = ids["child_b"]
+        wr = c.post(f"/api/classes/{cid}/waitlist", json={"student_id": bid})
+        record(f"Waitlist a real student -> {wr.status_code}", wr.status_code == 201,
+               wr.get_data(as_text=True)[:60], "P2")
+        gw = c.get(f"/api/classes/{cid}/waitlist")
+        record(f"Waitlist page renders (no orphan 500) -> {gw.status_code}",
+               gw.status_code == 200, f"got {gw.status_code}", "P2")
+        with app.app_context():
+            from app.models import WaitlistEntry
+            wid = WaitlistEntry.query.filter_by(class_id=cid, student_id=bid, status='waiting').first().id
+        pr = c.post(f"/api/waitlist/{wid}/promote")
+        with app.app_context():
+            promoted = ClassEnrollment.query.filter_by(class_id=cid, student_id=bid, is_active=True).count()
+        record(f"Promote from waitlist enrolls the student -> {pr.status_code}, enrolled={promoted}",
+               pr.status_code == 200 and promoted == 1, f"status={pr.status_code} enrolled={promoted}", "P2")
     with app.test_client() as c:
         login(c, "parent_a", "pw")
         r = c.post(f"/api/classes/{cid}/enroll", json={"student_id": sid})
