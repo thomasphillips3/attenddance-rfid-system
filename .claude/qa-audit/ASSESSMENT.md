@@ -284,6 +284,15 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 25 — DONE
 - **Scoped the one remaining item — auto-pay** ([AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)): decision-ready design so it can be greenlit/deferred. Grounded in the app's existing Square integration (customer helper + idempotent recurring scheduler already exist), it lays out the Cards-API/Web-Payments-SDK approach, `SavedCard` model, charge-on-schedule + failure handling, PCI (SAQ-A) posture, a ~3–4 day phased build, risks, and the recommendation to launch fall on manual and build auto-pay as the first post-launch project. This turns "what remains" into an actionable decision for the one open item.
 
+### Iteration 110 — DONE (production-parity verification under real gunicorn)
+- **Ran the app under the actual production server for the first time.** Every prior runtime check used the dev server (`python run.py`); production runs `gunicorn run:app`, and the recent fixes (module-level logging, WAL, background threads) all interact with the server model. Started gunicorn with the **exact production CMD** (`--workers 1 --threads 4 --worker-class gthread --timeout 120`) against a throwaway DB and confirmed all five production-critical behaviors:
+  - **Boots clean** — gunicorn binds, boots the gthread worker, runs `create_app` (migrations + processors) without error.
+  - **INFO logging appears** — `INFO: Default admin user created` reached stderr under real gunicorn, confirming the iter-106 fix in *true* production (previously only simulated via `import run`).
+  - **Serves requests** — `GET /auth/login → 200`, `GET /zzz → 404`.
+  - **WAL is active** — the gunicorn-created DB persisted `journal_mode=wal` with `-wal`/`-shm` files, confirming the iter-108 fix under gunicorn.
+  - **The P0 SECRET_KEY fail-closed guard fires** — booting in production mode *without* `SECRET_KEY` makes the worker fail to boot (traceback) and the app serves nothing (HTTP 000), confirming the launch-blocker guard works under the real server, not just in tests.
+- No defects — but this closes the one verification gap that automated tests (which use `test_client`, not a real server) and dev-server browser checks couldn't cover. The production-critical fixes are now confirmed to work under the deployed server model.
+
 ### Iteration 109 — DONE (smoke 313/313, billing 22/22)
 - **Audited the deploy config (fly.toml + Dockerfile).** Two items verified as appropriate rather than changed, and one safe fix:
   - **fly.toml health check — correctly absent.** With `auto_stop_machines='stop'` + `min_machines_running=0` (auto-sleep to save cost), Fly routes on port-open once gunicorn binds. Adding a periodic HTTP health check would keep the machine perpetually awake and defeat the cost model — so *no* check is the right call here (and boot is now fast after the iter-105 reminder-backgrounding, so the wake request is served promptly).
