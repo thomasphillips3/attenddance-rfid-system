@@ -4949,7 +4949,14 @@ def upload_recital_cover(rid):
 
 
 def _image_data_uri_from_request(max_mb=2):
-    """Shared multipart image -> data-URI helper (mirrors the Zelle QR upload)."""
+    """Shared multipart image -> data-URI helper (mirrors the Zelle QR upload).
+
+    The content type is whitelisted to EXACT values, never prefix-checked: the
+    mimetype comes from the client's multipart Content-Type header, so a prefix
+    check (startswith 'image/') would let `image/png"><script>` through and into
+    the data URI. These URIs render into an <img src=> in the booklet (Jinja
+    autoescapes there today) — the exact whitelist keeps them structurally
+    injection-proof regardless of the render context, matching the QR endpoint."""
     import base64
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -4959,14 +4966,15 @@ def _image_data_uri_from_request(max_mb=2):
     raw = f.read()
     if len(raw) > max_mb * 1024 * 1024:
         return jsonify({'error': f'Image too large (max {max_mb}MB)'}), 400
+    VALID_IMAGE_TYPES = {'image/png', 'image/jpeg', 'image/gif', 'image/webp'}
+    ext_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+               'gif': 'image/gif', 'webp': 'image/webp'}
     content_type = (f.mimetype or '').lower()
-    if not content_type.startswith('image/'):
+    if content_type not in VALID_IMAGE_TYPES:
         ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
-        ext_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
-                   'gif': 'image/gif', 'webp': 'image/webp'}
         content_type = ext_map.get(ext, '')
-        if not content_type:
-            return jsonify({'error': 'File must be an image (PNG, JPG, GIF, or WebP)'}), 400
+    if content_type not in VALID_IMAGE_TYPES:
+        return jsonify({'error': 'File must be an image (PNG, JPG, GIF, or WebP)'}), 400
     return f'data:{content_type};base64,' + base64.b64encode(raw).decode('ascii')
 
 

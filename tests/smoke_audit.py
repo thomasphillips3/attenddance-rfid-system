@@ -2077,6 +2077,28 @@ def run_qr_upload_safety():
         record(f"QR upload rejects a non-image -> {rb.status_code}", rb.status_code == 400,
                f"got {rb.status_code}", "P3")
 
+    # The recital cover/ad uploads go through the SHARED helper
+    # (_image_data_uri_from_request); it must whitelist the mimetype to exact
+    # values just like the QR path, or a hostile Content-Type reaches the data
+    # URI (which renders into a booklet <img src=>).
+    from app.models import Recital
+    with app.app_context():
+        rec = Recital(title="Injection Test Recital", year=2026)
+        db.session.add(rec)
+        db.session.commit()
+        rec_id = rec.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        c.post(f"/api/recitals/{rec_id}/cover",
+               data={"file": (io.BytesIO(b"\x89PNGfake"), "x.png", 'image/png"><script>alert(1)</script>')},
+               content_type="multipart/form-data")
+        with app.app_context():
+            uri = (Recital.query.get(rec_id).cover_image_data or "")
+        header = uri.split("base64,")[0]
+        record(f"Recital cover upload sanitizes a hostile mimetype (header={header!r})",
+               all(ch not in header for ch in ("<", ">", '"', "'")),
+               f"unsafe data URI header: {header}", "P2")
+
 
 def run_email_header_injection():
     """Recipient addresses and subjects can carry user-controlled values (a
