@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 
 from flask import current_app, jsonify, request, send_file
 from flask_login import current_user, login_required
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_
 from sqlalchemy.exc import IntegrityError
 
 from app import db, square_service
@@ -576,6 +576,43 @@ def unenroll_student(enrollment_id):
     enrollment.is_active = False
     db.session.commit()
     return jsonify({'message': 'Student unenrolled successfully'})
+
+
+# ── Global search (staff topbar) ────────────────────────────────────
+
+@bp.route('/search', methods=['GET'])
+@login_required
+def global_search():
+    """Staff topbar search across active students, families, and classes.
+
+    Names are matched case-insensitively; each result links to that entity's
+    page. Staff-only — a parent must not be able to enumerate the roster.
+    """
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    q = _clean_str(request.args.get('q'))
+    if len(q) < 2:
+        return jsonify({'students': [], 'families': [], 'classes': []})
+    like = f'%{q}%'
+    students = Student.query.filter(
+        Student.is_active.is_(True),
+        or_(
+            Student.first_name.ilike(like),
+            Student.last_name.ilike(like),
+            (Student.first_name + ' ' + Student.last_name).ilike(like),
+        ),
+    ).order_by(Student.first_name, Student.last_name).limit(8).all()
+    families = Family.query.filter(Family.name.ilike(like)).order_by(Family.name).limit(8).all()
+    classes = DanceClass.query.filter(
+        DanceClass.is_active.is_(True), DanceClass.name.ilike(like)
+    ).order_by(DanceClass.name).limit(8).all()
+    return jsonify({
+        'students': [{'id': s.id, 'name': s.full_name, 'url': f'/students/{s.id}/detail'}
+                     for s in students],
+        'families': [{'id': f.id, 'name': f.name, 'url': f'/families/{f.id}/ledger'}
+                     for f in families],
+        'classes': [{'id': c.id, 'name': c.name, 'url': '/classes'} for c in classes],
+    })
 
 
 # ── Attendance endpoints ────────────────────────────────────────────

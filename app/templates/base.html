@@ -206,9 +206,24 @@
             <header class="sticky top-0 z-30 flex items-center gap-3 px-4 sm:px-7 py-2.5 border-b border-line bg-surface/80 backdrop-blur">
                 <button @click="sidebar=true" aria-label="Open menu" class="lg:hidden text-ink-2 p-2 -ml-2"><i class="fas fa-bars text-lg" aria-hidden="true"></i></button>
                 <a href="{{ url_for('main.dashboard') }}" class="lg:hidden logo-plate inline-flex items-center" style="padding:6px 9px"><img src="{{ url_for('static', filename='lsodance-logo.png') }}" alt="LSO Dance" class="block w-auto" style="height:18px"></a>
-                <div class="relative flex-1 max-w-sm hidden md:block">
+                <div class="relative flex-1 max-w-sm hidden md:block" x-data="globalSearch()" @click.outside="open=false" @keydown.escape="open=false">
                     <i class="fas fa-search text-xs text-ink-3 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
-                    <input aria-label="Search students, families, classes" placeholder="Search students, families, classes…" class="w-full pl-9 pr-3 py-2 text-sm bg-surface border border-line-2 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+                    <input x-model="q" @input.debounce.250ms="run()" @focus="if(hasResults()) open=true"
+                           aria-label="Search students, families, classes" placeholder="Search students, families, classes…"
+                           class="w-full pl-9 pr-3 py-2 text-sm bg-surface border border-line-2 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+                    <div x-show="open" x-cloak
+                         class="absolute mt-2 w-full bg-surface border border-line rounded-xl shadow-pop max-h-96 overflow-auto z-40 text-sm">
+                        <div x-show="loading" class="px-4 py-3 text-ink-3">Searching…</div>
+                        <template x-for="grp in groups" :key="grp.key">
+                            <div x-show="results[grp.key].length">
+                                <div class="px-4 pt-2 pb-1 text-xs uppercase tracking-wide text-ink-3" x-text="grp.label"></div>
+                                <template x-for="item in results[grp.key]" :key="grp.key + '-' + item.id">
+                                    <a :href="item.url" class="block px-4 py-2 hover:bg-surface-2 text-ink" x-text="item.name"></a>
+                                </template>
+                            </div>
+                        </template>
+                        <div x-show="!loading && q.trim().length >= 2 && !hasResults()" class="px-4 py-3 text-ink-3">No matches</div>
+                    </div>
                 </div>
                 <div class="flex-1"></div>
                 <a href="{{ url_for('main.take_attendance') }}" class="hidden sm:inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-clipboard-check"></i>Take attendance</a>
@@ -277,6 +292,34 @@
             var m = document.getElementById('flash-messages');
             if (m) m.style.display = 'none';
         }, 5000);
+
+        // Staff topbar search. Defined on window (plain script, runs before the
+        // deferred Alpine init) so x-data="globalSearch()" resolves. Results use
+        // x-text, so student/family names are auto-escaped — no XSS from names.
+        window.globalSearch = function () {
+            return {
+                q: '', open: false, loading: false,
+                results: { students: [], families: [], classes: [] },
+                groups: [
+                    { key: 'students', label: 'Students' },
+                    { key: 'families', label: 'Families' },
+                    { key: 'classes', label: 'Classes' },
+                ],
+                hasResults: function () {
+                    return this.results.students.length || this.results.families.length || this.results.classes.length;
+                },
+                run: async function () {
+                    var q = this.q.trim();
+                    if (q.length < 2) { this.results = { students: [], families: [], classes: [] }; this.open = false; return; }
+                    this.open = true; this.loading = true;
+                    try {
+                        var res = await fetch('/api/search?q=' + encodeURIComponent(q));
+                        if (res.ok) this.results = await res.json();
+                    } catch (e) { /* network error — keep prior results */ }
+                    this.loading = false;
+                },
+            };
+        };
     </script>
 
     <!-- Global toast: a single styled notifier for every page (replaces raw

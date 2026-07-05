@@ -2336,6 +2336,49 @@ def run_late_fee_race():
            f"late_fee_charges={n} codes={sorted(codes)}", "P1")
 
 
+def run_global_search():
+    """The staff topbar search endpoint: finds students/families/classes by name,
+    is staff-only (a parent must not enumerate the roster), enforces a 2-char
+    minimum, and can't 500 or SQL-inject on a wildcard/quote query."""
+    from app.models import Student, Family
+    with app.app_context():
+        fam = Family(name="Zzytworth Family", primary_email="zzy@x.com")
+        db.session.add(fam)
+        db.session.flush()
+        st = Student(first_name="Xqzabel", last_name="Zzytworth", family_id=fam.id, is_active=True)
+        db.session.add(st)
+        db.session.commit()
+
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        # Finds the student by first name and the family by name.
+        d = c.get("/api/search?q=Zzytworth").get_json() or {}
+        found_student = any(s["name"] == "Xqzabel Zzytworth" for s in d.get("students", []))
+        found_family = any(f["name"] == "Zzytworth Family" for f in d.get("families", []))
+        record("Search finds a student + family by name",
+               found_student and found_family, str(d), "P2")
+        # Result links point at real pages.
+        stu = next((s for s in d.get("students", []) if s["name"] == "Xqzabel Zzytworth"), {})
+        record(f"Search result links to the student page ({stu.get('url')})",
+               (stu.get("url") or "").startswith("/students/") and stu.get("url").endswith("/detail"),
+               str(stu), "P3")
+        # 2-char minimum.
+        short = c.get("/api/search?q=x").get_json() or {}
+        record("Search enforces a 2-char minimum (1 char -> empty)",
+               short.get("students") == [] and short.get("families") == [], str(short), "P3")
+        # Wildcard/quote query must not 500 or inject.
+        r = c.get("/api/search?q=%25%27%3B--")
+        record(f"Search survives a wildcard/quote query -> {r.status_code}",
+               r.status_code == 200, f"got {r.status_code}", "P2")
+
+    # A parent must not be able to search the roster.
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        r = c.get("/api/search?q=Zzytworth")
+        record(f"Parent blocked from global search -> {r.status_code}",
+               r.status_code == 403, f"got {r.status_code}", "P1")
+
+
 def run_xss_guard():
     """Static guard: user-controlled name/text fields must never be interpolated
     into a JS template literal without esc(). These fields come from public
@@ -2513,6 +2556,7 @@ def main():
     run_registration_approve_race()
     run_attendance_race()
     run_late_fee_race()
+    run_global_search()
     run_js_syntax()
     run_smoke()
     run_empty_state()
