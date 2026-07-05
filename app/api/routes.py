@@ -617,8 +617,16 @@ def enroll_student(class_id):
     if not student_ids:
         return jsonify({'error': 'student_id or student_ids is required'}), 400
 
+    # Enforce class capacity so a class can't be silently overbooked (the waitlist
+    # exists for exactly this). Enroll up to the cap and report who couldn't fit;
+    # the admin can then raise max_students (classes are editable) or waitlist them.
+    # max_students of 0/None means no limit.
+    capacity = dance_class.max_students or 0
+    active_count = ClassEnrollment.query.filter_by(class_id=class_id, is_active=True).count()
+
     enrolled = []
     skipped = []
+    full = []
     for raw in student_ids:
         sid_val, id_err = _valid_id(raw)
         if id_err:
@@ -629,21 +637,27 @@ def enroll_student(class_id):
         existing = ClassEnrollment.query.filter_by(
             student_id=student.id, class_id=class_id
         ).first()
+        if existing and existing.is_active:
+            skipped.append(student.full_name)
+            continue
+        if capacity and active_count >= capacity:
+            full.append(student.full_name)
+            continue
         if existing:
-            if existing.is_active:
-                skipped.append(student.full_name)
-                continue
             existing.is_active = True
             existing.enrolled_date = date.today()
         else:
             db.session.add(ClassEnrollment(student_id=student.id, class_id=class_id))
+        active_count += 1
         enrolled.append(student.full_name)
 
     db.session.commit()
     msg = f'{len(enrolled)} student(s) enrolled in {dance_class.name}'
     if skipped:
         msg += f' ({len(skipped)} already enrolled)'
-    return jsonify({'message': msg, 'enrolled': enrolled, 'skipped': skipped}), 201
+    if full:
+        msg += f' — {len(full)} not enrolled: class is full ({capacity} max). Raise the capacity or use the waitlist.'
+    return jsonify({'message': msg, 'enrolled': enrolled, 'skipped': skipped, 'full': full}), 201
 
 
 @bp.route('/enrollments/<int:enrollment_id>', methods=['DELETE'])

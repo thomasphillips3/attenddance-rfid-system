@@ -353,7 +353,11 @@ async function enrollSelected() {
             body: JSON.stringify({ student_ids: checked })
         });
         const data = await res.json();
-        if (res.ok) { toggleAddSection(false); loadEnrollments(); }
+        if (res.ok) {
+            toggleAddSection(false); loadEnrollments(); loadClasses();
+            // Surface the outcome — if some hit the cap, flag it (not silent).
+            if (data.message) toast(data.message, !(data.full && data.full.length));
+        }
         else { toast(data.error || 'Enrollment failed', false); }
     } catch (err) { toast('Network error', false); }
 }

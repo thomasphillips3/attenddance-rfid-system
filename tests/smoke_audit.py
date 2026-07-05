@@ -2706,6 +2706,43 @@ def run_class_crud():
            f"class_active={cls.is_active} rc_active={rc.is_active} stopped={d2.get('recurring_charges_stopped')}", "P1")
 
 
+def run_class_capacity():
+    """Enrollment must respect max_students so a class can't be silently
+    overbooked (that's what the waitlist is for). Enroll 3 into a max=2 class →
+    2 enrolled + 1 reported full; a max=0 (unlimited) class takes all."""
+    from datetime import time as _time
+    from app.models import User, DanceClass, Student, Family, ClassEnrollment
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        fam = Family(name="Cap Fam", primary_email="cap@x.com")
+        db.session.add(fam)
+        db.session.flush()
+        small = DanceClass(name="Cap Small", day_of_week=1, start_time=_time(16, 0),
+                           end_time=_time(17, 0), instructor_id=adm.id, max_students=2)
+        unlim = DanceClass(name="Cap Unlim", day_of_week=2, start_time=_time(16, 0),
+                           end_time=_time(17, 0), instructor_id=adm.id, max_students=0)
+        db.session.add_all([small, unlim])
+        db.session.flush()
+        sids = []
+        for i in range(3):
+            s = Student(first_name=f"Cap{i}", last_name="X", family_id=fam.id, is_active=True)
+            db.session.add(s)
+            db.session.flush()
+            sids.append(s.id)
+        db.session.commit()
+        scid, ucid = small.id, unlim.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        d = c.post(f"/api/classes/{scid}/enroll", json={"student_ids": sids}).get_json() or {}
+        du = c.post(f"/api/classes/{ucid}/enroll", json={"student_ids": sids}).get_json() or {}
+    with app.app_context():
+        small_n = ClassEnrollment.query.filter_by(class_id=scid, is_active=True).count()
+        unlim_n = ClassEnrollment.query.filter_by(class_id=ucid, is_active=True).count()
+    record(f"Class capacity enforced (max=2 -> {small_n} enrolled + {len(d.get('full', []))} full; unlimited -> {unlim_n})",
+           small_n == 2 and len(d.get("full", [])) == 1 and unlim_n == 3,
+           f"small={small_n} full={d.get('full')} unlim={unlim_n}", "P1")
+
+
 def run_recurring_charge_edit():
     """An auto-billing rule must be editable (raise tuition / shift the billing
     day mid-year) without delete+recreate. Verify PUT updates amount/day and
@@ -3120,6 +3157,7 @@ def main():
     run_registration_notify_throttle()
     run_withdrawn_student_balance()
     run_class_crud()
+    run_class_capacity()
     run_recurring_charge_edit()
     run_page_route_authz(ids)
     run_admin_role_consistency()
