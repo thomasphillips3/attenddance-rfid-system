@@ -2336,6 +2336,41 @@ def run_late_fee_race():
            f"late_fee_charges={n} codes={sorted(codes)}", "P1")
 
 
+def run_dead_handler_guard():
+    """Static guard: every inline on-click/change/submit/input handler must call a
+    function that's actually defined (in the same template or the shared base.html
+    shell). Catches a button wired to a removed or misspelled function — it looks
+    functional but throws on click. (This is how the dead topbar-search box would
+    have been caught earlier.)"""
+    import re
+    from pathlib import Path
+    tpl = Path(__file__).resolve().parent.parent / "app" / "templates"
+
+    def defined_names(txt):
+        names = set()
+        names |= set(re.findall(r'function\s+([A-Za-z_$][\w$]*)\s*\(', txt))
+        names |= set(re.findall(r'window\.([A-Za-z_$][\w$]*)\s*=', txt))
+        names |= set(re.findall(r'\b([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function', txt))
+        names |= set(re.findall(r'\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(', txt))
+        return names
+
+    BUILTIN = {"return", "if", "for", "while", "alert", "confirm", "event", "this",
+               "location", "history", "window", "document", "console", "fetch", "JSON",
+               "Math", "Date", "parseInt", "parseFloat", "setTimeout", "setInterval",
+               "encodeURIComponent", "Number", "String", "Array"}
+    base_defs = defined_names((tpl / "base.html").read_text())
+    dead = []
+    for f in tpl.rglob("*.html"):
+        txt = f.read_text()
+        local = defined_names(txt) | base_defs
+        for m in re.finditer(r'on(?:click|change|submit|input)="\s*([A-Za-z_$][\w$]*)\s*\(', txt):
+            fn = m.group(1)
+            if fn not in BUILTIN and fn not in local:
+                dead.append(f"{f.relative_to(tpl)}:{fn}")
+    record(f"No inline handler calls an undefined function ({len(dead)} dead)",
+           not dead, "; ".join(sorted(set(dead))), "P2")
+
+
 def run_global_search():
     """The staff topbar search endpoint: finds students/families/classes by name,
     is staff-only (a parent must not enumerate the roster), enforces a 2-char
@@ -2557,6 +2592,7 @@ def main():
     run_attendance_race()
     run_late_fee_race()
     run_global_search()
+    run_dead_handler_guard()
     run_js_syntax()
     run_smoke()
     run_empty_state()
