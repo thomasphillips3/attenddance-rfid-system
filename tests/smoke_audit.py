@@ -432,41 +432,74 @@ def run_multichild_invite_merge():
 
 
 def run_square_webhook(ids):
-    """Square auto-reconcile: a PARTIALLY_PAID event must be ignored (else it
-    books the whole invoice + blocks the final PAID event); a PAID event records
-    the full amount once and is idempotent. No signature key set -> unsigned."""
-    from app.models import SquareInvoice, Transaction
+    """Square auto-reconcile (real card money): it FAILS CLOSED without a
+    signature key (an unverified webhook can't credit an account); with a key, a
+    bad signature is rejected (403), a PARTIALLY_PAID event is ignored (else it
+    books the whole invoice + blocks the final PAID), and a PAID event records the
+    full amount exactly once (idempotent)."""
+    import base64
+    import hashlib
+    import hmac
+    import json as _json
+    from app.models import SquareInvoice, Transaction, Setting
+    from app.crypto import encrypt
 
     sid = ids["child_a"]
     with app.app_context():
-        inv = SquareInvoice(student_id=sid, invoice_id="sqinv_test_1",
-                            amount_cents=8000, status="SENT")
-        db.session.add(inv)
+        db.session.add(SquareInvoice(student_id=sid, invoice_id="sqinv_test_1",
+                                     amount_cents=8000, status="SENT"))
         db.session.commit()
 
-    def event(status):
-        return {"type": "invoice.updated",
-                "data": {"object": {"invoice": {"id": "sqinv_test_1", "status": status}}}}
+    def body(status):
+        return _json.dumps({"type": "invoice.updated",
+                            "data": {"object": {"invoice": {"id": "sqinv_test_1", "status": status}}}})
+
+    def n_txns():
+        with app.app_context():
+            return Transaction.query.filter(Transaction.description.like("%sqinv_test_1%")).all()
+
+    def sign(b, key=b"squarekey"):
+        url = "http://localhost/api/webhooks/square"
+        return base64.b64encode(hmac.new(key, (url + b).encode(), hashlib.sha256).digest()).decode()
 
     with app.test_client() as c:  # no login — Square calls this
-        r = c.post("/api/webhooks/square", json=event("PARTIALLY_PAID"))
-        with app.app_context():
-            n = Transaction.query.filter(Transaction.description.like("%sqinv_test_1%")).count()
-        record(f"PARTIALLY_PAID ignored (no transaction) -> {r.get_json()}",
-               (r.get_json() or {}).get("status") == "ignored" and n == 0, f"txns={n}", "P2")
+        # No signature key configured -> fail closed, nothing recorded.
+        r = c.post("/api/webhooks/square", data=body("PAID"), content_type="application/json")
+        record(f"Webhook fails closed without a signature key -> {r.get_json()}",
+               (r.get_json() or {}).get("status") == "unverified_ignored" and len(n_txns()) == 0,
+               f"status={r.get_json()} txns={len(n_txns())}", "P1")
 
-        r = c.post("/api/webhooks/square", json=event("PAID"))
-        with app.app_context():
-            txns = Transaction.query.filter(Transaction.description.like("%sqinv_test_1%")).all()
-        record(f"PAID records the full $80 once -> {r.get_json()}",
-               (r.get_json() or {}).get("status") == "recorded" and len(txns) == 1
+    with app.app_context():
+        Setting.set("payments_square_webhook_signature_key", encrypt("squarekey"))
+        db.session.commit()
+
+    with app.test_client() as c:
+        # Bad signature rejected.
+        rb = c.post("/api/webhooks/square", data=body("PAID"), content_type="application/json",
+                    headers={"x-square-hmacsha256-signature": "bad"})
+        record(f"Webhook rejects a bad signature -> {rb.status_code}", rb.status_code == 403,
+               f"got {rb.status_code}", "P1")
+        # PARTIALLY_PAID (signed) ignored.
+        pb = body("PARTIALLY_PAID")
+        rp = c.post("/api/webhooks/square", data=pb, content_type="application/json",
+                    headers={"x-square-hmacsha256-signature": sign(pb)})
+        record(f"PARTIALLY_PAID ignored (no transaction) -> {rp.get_json()}",
+               (rp.get_json() or {}).get("status") == "ignored" and len(n_txns()) == 0,
+               f"txns={len(n_txns())}", "P2")
+        # PAID (signed) records $80 once.
+        fb = body("PAID")
+        rf = c.post("/api/webhooks/square", data=fb, content_type="application/json",
+                    headers={"x-square-hmacsha256-signature": sign(fb)})
+        txns = n_txns()
+        record(f"PAID records the full $80 once -> {rf.get_json()}",
+               (rf.get_json() or {}).get("status") == "recorded" and len(txns) == 1
                and float(txns[0].amount) == 80.0, f"txns={[float(t.amount) for t in txns]}", "P1")
-
-        r = c.post("/api/webhooks/square", json=event("PAID"))  # duplicate
-        with app.app_context():
-            n = Transaction.query.filter(Transaction.description.like("%sqinv_test_1%")).count()
-        record(f"Duplicate PAID is idempotent (still 1) -> {r.get_json()}",
-               (r.get_json() or {}).get("status") == "already_recorded" and n == 1, f"txns={n}", "P1")
+        # Duplicate PAID (signed) idempotent.
+        rd = c.post("/api/webhooks/square", data=fb, content_type="application/json",
+                    headers={"x-square-hmacsha256-signature": sign(fb)})
+        record(f"Duplicate PAID is idempotent (still 1) -> {rd.get_json()}",
+               (rd.get_json() or {}).get("status") == "already_recorded" and len(n_txns()) == 1,
+               f"txns={len(n_txns())}", "P1")
 
 
 def run_reconciliation(ids):

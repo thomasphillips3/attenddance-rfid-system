@@ -57,7 +57,10 @@ with a "copy these emails" fallback until SMTP is set). Turn them on as ready.
 - [ ] **Online card payments (Square).** `/settings` → enter access token +
   location ID → **Test Connection**. (Token is encrypted at rest.) For
   auto-reconcile, add the webhook signature key and register the webhook URL in
-  the Square dashboard.
+  the Square dashboard. **The signature key is required** — the webhook now
+  *fails closed*: without it, Square "paid" events are ignored (not recorded), so
+  a forged event can't credit an account. Until the key is set, reconcile Square
+  payments manually via `/pending-payments`.
 - [ ] **Zelle / Cash App.** `/settings` → upload the Zelle QR, set the Cash App
   tag. (These already work for manual reconciliation.)
 - [ ] **SMS reminders (Twilio).** `/settings` → SMS section → SID, token, from-number.

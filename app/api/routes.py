@@ -2607,19 +2607,24 @@ def square_webhook():
 
     raw_body = request.get_data()
 
-    # Verify signature if a key is configured
+    # Fail closed: never auto-record a payment from an UNVERIFIED webhook. This
+    # endpoint reduces a family's balance, so without a configured signature key
+    # we cannot trust the caller — an attacker who learned a real invoice id could
+    # otherwise forge a "PAID" event and credit an account. Return 200 so Square
+    # doesn't retry; the studio must set the signature key to enable auto-reconcile
+    # (until then, Square payments are reconciled manually via /pending-payments).
     from app.crypto import decrypt
     sig_key = decrypt(Setting.get('payments_square_webhook_signature_key', ''))
-    if sig_key:
-        provided = request.headers.get('x-square-hmacsha256-signature', '')
-        mac = hmac.new(sig_key.encode('utf-8'), (request.url + raw_body.decode('utf-8')).encode('utf-8'),
-                       hashlib.sha256)
-        expected = base64.b64encode(mac.digest()).decode('ascii')
-        if not hmac.compare_digest(expected, provided):
-            logger.warning("Square webhook signature mismatch")
-            return jsonify({'error': 'Invalid signature'}), 403
-    else:
-        logger.warning("Square webhook received but no signature key configured — skipping verification")
+    if not sig_key:
+        logger.warning("Square webhook received but no signature key configured — not auto-recording")
+        return jsonify({'status': 'unverified_ignored'}), 200
+    provided = request.headers.get('x-square-hmacsha256-signature', '')
+    mac = hmac.new(sig_key.encode('utf-8'), (request.url + raw_body.decode('utf-8')).encode('utf-8'),
+                   hashlib.sha256)
+    expected = base64.b64encode(mac.digest()).decode('ascii')
+    if not hmac.compare_digest(expected, provided):
+        logger.warning("Square webhook signature mismatch")
+        return jsonify({'error': 'Invalid signature'}), 403
 
     try:
         event = json.loads(raw_body or b'{}')
