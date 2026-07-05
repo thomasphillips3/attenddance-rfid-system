@@ -53,6 +53,7 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 ### [P1-2] No autopay / cards-on-file — the core Jackrabbit billing feature is absent (parity)
 - **Evidence:** grep for autopay/card-on-file/subscription → **0 hits**. Recurring billing only creates *charge* ledger rows; actual collection is manual reconciliation ("I paid via Zelle/CashApp") or a one-off Square invoice a parent must click. Jackrabbit's headline is auto-charging saved cards on a schedule.
 - **Operational impact:** The studio *can* run fall on manual reconciliation (many small studios do), so this is not a hard blocker — but chasing unpaid tuition by hand is the biggest day-to-day tax vs Jackrabbit. Rank as the top post-launch build.
+- **📋 Decision-ready scope:** see [AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md) — how it works with Square (Cards API + Web Payments SDK), the ~3–4 day phased build, PCI/security posture, risks, and the recommendation (**launch fall on manual; build auto-pay as the first post-launch project**). The plumbing is largely in place already (Square customer helper + the idempotent recurring scheduler).
 
 ### [P1-3] CSRF protection was disabled app-wide — ✅ FIXED (Origin check)
 - **Was:** No `CSRFProtect`; 157 raw `fetch()` POSTs + HTML forms with only `SameSite=Lax` as mitigation.
@@ -251,6 +252,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 
 ### Iteration 24 — DONE (verified live)
 - **Staff UX: recital screens → modals (the last prompts).** Recital hub 'New Year' (title+year) and 'Add Number', plus recital-manage 'New Costume' (name/fee/vendor + type-a-number class picker → class dropdown) are now modals. Verified live (recital create POST 201); node-checked clean. **grep for `prompt(` across all templates now returns 0 — the entire app is prompt-free.** Every data-entry flow, fall or spring, is a proper modal.
+
+### Iteration 25 — DONE
+- **Scoped the one remaining item — auto-pay** ([AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)): decision-ready design so it can be greenlit/deferred. Grounded in the app's existing Square integration (customer helper + idempotent recurring scheduler already exist), it lays out the Cards-API/Web-Payments-SDK approach, `SavedCard` model, charge-on-schedule + failure handling, PCI (SAQ-A) posture, a ~3–4 day phased build, risks, and the recommendation to launch fall on manual and build auto-pay as the first post-launch project. This turns "what remains" into an actionable decision for the one open item.
 
 ### Remaining for next iterations
 - P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), **✅ NONE — the entire app is prompt-free.** Every data-entry flow is a proper modal. P3-4 SRI (deferred — see above) prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.

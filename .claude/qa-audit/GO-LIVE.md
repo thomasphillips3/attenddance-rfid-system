@@ -86,6 +86,8 @@ with a "copy these emails" fallback until SMTP is set). Turn them on as ready.
 - **Auto-pay / cards-on-file** — the one Jackrabbit parity gap left. Fall runs on
   manual collection (Zelle/Cash App reconciliation + one-off Square invoices) +
   the A/R aging report to chase balances. Auto-charging saved cards is a separate
-  feature build; greenlight it when you want it.
+  feature build — decision-ready scope in [AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)
+  (~3–4 days, recommend building it as the first post-launch project). Greenlight
+  it when you want it.
 - A handful of spring-only staff screens (recital, waivers, skills) still use
   simple browser prompts for data entry — cosmetic, not used in fall.
