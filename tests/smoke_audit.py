@@ -1912,7 +1912,32 @@ def run_orphan_guard(ids):
 
 
 def run_csv_exports(ids):
-    """CSV exports: staff get a well-formed CSV; parents are blocked."""
+    """CSV exports: staff get a well-formed CSV; parents are blocked; and
+    formula-injection cells are neutralized (a student name can come from public
+    registration, and the studio opens these in Excel)."""
+    # Formula-injection: a student named =HYPERLINK(...) must be text-escaped in
+    # the CSV, while a legitimate negative balance stays a number.
+    from app.models import Student, Family, Transaction
+    with app.app_context():
+        fam = Family(name="CSV Fam")
+        db.session.add(fam)
+        db.session.flush()
+        evil = Student(first_name='=HYPERLINK("http://evil.com","x")', last_name="Csv", family_id=fam.id)
+        db.session.add(evil)
+        db.session.flush()
+        db.session.add_all([
+            Transaction(student_id=evil.id, type="charge", amount=50, category="tuition", payment_method="n/a", description="c"),
+            Transaction(student_id=evil.id, type="payment", amount=100, category="tuition", payment_method="cash", description="p"),
+        ])
+        db.session.commit()
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        csv_text = c.get("/api/reports/students.csv").get_data(as_text=True)
+        row = next((l for l in csv_text.splitlines() if "HYPERLINK" in l), "")
+        record("CSV export neutralizes a formula-injection name",
+               "'=HYPERLINK" in row, f"unescaped formula in: {row[:80]}", "P2")
+        record("CSV export keeps a negative balance as a number (not quoted)",
+               "-50.00" in row and "'-50" not in row, f"row={row[:80]}", "P3")
     # Parent blocked.
     with app.test_client() as c:
         login(c, "parent_a", "pw")

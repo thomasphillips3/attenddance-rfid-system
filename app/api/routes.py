@@ -972,6 +972,21 @@ def aging_report():
     })
 
 
+def _csv_safe(value):
+    """Neutralize CSV/formula injection. Excel/Sheets execute a cell that starts
+    with = + @ (or a control char) as a formula — and some of this data (student
+    names) comes from public registration — so prefix those with a single quote to
+    force text. A leading '-' is only escaped when the cell isn't a plain number,
+    so legitimate negative amounts (-50.00) still render as numbers."""
+    import re as _re
+    s = '' if value is None else str(value)
+    if not s:
+        return s
+    if s[0] in ('=', '+', '@', '\t', '\r') or (s[0] == '-' and not _re.fullmatch(r'-?\d+(\.\d+)?', s)):
+        return "'" + s
+    return s
+
+
 def _csv_response(filename, header, rows):
     """Build a downloadable CSV Response from a header + iterable of row lists."""
     import csv
@@ -982,7 +997,7 @@ def _csv_response(filename, header, rows):
     writer = csv.writer(buf)
     writer.writerow(header)
     for r in rows:
-        writer.writerow(r)
+        writer.writerow([_csv_safe(cell) for cell in r])
     return Response(
         buf.getvalue(),
         mimetype='text/csv',
