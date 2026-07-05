@@ -18,7 +18,7 @@
     <!-- COMPANIES -->
     <div x-show="tab==='groups'">
         <div class="flex justify-end mb-3">
-            <button onclick="createGroup()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-2"></i>New Company</button>
+            <button onclick="openGroupModal()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-2"></i>New Company</button>
         </div>
         <div id="groups-list" class="space-y-4"><p class="text-ink-3">Loading…</p></div>
     </div>
@@ -26,7 +26,7 @@
     <!-- AUDITIONS -->
     <div x-show="tab==='auditions'" style="display:none">
         <div class="flex justify-end mb-3">
-            <button onclick="createAudition()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-2"></i>New Audition</button>
+            <button onclick="openAuditionModal()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-2"></i>New Audition</button>
         </div>
         <div id="auditions-list" class="space-y-4"><p class="text-ink-3">Loading…</p></div>
     </div>
@@ -34,11 +34,56 @@
     <!-- PERFORMANCES -->
     <div x-show="tab==='performances'" style="display:none">
         <div class="flex justify-end mb-3">
-            <button onclick="createPerformance()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-2"></i>New Performance</button>
+            <button onclick="openPerformanceModal()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-2"></i>New Performance</button>
         </div>
         <div id="performances-list" class="space-y-4"><p class="text-ink-3">Loading…</p></div>
     </div>
 </div>
+
+{% set lbl = "block text-sm font-medium text-ink-2 mb-1" %}
+{% set fld = "block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
+{% macro modal(id, title, close_fn, submit_fn, submit_label) %}
+<div id="{{ id }}" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="{{ close_fn }}()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="font-display text-2xl text-ink">{{ title }}</h3>
+                <button onclick="{{ close_fn }}()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <div class="space-y-3">{{ caller() }}</div>
+            <div class="mt-5 flex justify-end gap-2">
+                <button onclick="{{ close_fn }}()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="{{ submit_fn }}()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">{{ submit_label }}</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+{% call modal('group-modal', 'New company', 'closeGroupModal', 'submitGroup', 'Create company') %}
+    <div><label class="{{ lbl }}" for="grp-name">Name *</label><input id="grp-name" class="{{ fld }}" placeholder="e.g. LSODance Company"></div>
+    <div><label class="{{ lbl }}" for="grp-desc">Description</label><textarea id="grp-desc" rows="2" class="{{ fld }}"></textarea></div>
+{% endcall %}
+
+{% call modal('audition-modal', 'New audition', 'closeAuditionModal', 'submitAudition', 'Create audition') %}
+    <div><label class="{{ lbl }}" for="aud-title">Title *</label><input id="aud-title" class="{{ fld }}"></div>
+    <div><label class="{{ lbl }}" for="aud-group">Company</label><select id="aud-group" class="{{ fld }}"><option value="">— (open / none)</option></select></div>
+    <div class="grid grid-cols-2 gap-3">
+        <div><label class="{{ lbl }}" for="aud-date">Date</label><input id="aud-date" type="date" class="{{ fld }}"></div>
+        <div><label class="{{ lbl }}" for="aud-loc">Location</label><input id="aud-loc" class="{{ fld }}"></div>
+    </div>
+{% endcall %}
+
+{% call modal('perf-modal', 'New performance', 'closePerfModal', 'submitPerformance', 'Create performance') %}
+    <div><label class="{{ lbl }}" for="perf-title">Title *</label><input id="perf-title" class="{{ fld }}" placeholder="e.g. 22nd Annual Recital"></div>
+    <div><label class="{{ lbl }}" for="perf-group">Company</label><select id="perf-group" class="{{ fld }}"><option value="">— (studio-wide)</option></select></div>
+    <div class="grid grid-cols-2 gap-3">
+        <div><label class="{{ lbl }}" for="perf-date">Date</label><input id="perf-date" type="date" class="{{ fld }}"></div>
+        <div><label class="{{ lbl }}" for="perf-call">Call time</label><input id="perf-call" class="{{ fld }}" placeholder="e.g. 5:00 PM"></div>
+    </div>
+    <div><label class="{{ lbl }}" for="perf-venue">Venue</label><input id="perf-venue" class="{{ fld }}"></div>
+{% endcall %}
 
 <script>
 const STUDENTS = [{% for s in students %}{id:{{ s.id }}, name:"{{ s.full_name|e }}"},{% endfor %}];
@@ -91,10 +136,21 @@ async function loadMembers(gid){
         ${esc(x.student_name)} <span class="text-xs text-gold-ink ml-1">${esc(x.role)}</span>
         <button onclick="removeMember(${x.id})" class="ml-2 text-danger hover:opacity-70">&times;</button></span>`).join('');
 }
-async function createGroup(){
-    const name = prompt('Company name (e.g. LSODance Company):'); if(!name)return;
-    const description = prompt('Short description (optional):')||'';
-    const r = await jpost('/api/performance/groups',{name,description});
+function _show(id){document.getElementById(id).classList.remove('hidden');}
+function _hide(id){document.getElementById(id).classList.add('hidden');}
+async function _fillGroupSelect(selectId){
+    const groups=(await (await fetch('/api/performance/groups')).json()).groups||[];
+    const sel=document.getElementById(selectId);
+    const first=sel.options[0].outerHTML;
+    sel.innerHTML=first+groups.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');
+}
+function openGroupModal(){document.getElementById('grp-name').value='';document.getElementById('grp-desc').value='';_show('group-modal');document.getElementById('grp-name').focus();}
+function closeGroupModal(){_hide('group-modal');}
+async function submitGroup(){
+    const name=document.getElementById('grp-name').value.trim(); if(!name){msg('A company name is required',false);return;}
+    const description=document.getElementById('grp-desc').value.trim();
+    const r=await jpost('/api/performance/groups',{name,description});
+    if(r.ok)closeGroupModal();
     msg(r.ok?'Company created':'Error', r.ok); if(r.ok)loadGroups();
 }
 async function deleteGroup(id,name){if(!confirm(`Archive ${name}?`))return;const r=await fetch(`/api/performance/groups/${id}`,{method:'DELETE'});msg(r.ok?'Archived':'Error',r.ok);if(r.ok)loadGroups();}
@@ -143,14 +199,20 @@ async function loadSignups(aid){
             <button onclick="setStatus(${x.id},'declined',${aid})" class="text-xs text-ink-3 hover:underline">Decline</button>
         </td></tr>`).join('')}</tbody></table></div>`;
 }
-async function createAudition(){
-    const title=prompt('Audition title:');if(!title)return;
-    const groups=(await (await fetch('/api/performance/groups')).json()).groups||[];
-    let group_id='';
-    if(groups.length){const list=groups.map((g,i)=>`${i+1}. ${g.name}`).join('\n');const pick=prompt(`Which company? Enter number (or blank for none):\n${list}`);if(pick&&groups[parseInt(pick)-1])group_id=groups[parseInt(pick)-1].id;}
-    const audition_date=prompt('Date (YYYY-MM-DD, optional):')||'';
-    const location_text=prompt('Location (optional):')||'';
-    const r=await jpost('/api/performance/auditions',{title,group_id,audition_date,location_text});
+async function openAuditionModal(){
+    for(const id of ['aud-title','aud-date','aud-loc']) document.getElementById(id).value='';
+    document.getElementById('aud-group').value='';
+    await _fillGroupSelect('aud-group');
+    _show('audition-modal');document.getElementById('aud-title').focus();
+}
+function closeAuditionModal(){_hide('audition-modal');}
+async function submitAudition(){
+    const title=document.getElementById('aud-title').value.trim();if(!title){msg('A title is required',false);return;}
+    const r=await jpost('/api/performance/auditions',{title,
+        group_id:document.getElementById('aud-group').value,
+        audition_date:document.getElementById('aud-date').value,
+        location_text:document.getElementById('aud-loc').value.trim()});
+    if(r.ok)closeAuditionModal();
     msg(r.ok?'Audition created':'Error',r.ok);if(r.ok)loadAuditions();
 }
 async function toggleAudition(id,open){const r=await jput(`/api/performance/auditions/${id}`,{is_open:open});if(r.ok)loadAuditions();}
@@ -190,15 +252,21 @@ async function loadAssign(pid){
     el.innerHTML=a.map(x=>`<span class="inline-flex items-center bg-primary-50 border border-primary-200 rounded-full px-2.5 py-1 mr-2 mb-2 text-xs font-bold text-ink">${esc(x.student_name)}
         <button onclick="removeAssign(${x.id},${pid})" class="ml-2 text-danger hover:opacity-70">&times;</button></span>`).join('');
 }
-async function createPerformance(){
-    const title=prompt('Performance title (e.g. 22nd Annual Recital):');if(!title)return;
-    const groups=(await (await fetch('/api/performance/groups')).json()).groups||[];
-    let group_id='';
-    if(groups.length){const list=groups.map((g,i)=>`${i+1}. ${g.name}`).join('\n');const pick=prompt(`Company performing? Enter number (blank = studio-wide):\n${list}`);if(pick&&groups[parseInt(pick)-1])group_id=groups[parseInt(pick)-1].id;}
-    const performance_date=prompt('Date (YYYY-MM-DD, optional):')||'';
-    const call_time=prompt('Call time (free text, optional):')||'';
-    const venue=prompt('Venue (optional):')||'';
-    const r=await jpost('/api/performance/performances',{title,group_id,performance_date,call_time,venue});
+async function openPerformanceModal(){
+    for(const id of ['perf-title','perf-date','perf-call','perf-venue']) document.getElementById(id).value='';
+    document.getElementById('perf-group').value='';
+    await _fillGroupSelect('perf-group');
+    _show('perf-modal');document.getElementById('perf-title').focus();
+}
+function closePerfModal(){_hide('perf-modal');}
+async function submitPerformance(){
+    const title=document.getElementById('perf-title').value.trim();if(!title){msg('A title is required',false);return;}
+    const r=await jpost('/api/performance/performances',{title,
+        group_id:document.getElementById('perf-group').value,
+        performance_date:document.getElementById('perf-date').value,
+        call_time:document.getElementById('perf-call').value.trim(),
+        venue:document.getElementById('perf-venue').value.trim()});
+    if(r.ok)closePerfModal();
     msg(r.ok?'Performance created':'Error',r.ok);if(r.ok)loadPerformances();
 }
 async function deletePerformance(id){if(!confirm('Delete this performance?'))return;const r=await fetch(`/api/performance/performances/${id}`,{method:'DELETE'});if(r.ok)loadPerformances();}
