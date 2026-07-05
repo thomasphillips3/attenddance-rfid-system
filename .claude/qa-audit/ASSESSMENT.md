@@ -78,7 +78,12 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 
 ## Functional / reliability sweep — comes back clean
 
-Checked the areas most likely to hide production bugs; no new P0/P1 beyond what's already fixed:
+**Client-side runtime layer — fully swept (iteration 6), clean after the P1-4 fix:**
+- **All rendered inline JS node-checked:** 84 pages, 56 inline scripts parsed via `node --check` (as admin) — 0 syntax errors. The parent dashboard (P1-4) was the only broken page; every staff page is clean.
+- **All fetch endpoints exist:** 147 `fetch('/api/...')` calls across the templates cross-checked against the registered route map — 0 dead endpoints (the only "unmatched" were string-concatenation prefixes whose real routes exist).
+- **Browser runtime sweep:** loaded 13 JS-heavy staff pages (transactions, pending, recital-hub, company, analytics, calendar, waivers, skills, leads, makeups, timeclock, settings, dashboard) + the parent portal in a real browser — **zero console errors, zero failed API requests**.
+
+Server-side areas most likely to hide bugs; no new P0/P1 beyond what's already fixed:
 - **Migrations are idempotent** (`app/migrations.py`): every `ALTER TABLE` is guarded by a column-existence check and is additive-only; `db.create_all()` handles new tables before migrations run. Fresh DB and existing prod DB both boot.
 - **Silent failures:** the `except Exception:` blocks log via `logger.exception`; the one `except: pass` (`email.py`) is on `smtp.quit()` in a `finally` — harmless, real send errors propagate.
 - **No meaningful N+1 / memory risk at this scale:** singular `calc_balance` calls are all single-student contexts (invoice, reminder, one parent's few children); bulk paths use `calc_balance_bulk` (one aggregate query); unbounded `.all()` only hits the students table (hundreds of rows) — fine on the 256MB box. The 1-worker gthread posture is deliberate and documented.
@@ -149,6 +154,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 - **P1-4 — found & fixed the parent portal's fatal JS escaping bug** (see P1-4). The whole parent dashboard was non-functional; now all sections load. **This was the most impactful find of the audit** and only surfaced by running the page in a real browser.
 - **Parent-facing `prompt()` flows → real modals** (donate + makeup request), verified end-to-end (both POST 201 in the live preview) with on-brand styling and accessible close buttons.
 - **Added a rendered-inline-JS `node --check` guard to the smoke harness** so a JS syntax error in any JS-heavy page fails CI instead of silently bricking a page.
+
+### Iteration 6 — DONE (whole-app runtime verification)
+- **Swept the entire client-side runtime** (see the Functional section): node-checked every rendered inline script (56 across 84 pages), cross-checked all 147 `fetch()` calls against the route map (0 dead endpoints), and browser-loaded 13 JS-heavy staff pages — **all clean, zero console errors, zero failed requests**. Confirms P1-4 was the only runtime break; the app's JS layer is now sound end-to-end.
 
 ### Remaining for next iterations
 - P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~50 staff-side `prompt()` flows → modals, per-page `aria-label`s, revenue/enrollment reports + CSV export prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
