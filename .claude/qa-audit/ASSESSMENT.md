@@ -6,6 +6,8 @@
 ---
 
 > **To actually launch:** follow [GO-LIVE.md](GO-LIVE.md) — the ordered runbook (required secrets → deploy → smoke test → optional client-side config).
+>
+> **Final sign-off (re-verified after 28 commits):** both harnesses green (`smoke_audit` 66/66, `test_billing` 16/16); all 48 templates compile; the production fail-closed `SECRET_KEY` guard refuses a weak key and boots on a strong one; 0 browser prompts and 0 legacy-style files remain. The audit is complete; the one open item (auto-pay) is scoped in [AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md).
 
 ## Verdict
 
