@@ -201,6 +201,20 @@ def create_app(config_name=None):
             logger.exception("Auto-reminder processing failed at startup")
 
     @app.before_request
+    def _enforce_active_user():
+        """Immediately revoke access for a deactivated account. Login already
+        blocks inactive users, but an existing session would otherwise stay
+        valid until it expires (~8h) — so a just-deactivated teacher/parent
+        keeps access. Log them out on their next request instead."""
+        from flask import request
+        from flask_login import current_user, logout_user
+        if request.endpoint == 'static':
+            return None
+        if current_user.is_authenticated and not current_user.is_active:
+            logout_user()
+        return None
+
+    @app.before_request
     def _csrf_origin_guard():
         """CSRF defense-in-depth: reject any state-changing request whose Origin
         (or, failing that, Referer) is a different host. Browsers always send

@@ -225,6 +225,31 @@ def run_multichild_invite_merge():
                "leftover invites", "P2")
 
 
+def run_deactivation_revokes_session():
+    """Deactivating an account must revoke access immediately, not only block
+    fresh logins — a just-fired teacher shouldn't keep their live session."""
+    from app.models import User
+
+    with app.app_context():
+        u = User(username="tempteach", email="tempteach@x.com", first_name="T",
+                 last_name="R", role="teacher", is_active=True)
+        u.set_password("pw")
+        db.session.add(u)
+        db.session.commit()
+        uid = u.id
+
+    with app.test_client() as c:
+        login(c, "tempteach", "pw")
+        record(f"Active staff can reach a protected page -> {c.get('/students').status_code}",
+               c.get("/students").status_code == 200, "", "P2")
+        with app.app_context():
+            User.query.filter_by(id=uid).update({"is_active": False})
+            db.session.commit()
+        r = c.get("/students", follow_redirects=False)
+        record(f"Deactivated mid-session is revoked -> {r.status_code}", r.status_code == 302,
+               f"got {r.status_code} (200 = still had access)", "P2")
+
+
 def run_password_reset():
     """Self-service password reset: request page degrades gracefully without
     SMTP, the signed token resets the password, and old creds stop working."""
@@ -597,6 +622,7 @@ def main():
     run_attendance(ids)
     run_message_blast()
     run_multichild_invite_merge()
+    run_deactivation_revokes_session()
     run_password_reset()
     run_login_by_email()
     run_registration_flow()
