@@ -2920,6 +2920,45 @@ def run_withdraw_frees_enrollment():
            f"enroll={enroll} wait={wait} bal={bal}", "P1")
 
 
+def run_parent_portal_classes():
+    """The parent portal must show each child's class schedule (a basic parent
+    need). Enroll a child in one class + cancel another they were in; the portal
+    shows the active class and NOT the cancelled one (the cancel cascade
+    deactivated its enrollment)."""
+    from datetime import time as _time
+    from app.models import (User, DanceClass, Student, Family, ClassEnrollment, ParentStudent)
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        fam = Family(name="Sched Fam", primary_email="sch@x.com")
+        p = User(username="sched_parent", email="schp@x.com", first_name="S", last_name="P", role="parent")
+        p.set_password("pw")
+        db.session.add_all([fam, p])
+        db.session.flush()
+        kid = Student(first_name="Sched", last_name="Kid", family_id=fam.id, is_active=True)
+        db.session.add(kid)
+        db.session.flush()
+        db.session.add(ParentStudent(parent_id=p.id, student_id=kid.id))
+        active = DanceClass(name="ZzActiveClass", day_of_week=1, start_time=_time(16, 0),
+                            end_time=_time(17, 0), instructor_id=adm.id)
+        cancelled = DanceClass(name="ZzCancelledClass2", day_of_week=2, start_time=_time(16, 0),
+                               end_time=_time(17, 0), instructor_id=adm.id)
+        db.session.add_all([active, cancelled])
+        db.session.flush()
+        db.session.add(ClassEnrollment(student_id=kid.id, class_id=active.id))
+        db.session.add(ClassEnrollment(student_id=kid.id, class_id=cancelled.id))
+        db.session.commit()
+        ccid = cancelled.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        c.delete(f"/api/classes/{ccid}")  # cancel one -> cascade deactivates that enrollment
+    with app.test_client() as c:
+        login(c, "sched_parent", "pw")
+        body = c.get("/parent").get_data(as_text=True)
+    record("Parent portal shows the child's active class schedule, hides a cancelled class",
+           "ZzActiveClass" in body and "ZzCancelledClass2" not in body,
+           f"active_shown={'ZzActiveClass' in body} cancelled_shown={'ZzCancelledClass2' in body}", "P2")
+
+
 def run_skill_archive_safe():
     """Archiving a skill (soft-delete) must PRESERVE its per-student marks (a
     studio may archive/rename a skill without losing which students earned it)
@@ -3334,6 +3373,7 @@ def main():
     run_registration_notify_throttle()
     run_withdrawn_student_balance()
     run_skill_archive_safe()
+    run_parent_portal_classes()
     run_withdraw_frees_enrollment()
     run_class_crud()
     run_class_instructor_assignment()

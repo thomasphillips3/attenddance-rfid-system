@@ -75,6 +75,20 @@
                 <button onclick="requestMakeup({{ child.student.id }}, '{{ child.student.full_name|e }}')" class="{{ chip }}"><i class="fas fa-rotate text-primary-500 text-xs"></i>Request makeup</button>
             </div>
 
+            <div class="text-[11px] font-bold uppercase tracking-[.09em] text-ink-3 mb-2">Classes</div>
+            {% if child.classes %}
+            <div class="divide-y divide-line mb-5">
+                {% for cls in child.classes %}
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-2">
+                    <span class="flex-1 min-w-[120px] text-sm font-medium text-ink">{{ cls.name }}</span>
+                    <span class="text-sm text-ink-2">{{ cls.day_name }} &middot; {{ cls.start_time }}–{{ cls.end_time }}{% if cls.location %} &middot; {{ cls.location }}{% endif %}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-sm text-ink-3 mb-5">Not enrolled in any classes yet.</div>
+            {% endif %}
+
             <div class="text-[11px] font-bold uppercase tracking-[.09em] text-ink-3 mb-2">Recent attendance</div>
             {% if child.recent_attendance %}
             <div class="divide-y divide-line">

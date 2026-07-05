@@ -120,12 +120,23 @@ def parent_dashboard():
         bal = calc_balance(child.id)
         recent_att = Attendance.query.filter_by(student_id=child.id).order_by(
             desc(Attendance.check_in_time)).limit(10).all()
+        # The child's current class schedule — active enrollments in still-active
+        # classes (a cancelled class's enrollment is deactivated, so it won't show).
+        enr = ClassEnrollment.query.filter_by(student_id=child.id, is_active=True).all()
+        child_classes = [{
+            'name': e.dance_class.name,
+            'day_name': e.dance_class.day_name,
+            'start_time': e.dance_class.start_time.strftime('%-I:%M %p'),
+            'end_time': e.dance_class.end_time.strftime('%-I:%M %p'),
+            'location': e.dance_class.location.name if e.dance_class.location else None,
+        } for e in enr if e.dance_class and e.dance_class.is_active]
         child_data.append({
             'student': child,
             'balance': bal['balance'],
             'total_charges': bal['total_charges'],
             'total_payments': bal['total_payments'],
             'recent_attendance': recent_att,
+            'classes': child_classes,
         })
         if child.family_id:
             g = family_groups.setdefault(child.family_id, {
