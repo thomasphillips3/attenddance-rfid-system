@@ -60,6 +60,8 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 - **[P2-4] `aria-label`s — ✅ base shell FIXED; per-page remaining.** Added labels + `aria-hidden` on the shared shell icon buttons (hamburger, close, account menu) and the search input in `base.html` — the chrome on every page. Icon-only buttons inside ~14 individual templates (delete X's, chevrons) still need labels; mechanical, low-risk, next pass.
 - **[P2-5] `/api/cron/run` token compare — ✅ FIXED.** The `not token` guard already rejected an unset token (no empty-string bypass), but the comparison used `!=`. Switched to `secrets.compare_digest` (constant-time) to avoid leaking the token via response timing. Verified: no/wrong token → 403, correct → 200.
 
+- **[P2-6] Login page displayed working admin credentials — ✅ FIXED.** `auth/login.html` showed a "Demo Credentials: admin / admin123" block with one-click "Use" buttons — handed anyone the default admin login. Now gated behind `{% if config.DEBUG %}` (shown in dev, hidden in production). Verified: dev renders it, `DEBUG=False` doesn't. **Still recommended:** change the seeded admin password from `admin123` for production.
+
 ## P3 — Polish
 
 - **[P3-1] 2 `<img>` tags lacked `alt` — ✅ FIXED** (Zelle QR preview + recital ad; 0 remain).
@@ -98,7 +100,7 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 | Financial statements | **PRESENT** | Year-end student/family + 501(c)(3) giving statements |
 | Waivers & policies | **PRESENT** | Digital waivers + per-rule acknowledgment |
 | Staff/teacher roles | **PARTIAL** | admin vs teacher tiers exist, but coarse — a teacher sees all students, not just their classes |
-| Management reporting (revenue/enrollment/**AR aging**) | **PARTIAL** | Retention analytics, ticket revenue, all-balances view + reminders; no aging buckets (30/60/90) or revenue/enrollment reports or CSV export |
+| Management reporting (revenue/enrollment/**AR aging**) | **PARTIAL→improved** | ✅ AR aging report now built (`/reports/aging`, FIFO 30/60/90/90+ buckets); retention analytics + ticket revenue exist; still no revenue/enrollment reports or CSV export |
 
 **Top parity risks for fall, ranked:** (1) auto-pay/cards-on-file — manual collection is the daily tax; (2) AR aging report — the owner will want a "who owes, how overdue" view to chase tuition; (3) confirm SMTP/Twilio are configured so receipts/reminders actually send (currently save-only).
 
@@ -132,5 +134,10 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 - **Jackrabbit parity matrix** produced (see section above) — verdict: strong daily-ops parity, auto-pay is the one structural gap.
 - **Accessibility:** base-shell icon buttons + search input labelled (`aria-label`/`aria-hidden`); both missing `<img alt>` fixed. All 46 templates still Jinja-compile.
 
+### Iteration 4 — DONE (verified live in preview + `tests/test_billing.py` 16/16)
+- **A/R aging report built** (`GET /api/reports/aging` staff-only + `/reports/aging` admin page + nav link): FIFO payment application, 0-30/31-60/61-90/90+ buckets, per-student rows + totals, empty state, overdue buckets flagged red. Closes parity gap #2. FIFO math unit-tested (boundaries, partial payment, overpayment credit) and verified end-to-end in the live preview ($120@95d + $80@40d + $60@5d − $100 payment → 90+=$20, 31-60=$80, current=$60, total=$160).
+- **Found + fixed via preview:** login page exposed demo `admin/admin123` — now gated behind `config.DEBUG` (P2-6), hidden in production.
+- `run.py` now honors `PORT` (12-factor) so it runs under any harness/PaaS.
+
 ### Remaining for next iterations
-- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), AR-aging report (parity), per-page `aria-label`s, P2-2 prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
+- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), P2-6 remove demo creds from login, per-page `aria-label`s, P2-2 prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.

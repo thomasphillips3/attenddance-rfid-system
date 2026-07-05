@@ -1,8 +1,60 @@
 """Shared helpers for AttenDANCE — balance calculation, ledger building, serialization."""
 
+from datetime import date
+
 from sqlalchemy import func
 from app import db
 from app.models import Transaction
+
+
+def build_aging(txns: list, as_of: date | None = None) -> dict:
+    """Accounts-receivable aging for one entity from its transactions.
+
+    Applies payments FIFO against the oldest charges (standard AR method), then
+    buckets each charge's unpaid remainder by how old that charge is:
+      current (0-30d), d31_60, d61_90, d90_plus.
+
+    Expects txns for a single student/family. Order-independent (sorts here).
+    Returns {'current','d31_60','d61_90','d90_plus','total'} as floats (rounded).
+    """
+    as_of = as_of or date.today()
+    ordered = sorted(txns, key=lambda t: (t.transaction_date, t.created_at or t.transaction_date))
+    charges = []  # oldest first: {'date', 'remaining'}
+    payment_pool = 0.0
+    for t in ordered:
+        amt = float(t.amount)
+        if t.type == 'charge':
+            charges.append({'date': t.transaction_date, 'remaining': amt})
+        else:
+            payment_pool += amt
+
+    # Pay down oldest charges first.
+    for c in charges:
+        if payment_pool <= 0:
+            break
+        pay = min(c['remaining'], payment_pool)
+        c['remaining'] = round(c['remaining'] - pay, 2)
+        payment_pool = round(payment_pool - pay, 2)
+
+    buckets = {'current': 0.0, 'd31_60': 0.0, 'd61_90': 0.0, 'd90_plus': 0.0}
+    for c in charges:
+        rem = c['remaining']
+        if rem <= 0:
+            continue
+        age = (as_of - c['date']).days
+        if age <= 30:
+            buckets['current'] += rem
+        elif age <= 60:
+            buckets['d31_60'] += rem
+        elif age <= 90:
+            buckets['d61_90'] += rem
+        else:
+            buckets['d90_plus'] += rem
+
+    for k in buckets:
+        buckets[k] = round(buckets[k], 2)
+    buckets['total'] = round(sum(buckets.values()), 2)
+    return buckets
 
 
 def calc_balance(student_id: int) -> dict:

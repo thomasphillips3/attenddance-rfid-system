@@ -433,6 +433,12 @@ def analytics_page():
     return render_template('analytics/dashboard.html')
 
 
+@bp.route('/reports/aging')
+@admin_required
+def aging_report_page():
+    return render_template('reports/aging.html')
+
+
 def _parent_owns(student):
     return (not current_user.is_parent) or (student.id in {s.id for s in current_user.get_children()})
 

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% set thl = "px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3" %}
+{% set thr = "px-5 py-3 text-right text-[11px] font-bold uppercase tracking-[.06em] text-ink-3" %}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+    <div>
+        <div class="text-[11px] font-bold uppercase tracking-[.09em] text-primary-600">Money</div>
+        <h1 class="font-display text-3xl text-ink leading-tight mt-1">Accounts Receivable — Aging</h1>
+        <p class="mt-1 text-sm text-ink-2">Who owes, and how overdue. Payments are applied to the oldest charges first.</p>
+    </div>
+    <div class="text-right">
+        <div id="as-of" class="text-xs text-ink-3"></div>
+        <a href="{{ url_for('main.transactions') }}" class="inline-flex items-center gap-2 mt-2 px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2"><i class="fas fa-arrow-left" aria-hidden="true"></i>Payments</a>
+    </div>
+</div>
+
+<div id="empty" class="hidden bg-surface border border-line rounded-2xl shadow-soft p-10 text-center">
+    <i class="fas fa-circle-check text-3xl text-ok mb-3" aria-hidden="true"></i>
+    <p class="font-display text-xl text-ink">Nobody owes anything right now</p>
+    <p class="text-sm text-ink-2 mt-1">Every active family is paid up. 🎉</p>
+</div>
+
+<div id="table-wrap" class="hidden bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead class="bg-surface-2 border-b border-line">
+                <tr>
+                    <th class="{{ thl }}">Student</th>
+                    <th class="{{ thl }}">Family</th>
+                    <th class="{{ thr }}">Current</th>
+                    <th class="{{ thr }}">31–60</th>
+                    <th class="{{ thr }}">61–90</th>
+                    <th class="{{ thr }}">90+</th>
+                    <th class="{{ thr }}">Total Due</th>
+                </tr>
+            </thead>
+            <tbody id="rows" class="divide-y divide-line"></tbody>
+            <tfoot class="bg-surface-2 border-t-2 border-line font-bold">
+                <tr id="totals-row"></tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<script>
+function money(v) { return '$' + Number(v).toFixed(2); }
+function ageCell(v, danger) {
+    const n = Number(v);
+    const cls = n > 0 ? (danger ? 'text-danger font-bold' : 'text-ink') : 'text-ink-3';
+    return `<td class="px-5 py-3 text-right ${cls}">${n > 0 ? money(v) : '—'}</td>`;
+}
+async function load() {
+    let d;
+    try {
+        const r = await fetch('/api/reports/aging');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        d = await r.json();
+    } catch (e) {
+        document.getElementById('empty').classList.remove('hidden');
+        document.getElementById('empty').innerHTML =
+            `<p class="font-display text-xl text-danger">Couldn't load the report</p><p class="text-sm text-ink-2 mt-1">${String(e)}</p>`;
+        return;
+    }
+    document.getElementById('as-of').textContent = 'As of ' + d.as_of;
+    if (!d.rows.length) {
+        document.getElementById('empty').classList.remove('hidden');
+        return;
+    }
+    document.getElementById('table-wrap').classList.remove('hidden');
+    document.getElementById('rows').innerHTML = d.rows.map(row => `
+        <tr class="hover:bg-surface-2">
+            <td class="px-5 py-3 text-ink font-medium">${row.student_name}</td>
+            <td class="px-5 py-3 text-ink-2">${row.family_name || '—'}</td>
+            ${ageCell(row.current, false)}
+            ${ageCell(row.d31_60, false)}
+            ${ageCell(row.d61_90, true)}
+            ${ageCell(row.d90_plus, true)}
+            <td class="px-5 py-3 text-right text-ink font-bold">${money(row.total)}</td>
+        </tr>`).join('');
+    const t = d.totals;
+    document.getElementById('totals-row').innerHTML = `
+        <td class="px-5 py-3 text-ink" colspan="2">${d.count} ${d.count === 1 ? 'family member owes' : 'owe'}</td>
+        <td class="px-5 py-3 text-right text-ink">${money(t.current)}</td>
+        <td class="px-5 py-3 text-right text-ink">${money(t.d31_60)}</td>
+        <td class="px-5 py-3 text-right text-danger">${money(t.d61_90)}</td>
+        <td class="px-5 py-3 text-right text-danger">${money(t.d90_plus)}</td>
+        <td class="px-5 py-3 text-right text-ink">${money(t.total)}</td>`;
+}
+load();
+</script>
+{% endblock %}

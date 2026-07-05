@@ -18,9 +18,12 @@ _tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 _tmp.close()
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp.name}"
 
+from datetime import date, timedelta  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
 from app import create_app, db  # noqa: E402
 from app.models import User, Student, Family, Transaction  # noqa: E402
-from app.helpers import allocate_family_payment, calc_balance  # noqa: E402
+from app.helpers import allocate_family_payment, calc_balance, build_aging  # noqa: E402
 
 app = create_app("development")
 app.config["TESTING"] = True
@@ -93,10 +96,42 @@ def test_late_fee_idempotent(ids):
             record(f"student A has exactly ONE late fee after two runs (got {n})", n == 1, f"count={n}")
 
 
+def _txn(kind, amount, days_ago):
+    d = date.today() - timedelta(days=days_ago)
+    return SimpleNamespace(type=kind, amount=amount, transaction_date=d, created_at=None)
+
+
+def test_aging():
+    # Single old charge -> all in 90+.
+    ag = build_aging([_txn("charge", 100, 100)])
+    record("aging: 100-day charge lands in d90_plus",
+           ag["d90_plus"] == 100.0 and ag["total"] == 100.0, str(ag))
+
+    # FIFO: payment pays the OLDEST charge first.
+    ag = build_aging([_txn("charge", 100, 100), _txn("charge", 50, 10), _txn("payment", 100, 5)])
+    record("aging: FIFO payment clears oldest, only recent charge remains",
+           ag["d90_plus"] == 0.0 and ag["current"] == 50.0 and ag["total"] == 50.0, str(ag))
+
+    # Partial payment leaves aged remainder.
+    ag = build_aging([_txn("charge", 200, 100), _txn("payment", 50, 5)])
+    record("aging: partial payment leaves $150 in d90_plus",
+           ag["d90_plus"] == 150.0 and ag["total"] == 150.0, str(ag))
+
+    # Overpayment / credit -> nothing owed.
+    ag = build_aging([_txn("charge", 50, 45), _txn("payment", 80, 1)])
+    record("aging: overpaid entity owes 0", ag["total"] == 0.0, str(ag))
+
+    # Bucket boundaries: 45-day charge -> d31_60.
+    ag = build_aging([_txn("charge", 75, 45)])
+    record("aging: 45-day charge lands in d31_60",
+           ag["d31_60"] == 75.0 and ag["total"] == 75.0, str(ag))
+
+
 def main():
     ids = seed()
     test_allocation(ids)
     test_late_fee_idempotent(ids)
+    test_aging()
     fails = [r for r in results if not r[1]]
     print("\n" + "=" * 56)
     print(f"SUMMARY: {len(results) - len(fails)}/{len(results)} passed, {len(fails)} failed.")

@@ -15,6 +15,7 @@ from app.helpers import (
     allocate_family_payment,
     apply_student_fields,
     attendance_to_dict,
+    build_aging,
     build_ledger,
     calc_balance,
     calc_balance_bulk,
@@ -798,6 +799,47 @@ def get_balances():
             'balance': f'{bal["balance"]:.2f}',
         })
     return jsonify({'balances': balances})
+
+
+@bp.route('/reports/aging', methods=['GET'])
+@login_required
+def aging_report():
+    """Accounts-receivable aging: per-student unpaid balance bucketed by how
+    overdue each charge is (0-30 / 31-60 / 61-90 / 90+ days). Staff-only —
+    this is the owner's tool for chasing unpaid tuition."""
+    err = _staff_only()
+    if err:
+        return err
+    students = Student.query.filter_by(is_active=True).all()
+    sid_ids = [s.id for s in students]
+    # One query for all transactions, grouped in memory (hundreds of rows).
+    txns_by_student: dict[int, list] = {sid: [] for sid in sid_ids}
+    if sid_ids:
+        for t in Transaction.query.filter(Transaction.student_id.in_(sid_ids)).all():
+            txns_by_student[t.student_id].append(t)
+
+    rows = []
+    totals = {'current': 0.0, 'd31_60': 0.0, 'd61_90': 0.0, 'd90_plus': 0.0, 'total': 0.0}
+    for s in students:
+        ag = build_aging(txns_by_student[s.id])
+        if ag['total'] <= 0:
+            continue  # only show entities that actually owe
+        for k in totals:
+            totals[k] = round(totals[k] + ag[k], 2)
+        rows.append({
+            'student_id': s.id,
+            'student_name': s.full_name,
+            'family_name': s.family.name if s.family else None,
+            **{k: f'{ag[k]:.2f}' for k in ('current', 'd31_60', 'd61_90', 'd90_plus', 'total')},
+        })
+    # Owe-most first.
+    rows.sort(key=lambda r: float(r['total']), reverse=True)
+    return jsonify({
+        'rows': rows,
+        'totals': {k: f'{totals[k]:.2f}' for k in totals},
+        'as_of': date.today().isoformat(),
+        'count': len(rows),
+    })
 
 
 @bp.route('/students/<int:student_id>/ledger', methods=['GET'])

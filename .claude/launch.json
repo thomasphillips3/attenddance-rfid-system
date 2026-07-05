@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "attenddance-dev",
+      "runtimeExecutable": "venv/bin/python3",
+      "runtimeArgs": [
+        "run.py"
+      ],
+      "autoPort": true
+    }
+  ]
+}

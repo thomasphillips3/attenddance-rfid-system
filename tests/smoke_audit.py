@@ -124,6 +124,7 @@ def run_idor(ids):
             ("GET", "/api/balances"),          # every family's balance
             ("GET", "/api/attendance/today"),  # attendance
             ("GET", "/api/dashboard/stats"),   # studio stats
+            ("GET", "/api/reports/aging"),     # A/R aging report
         ]
         for method, path in staff_only:
             resp = c.open(path, method=method)

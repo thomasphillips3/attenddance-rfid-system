@@ -30,7 +30,8 @@ def main():
             logger.info("RFID service not available (normal on non-Raspberry Pi hardware)")
 
     host = os.environ.get('FLASK_HOST', '0.0.0.0')
-    port = int(os.environ.get('FLASK_PORT', 5000))
+    # Honor PORT (12-factor / PaaS / preview harness) first, then FLASK_PORT.
+    port = int(os.environ.get('PORT') or os.environ.get('FLASK_PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
 
     logger.info("AttenDANCE starting on http://%s:%d (debug=%s)", host, port, debug)
