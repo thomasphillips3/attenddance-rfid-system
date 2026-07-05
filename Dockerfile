@@ -21,6 +21,10 @@ RUN mkdir -p /data
 ENV FLASK_ENV=production
 ENV DATABASE_URL=sqlite:////data/attendance.db
 ENV FLASK_PORT=8080
+# Unbuffered stdout/stderr so logs flush to `fly logs` immediately instead of
+# being block-buffered under Docker (and lost if the process is killed before a
+# flush). Complements the module-level logging config in run.py.
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8080
 
