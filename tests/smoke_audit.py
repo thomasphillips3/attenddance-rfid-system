@@ -630,6 +630,101 @@ def run_amount_validation(ids):
                r.status_code == 201, f"got {r.status_code}", "P1")
 
 
+def run_input_robustness(ids):
+    """No write endpoint may 500 on malformed input. An unhandled exception
+    (e.g. float() on a garbage string) is bad UX for the parent AND can leave a
+    DB transaction half-applied. Every endpoint must reject bad input with a
+    4xx, not blow up. Fuzz each pure-DB-write endpoint with a no-body / empty /
+    garbage-typed / wrong-typed / negative-huge payload and assert no 500."""
+    sid = ids["child_a"]
+    endpoints = [
+        ("POST", "/api/classes"), ("POST", "/api/families"), ("POST", "/api/students"),
+        ("POST", "/api/locations"), ("POST", "/api/leads"), ("POST", "/api/makeups"),
+        ("POST", "/api/rules"), ("POST", "/api/skills"), ("POST", "/api/staff"),
+        ("POST", "/api/donations"), ("POST", "/api/transactions"),
+        ("POST", "/api/transactions/bulk-charge"), ("POST", "/api/recurring-charges"),
+        ("POST", "/api/recitals"), ("POST", "/api/performance/groups"),
+        ("POST", "/api/performance/auditions"), ("POST", "/api/performance/performances"),
+        ("POST", "/api/waivers/templates"), ("PUT", "/api/settings/payments"),
+        ("POST", f"/api/students/{sid}/payment-plan"),
+        ("POST", "/api/balances/apply-late-fees"),
+    ]
+    payloads = [
+        ("no-body", None),
+        ("empty-dict", {}),
+        ("garbage-strings", {"amount": "abc", "student_id": "xyz", "class_id": "nope",
+                             "day_of_month": "soon", "name": 123, "category": None,
+                             "email": [], "date": "not-a-date", "installments": "many"}),
+        ("wrong-types", {"amount": [], "student_id": {}, "student_ids": "notalist",
+                         "class_id": True, "day_of_month": 99, "amount_cents": -5}),
+        ("negative-huge", {"amount": -999999, "student_id": -1, "class_id": 0,
+                           "day_of_month": -3, "installments": -2}),
+    ]
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        for method, path in endpoints:
+            fn = getattr(c, method.lower())
+            bad = []
+            for label, body in payloads:
+                try:
+                    r = fn(path, data="", content_type="application/json") if body is None else fn(path, json=body)
+                    if r.status_code == 500:
+                        bad.append(f"{label}->500")
+                except Exception as e:  # a raised exception is as bad as a 500
+                    bad.append(f"{label}->EXC {type(e).__name__}")
+            record(f"{method} {path} handles malformed input without 500",
+                   not bad, f"failed: {bad}", "P2")
+
+
+def run_parent_input_robustness(ids):
+    """Parent-reachable writes must not 500 on a bad student_id. Staff skip the
+    parent-authorization branch, so an unguarded int(student_id) only blows up
+    for an actual parent — the admin sweep can't see it. Seed the target rows,
+    then post malformed ids AS a parent and assert no 500 (and no orphan row)."""
+    from app.models import (Rule, Audition, Performance, TicketType,
+                            PerformanceGroup)
+    cid = ids["child_a"]
+    with app.app_context():
+        grp = PerformanceGroup(name="Robustness Co")
+        db.session.add(grp)
+        db.session.flush()
+        aud = Audition(title="Robust Audition", group_id=grp.id, is_open=True)
+        rule = Rule(text="Be kind", display_order=99)
+        perf = Performance(title="Robust Show", group_id=grp.id)
+        db.session.add_all([aud, rule, perf])
+        db.session.flush()
+        tt = TicketType(performance_id=perf.id, name="GA", price=10)
+        db.session.add(tt)
+        db.session.commit()
+        aid, rid, pid, ttid = aud.id, rule.id, perf.id, tt.id
+
+    cases = [
+        (f"/api/performance/auditions/{aid}/signup",
+         [{"student_id": "xyz"}, {"student_id": -1}, {"student_id": []}, {},
+          {"student_id": 99999}, {"student_id": cid, "notes": 123}]),
+        (f"/api/rules/{rid}/acknowledge",
+         [{"student_id": "xyz", "initials": "AB"}, {"student_id": cid, "initials": 123},
+          {"student_id": -1, "initials": "AB"}, {}]),
+        (f"/api/performances/{pid}/ticket-orders",
+         [{"ticket_type_id": ttid, "quantity": "lots", "student_id": cid},
+          {"ticket_type_id": ttid, "student_id": "xyz"},
+          {"ticket_type_id": ttid, "student_id": -1}]),
+    ]
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        for path, payloads in cases:
+            bad = []
+            for body in payloads:
+                try:
+                    r = c.post(path, json=body)
+                    if r.status_code == 500:
+                        bad.append(f"{body}->500")
+                except Exception as e:
+                    bad.append(f"{body}->EXC {type(e).__name__}")
+            record(f"parent POST {path} handles bad student_id without 500",
+                   not bad, f"failed: {bad}", "P2")
+
+
 def run_csv_exports(ids):
     """CSV exports: staff get a well-formed CSV; parents are blocked."""
     # Parent blocked.
@@ -760,6 +855,8 @@ def main():
     run_login_by_email()
     run_registration_flow()
     run_amount_validation(ids)
+    run_input_robustness(ids)
+    run_parent_input_robustness(ids)
     run_csv_exports(ids)
     run_xss_guard()
     run_js_syntax()

@@ -97,21 +97,32 @@ def _child_ids(user) -> set:
 
 
 def _require_student_access(student_id):
-    """Allow staff, or a parent linked to this student. Error tuple or None."""
+    """Allow staff, or a parent linked to this student. Error tuple or None.
+    A non-numeric id can't belong to any parent, so treat it as not-authorized
+    rather than letting int() raise a 500."""
     if current_user.is_staff:
         return None
-    if current_user.is_parent and int(student_id) in _child_ids(current_user):
+    try:
+        sid = int(student_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Not authorized for this student'}), 403
+    if current_user.is_parent and sid in _child_ids(current_user):
         return None
     return jsonify({'error': 'Not authorized for this student'}), 403
 
 
 def _require_family_access(family_id):
-    """Allow staff, or a parent with at least one child in this family."""
+    """Allow staff, or a parent with at least one child in this family. A
+    non-numeric id can't belong to any parent, so treat it as not-authorized."""
     if current_user.is_staff:
         return None
+    try:
+        fid = int(family_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Not authorized for this family'}), 403
     if current_user.is_parent:
         fam_ids = {s.family_id for s in current_user.get_children() if s.family_id}
-        if int(family_id) in fam_ids:
+        if fid in fam_ids:
             return None
     return jsonify({'error': 'Not authorized for this family'}), 403
 
@@ -129,6 +140,29 @@ def _valid_amount(raw):
     if amt > 1_000_000:
         return None, (jsonify({'error': 'Amount is unreasonably large'}), 400)
     return amt, None
+
+
+def _clean_str(value):
+    """Coerce a JSON value to a trimmed string. Scalars (str/int/float) stringify;
+    None and non-scalars (list/dict) become '' so a `not name` guard still fires.
+    Guards every `.strip()` on client input against a non-string blowing up (a
+    JSON `name: 123` would otherwise raise AttributeError -> 500)."""
+    if value is None or isinstance(value, (list, dict)):
+        return ''
+    return str(value).strip()
+
+
+def _valid_id(raw):
+    """Coerce a JSON id to a positive int. Returns (int, None) or (None, (json, status)).
+    Rejects non-numeric ('xyz'), non-positive (-1, 0), and null so a bad id can't
+    500 the endpoint or create an orphan row that then breaks its list page."""
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return None, (jsonify({'error': 'A valid id is required'}), 400)
+    if val <= 0:
+        return None, (jsonify({'error': 'A valid id is required'}), 400)
+    return val, None
 
 
 def _parse_txn_date(raw):
@@ -1358,7 +1392,7 @@ def acknowledge_rule(rule_id):
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     student_id = data.get('student_id')
-    initials = data.get('initials', '').strip()
+    initials = _clean_str(data.get('initials'))
     if not student_id or not initials:
         return jsonify({'error': 'student_id and initials are required'}), 400
 
@@ -1549,13 +1583,14 @@ def get_families():
 @bp.route('/families', methods=['POST'])
 @login_required
 def create_family():
-    data = request.get_json()
-    if not data or not data.get('name'):
+    data = request.get_json() or {}
+    name = _clean_str(data.get('name'))
+    if not name:
         return jsonify({'error': 'name is required'}), 400
     f = Family(
-        name=data['name'].strip(),
-        primary_email=data.get('primary_email', '').strip() or None,
-        primary_phone=data.get('primary_phone', '').strip() or None,
+        name=name,
+        primary_email=_clean_str(data.get('primary_email')) or None,
+        primary_phone=_clean_str(data.get('primary_phone')) or None,
     )
     db.session.add(f)
     db.session.commit()
@@ -1739,18 +1774,19 @@ def create_location():
     """Create a new location (admin only)."""
     if not current_user.is_admin:
         return jsonify({'error': 'Admin access required'}), 403
-    data = request.get_json()
-    if not data or not data.get('name'):
+    data = request.get_json() or {}
+    name = _clean_str(data.get('name'))
+    if not name:
         return jsonify({'error': 'name is required'}), 400
 
     loc = Location(
-        name=data['name'].strip(),
-        address=data.get('address', '').strip() or None,
-        city=data.get('city', '').strip() or None,
-        state=data.get('state', '').strip() or None,
-        zip_code=data.get('zip_code', '').strip() or None,
-        phone=data.get('phone', '').strip() or None,
-        notes=data.get('notes', '').strip() or None,
+        name=name,
+        address=_clean_str(data.get('address')) or None,
+        city=_clean_str(data.get('city')) or None,
+        state=_clean_str(data.get('state')) or None,
+        zip_code=_clean_str(data.get('zip_code')) or None,
+        phone=_clean_str(data.get('phone')) or None,
+        notes=_clean_str(data.get('notes')) or None,
     )
     db.session.add(loc)
     db.session.commit()
@@ -2505,9 +2541,10 @@ def create_group():
     if err:
         return err
     data = request.get_json() or {}
-    if not data.get('name'):
+    name = _clean_str(data.get('name'))
+    if not name:
         return jsonify({'error': 'name is required'}), 400
-    g = PerformanceGroup(name=data['name'].strip(), description=(data.get('description') or '').strip() or None)
+    g = PerformanceGroup(name=name, description=_clean_str(data.get('description')) or None)
     db.session.add(g)
     db.session.commit()
     return jsonify(_group_to_dict(g)), 201
@@ -2695,15 +2732,17 @@ def signup_for_audition(aid):
     if not a.is_open:
         return jsonify({'error': 'This audition is closed'}), 400
     data = request.get_json() or {}
-    student_id = data.get('student_id')
-    if not student_id:
-        return jsonify({'error': 'student_id is required'}), 400
-    if current_user.is_parent and int(student_id) not in _parent_student_ids(current_user):
+    student_id, err = _valid_id(data.get('student_id'))
+    if err:
+        return err
+    if Student.query.get(student_id) is None:
+        return jsonify({'error': 'student not found'}), 404
+    if current_user.is_parent and student_id not in _parent_student_ids(current_user):
         return jsonify({'error': 'Not authorized for this student'}), 403
     if AuditionSignup.query.filter_by(audition_id=aid, student_id=student_id).first():
         return jsonify({'error': 'Already signed up'}), 400
-    s = AuditionSignup(audition_id=aid, student_id=int(student_id), parent_id=current_user.id,
-                       notes=(data.get('notes') or '').strip() or None)
+    s = AuditionSignup(audition_id=aid, student_id=student_id, parent_id=current_user.id,
+                       notes=_clean_str(data.get('notes')) or None)
     db.session.add(s)
     db.session.commit()
     return jsonify({'message': 'Signed up for audition'}), 201
@@ -3391,8 +3430,12 @@ def create_ticket_order(pid):
         return jsonify({'error': 'Invalid quantity'}), 400
 
     student_id = data.get('student_id')
+    if student_id:
+        student_id, serr = _valid_id(student_id)
+        if serr:
+            return serr
     if current_user.is_parent:
-        if student_id and int(student_id) not in _parent_student_ids(current_user):
+        if student_id and student_id not in _parent_student_ids(current_user):
             return jsonify({'error': 'Not authorized for this student'}), 403
         paid = False  # parent requests are unpaid until the studio confirms
     else:
@@ -3401,7 +3444,7 @@ def create_ticket_order(pid):
     o = TicketOrder(
         ticket_type_id=tt.id,
         parent_id=current_user.id if current_user.is_parent else None,
-        student_id=int(student_id) if student_id else None,
+        student_id=student_id if student_id else None,
         quantity=qty,
         amount=round(float(tt.price) * qty, 2),
         paid=paid,
@@ -3987,11 +4030,20 @@ def create_skill():
     if err:
         return err
     data = request.get_json() or {}
-    if not data.get('name'):
+    name = _clean_str(data.get('name'))
+    if not name:
         return jsonify({'error': 'name is required'}), 400
-    s = Skill(name=data['name'].strip(), category=(data.get('category') or '').strip() or None,
-              class_id=int(data['class_id']) if data.get('class_id') else None,
-              display_order=int(data.get('display_order', 0)))
+    class_id = None
+    if data.get('class_id'):
+        class_id, cerr = _valid_id(data.get('class_id'))
+        if cerr:
+            return cerr
+    try:
+        display_order = int(data.get('display_order') or 0)
+    except (TypeError, ValueError):
+        display_order = 0
+    s = Skill(name=name, category=_clean_str(data.get('category')) or None,
+              class_id=class_id, display_order=display_order)
     db.session.add(s)
     db.session.commit()
     return jsonify({'id': s.id, 'name': s.name}), 201
@@ -4078,7 +4130,7 @@ def _parse_date(v):
         return None
     try:
         return datetime.strptime(v, '%Y-%m-%d').date()
-    except ValueError:
+    except (ValueError, TypeError):
         return None
 
 
@@ -4086,19 +4138,28 @@ def _parse_date(v):
 @login_required
 def create_makeup():
     data = request.get_json() or {}
-    student_id = data.get('student_id')
-    if not student_id:
-        return jsonify({'error': 'student_id is required'}), 400
-    if current_user.is_parent and int(student_id) not in _parent_student_ids(current_user):
+    student_id, err = _valid_id(data.get('student_id'))
+    if err:
+        return err
+    if Student.query.get(student_id) is None:
+        return jsonify({'error': 'student not found'}), 404
+    if current_user.is_parent and student_id not in _parent_student_ids(current_user):
         return jsonify({'error': 'Not authorized for this student'}), 403
+
+    def _opt_id(raw):  # optional class id: blank -> None, garbage -> None (don't 500)
+        if not raw:
+            return None
+        val, e = _valid_id(raw)
+        return val if not e else None
+
     m = MakeupClass(
-        student_id=int(student_id),
-        missed_class_id=int(data['missed_class_id']) if data.get('missed_class_id') else None,
+        student_id=student_id,
+        missed_class_id=_opt_id(data.get('missed_class_id')),
         missed_date=_parse_date(data.get('missed_date')),
-        makeup_class_id=int(data['makeup_class_id']) if data.get('makeup_class_id') else None,
+        makeup_class_id=_opt_id(data.get('makeup_class_id')),
         makeup_date=_parse_date(data.get('makeup_date')),
         status='requested' if current_user.is_parent else (data.get('status') or 'scheduled'),
-        note=(data.get('note') or '').strip() or None,
+        note=_clean_str(data.get('note')) or None,
         requested_by=current_user.id,
     )
     db.session.add(m)
@@ -4182,14 +4243,15 @@ def create_lead():
     if err:
         return err
     data = request.get_json() or {}
-    if not data.get('name'):
+    name = _clean_str(data.get('name'))
+    if not name:
         return jsonify({'error': 'name is required'}), 400
-    l = Lead(name=data['name'].strip(), email=(data.get('email') or '').strip() or None,
-             phone=(data.get('phone') or '').strip() or None,
-             interest=(data.get('interest') or '').strip() or None,
-             source=(data.get('source') or '').strip() or None,
+    l = Lead(name=name, email=_clean_str(data.get('email')) or None,
+             phone=_clean_str(data.get('phone')) or None,
+             interest=_clean_str(data.get('interest')) or None,
+             source=_clean_str(data.get('source')) or None,
              trial_date=_parse_date(data.get('trial_date')),
-             note=(data.get('note') or '').strip() or None)
+             note=_clean_str(data.get('note')) or None)
     db.session.add(l)
     db.session.commit()
     return jsonify(_lead_to_dict(l)), 201
