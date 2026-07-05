@@ -708,6 +708,38 @@ def run_attendance(ids):
                f"got {r.status_code}", "P0")
 
 
+def run_leads():
+    """Leads pipeline (active in enrollment season). Converting a lead creates a
+    Family + Student — and that MUST be idempotent: a double-click can't make two
+    duplicate families. Also: update tolerates bad input, and it's admin-only."""
+    from app.models import Lead, Family, Student
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        c.post("/api/leads", json={"name": "Riley Prospect", "email": "riley@x.com", "phone": "555"})
+        with app.app_context():
+            lid = Lead.query.filter_by(email="riley@x.com").first().id
+            fam_before, stu_before = Family.query.count(), Student.query.count()
+        r1 = c.post(f"/api/leads/{lid}/convert")
+        r2 = c.post(f"/api/leads/{lid}/convert")  # double-click
+        with app.app_context():
+            fam_after, stu_after = Family.query.count(), Student.query.count()
+        record(f"Lead convert is idempotent (#1={r1.status_code} #2={r2.status_code})",
+               r1.status_code == 200 and r2.status_code == 400, f"{r1.status_code}/{r2.status_code}", "P2")
+        record(f"Double-convert created exactly ONE family + student (+{fam_after - fam_before}f/+{stu_after - stu_before}s)",
+               fam_after - fam_before == 1 and stu_after - stu_before == 1,
+               f"fam+{fam_after - fam_before} stu+{stu_after - stu_before} (duplicate!)", "P2")
+        # Update robustness: non-string name coerces (no 500), empty name rejected.
+        rn = c.put(f"/api/leads/{lid}", json={"name": 123})
+        re_ = c.put(f"/api/leads/{lid}", json={"name": "   "})
+        record(f"Lead update handles bad name (num={rn.status_code}, empty={re_.status_code})",
+               rn.status_code < 500 and re_.status_code == 400, f"{rn.status_code}/{re_.status_code}", "P3")
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        rp = c.post("/api/leads", json={"name": "X"})
+        record(f"Parent cannot create a lead -> {rp.status_code}", rp.status_code in (401, 403),
+               f"got {rp.status_code}", "P1")
+
+
 def run_timeclock():
     """Staff time clock feeds payroll. Verify: can't clock out without clocking
     in, no double clock-in, hours compute correctly, the report is admin-only and
@@ -1569,6 +1601,7 @@ def main():
     run_waiver_signing(ids)
     run_attendance(ids)
     run_message_blast()
+    run_leads()
     run_timeclock()
     run_auto_reminders()
     run_multichild_invite_merge()

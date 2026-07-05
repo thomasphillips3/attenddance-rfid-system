@@ -4491,7 +4491,10 @@ def update_lead(lid):
     data = request.get_json() or {}
     for f in ('name', 'email', 'phone', 'interest', 'source', 'note'):
         if f in data:
-            setattr(l, f, (data[f] or '').strip() or None)
+            val = _clean_str(data[f]) or None
+            if f == 'name' and not val:
+                return jsonify({'error': 'name cannot be empty'}), 400  # NOT NULL column
+            setattr(l, f, val)
     if 'status' in data and data['status'] in ('new', 'contacted', 'trial_scheduled', 'converted', 'lost'):
         l.status = data['status']
     if 'trial_date' in data:
@@ -4519,7 +4522,11 @@ def convert_lead(lid):
     if err:
         return err
     l = Lead.query.get_or_404(lid)
-    parts = l.name.split(' ', 1)
+    if l.status == 'converted':
+        # Idempotent: a double-click (or converting an already-converted lead)
+        # must not create a second duplicate family + student.
+        return jsonify({'error': 'This lead was already converted'}), 400
+    parts = (_clean_str(l.name) or 'New Dancer').split(' ', 1)
     fam = Family(name=f'{l.name} Family', primary_email=l.email, primary_phone=l.phone)
     db.session.add(fam)
     db.session.flush()
