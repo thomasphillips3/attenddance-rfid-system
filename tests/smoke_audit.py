@@ -856,6 +856,48 @@ def run_transaction_delete(ids):
            r404.status_code == 404, f"got {r404.status_code}", "P3")
 
 
+def run_payment_plans(ids):
+    """Payment plans (a Jackrabbit-parity billing feature): generate the right
+    number of installments on the right monthly schedule with the right amount,
+    validate inputs, and stay admin-only. NOTE: a plan is a *schedule*, not a
+    charge — toggling an installment paid does not post to the ledger; the real
+    payment is recorded separately. This test guards the schedule math + authz."""
+    from app.models import PaymentPlanInstallment
+    sid = ids["child_a"]
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r = c.post(f"/api/students/{sid}/payment-plan",
+                   json={"installment_amount": 100, "num_installments": 6, "day_of_month": 15})
+        record(f"Create payment plan -> {r.status_code}", r.status_code == 201, r.get_data(as_text=True)[:60], "P2")
+        with app.app_context():
+            insts = PaymentPlanInstallment.query.order_by(PaymentPlanInstallment.seq).all()
+        good = (len(insts) == 6 and all(i.due_date.day == 15 for i in insts)
+                and all(float(i.amount) == 100.0 for i in insts)
+                and all(insts[k].due_date > insts[k - 1].due_date for k in range(1, len(insts))))
+        record(f"Plan: 6 monthly installments of $100 on the 15th (got {len(insts)})",
+               good, f"dates={[i.due_date.isoformat() for i in insts]}", "P2")
+        # Validation
+        rb = c.post(f"/api/students/{sid}/payment-plan",
+                    json={"installment_amount": "x", "num_installments": 6, "day_of_month": 15})
+        rd = c.post(f"/api/students/{sid}/payment-plan",
+                    json={"installment_amount": 100, "num_installments": 6, "day_of_month": 31})
+        rn = c.post("/api/students/999999/payment-plan",
+                    json={"installment_amount": 100, "num_installments": 6, "day_of_month": 15})
+        record(f"Plan validation: garbage={rb.status_code} day31={rd.status_code} nostudent={rn.status_code}",
+               rb.status_code == 400 and rd.status_code == 400 and rn.status_code == 404,
+               f"{rb.status_code}/{rd.status_code}/{rn.status_code}", "P3")
+        if insts:
+            t = c.post(f"/api/payment-plan-installments/{insts[0].id}/toggle-paid")
+            record(f"Toggle installment paid -> {t.status_code}",
+                   t.status_code == 200 and (t.get_json() or {}).get("paid") is True, "", "P3")
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        rp = c.post(f"/api/students/{sid}/payment-plan",
+                    json={"installment_amount": 100, "num_installments": 6, "day_of_month": 15})
+        record(f"Parent cannot create a payment plan -> {rp.status_code}", rp.status_code == 403,
+               f"got {rp.status_code}", "P0")
+
+
 def run_input_robustness(ids):
     """No write endpoint may 500 on malformed input. An unhandled exception
     (e.g. float() on a garbage string) is bad UX for the parent AND can leave a
@@ -1336,6 +1378,7 @@ def main():
     run_login_by_email()
     run_registration_flow()
     run_amount_validation(ids)
+    run_payment_plans(ids)
     run_transaction_delete(ids)
     run_input_robustness(ids)
     run_parent_input_robustness(ids)
