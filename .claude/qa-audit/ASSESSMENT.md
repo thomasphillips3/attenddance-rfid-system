@@ -72,7 +72,8 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 
 - **[P3-1] 2 `<img>` tags lacked `alt` — ✅ FIXED** (Zelle QR preview + recital ad; 0 remain).
 - **[P3-2] `SECRET_KEY`/`JWT_SECRET_KEY` still have insecure dev fallbacks** in base `Config` — fine for dev, but the prod guard (P0-1) is what makes them safe.
-- **[P3-3] No automated test suite in-repo** (prior smoke harness wasn't kept). `tests/smoke_audit.py` added this pass is the seed of one; grow it into CI.
+- **[P3-3] No automated test suite in-repo** (prior smoke harness wasn't kept). `tests/smoke_audit.py` + `tests/test_billing.py` added this pass are the seed of one (39/39 + 16/16); wire into CI.
+- **[P3-4] CDN scripts load without Subresource Integrity.** `base.html` + report pages pull Tailwind, Alpine, Chart.js, FontAwesome from CDNs without `integrity`/`crossorigin` — a CDN compromise could inject script. Low likelihood (reputable CDNs) but cheap to harden: pin versions + add SRI hashes app-wide (do it consistently, not per-tag).
 
 ---
 
@@ -111,7 +112,7 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 | Financial statements | **PRESENT** | Year-end student/family + 501(c)(3) giving statements |
 | Waivers & policies | **PRESENT** | Digital waivers + per-rule acknowledgment |
 | Staff/teacher roles | **PARTIAL** | admin vs teacher tiers exist, but coarse — a teacher sees all students, not just their classes |
-| Management reporting (revenue/enrollment/**AR aging**/**export**) | **PARTIAL→improved** | ✅ AR aging report (`/reports/aging`, FIFO buckets) + ✅ CSV export (roster + transactions) now built; retention analytics + ticket revenue exist; still no revenue-by-month/enrollment summary reports |
+| Management reporting (revenue/enrollment/AR aging/export) | **PRESENT** (was PARTIAL) | ✅ Revenue report (`/reports/revenue`: billed-vs-collected by month + by category + totals) · ✅ AR aging (`/reports/aging`) · ✅ CSV export (roster + transactions) · retention/enrollment analytics · ticket revenue. Remaining nice-to-have: enrollment/capacity summary + CSV of the aging report |
 
 **Top parity risks for fall, ranked:** (1) auto-pay/cards-on-file — manual collection is the daily tax; (2) AR aging report — the owner will want a "who owes, how overdue" view to chase tuition; (3) confirm SMTP/Twilio are configured so receipts/reminders actually send (currently save-only).
 
@@ -161,5 +162,8 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 7 — DONE (verified live; smoke 37/37)
 - **CSV export built** (`/api/reports/students.csv` + `/api/reports/transactions.csv`, staff-only): roster export (contacts, DOB, emergency, allergies, balance) and transaction ledger export (optional `?start=&end=` range) with proper attachment headers. "Export CSV" buttons on the Students and Payments pages; an "Aging" shortcut added to Payments too. Closes the "get my data out" reporting gap Jackrabbit covers. Verified live — real roster CSV downloads with correct data; parents blocked (403).
 
+### Iteration 8 — DONE (verified live; smoke 39/39)
+- **Revenue report built** (`GET /api/reports/revenue` staff-only + `/reports/revenue` admin page + nav link): headline totals (collected this month/year/all-time, outstanding), a 12-month billed-vs-collected bar chart (Chart.js), and collected-by-category table. Verified live — tiles, chart, and category breakdown all render with real seeded data. **Management-reporting parity is now PRESENT** (revenue + aging + CSV export + retention analytics).
+
 ### Remaining for next iterations
-- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), revenue-by-month/enrollment summary reports, ~50 staff-side `prompt()` flows → modals, per-page `aria-label`s prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
+- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~50 staff-side `prompt()` flows → modals, per-page `aria-label`s, P3-4 Subresource Integrity on CDN scripts prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.

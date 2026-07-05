@@ -439,6 +439,12 @@ def aging_report_page():
     return render_template('reports/aging.html')
 
 
+@bp.route('/reports/revenue')
+@admin_required
+def revenue_report_page():
+    return render_template('reports/revenue.html')
+
+
 def _parent_owns(student):
     return (not current_user.is_parent) or (student.id in {s.id for s in current_user.get_children()})
 

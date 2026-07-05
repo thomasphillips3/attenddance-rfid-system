@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block extra_head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>{% endblock %}
+
+{% block content %}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+    <div>
+        <div class="text-[11px] font-bold uppercase tracking-[.09em] text-primary-600">Money</div>
+        <h1 class="font-display text-3xl text-ink leading-tight mt-1">Revenue</h1>
+        <p class="mt-1 text-sm text-ink-2">What was billed vs collected, by month and category.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        <a href="/api/reports/transactions.csv" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2"><i class="fas fa-file-csv" aria-hidden="true"></i>Export CSV</a>
+        <a href="/reports/aging" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2"><i class="fas fa-hourglass-half" aria-hidden="true"></i>Aging</a>
+    </div>
+</div>
+
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6" id="tiles">
+    <div class="bg-surface border border-line rounded-2xl shadow-soft p-4">
+        <div class="text-[11px] font-bold uppercase tracking-[.08em] text-ink-3">Collected this month</div>
+        <div id="t-month" class="font-display text-2xl text-ink mt-1">—</div>
+    </div>
+    <div class="bg-surface border border-line rounded-2xl shadow-soft p-4">
+        <div class="text-[11px] font-bold uppercase tracking-[.08em] text-ink-3">Collected this year</div>
+        <div id="t-year" class="font-display text-2xl text-ink mt-1">—</div>
+    </div>
+    <div class="bg-surface border border-line rounded-2xl shadow-soft p-4">
+        <div class="text-[11px] font-bold uppercase tracking-[.08em] text-ink-3">Collected all-time</div>
+        <div id="t-all" class="font-display text-2xl text-ink mt-1">—</div>
+    </div>
+    <div class="bg-surface border border-line rounded-2xl shadow-soft p-4">
+        <div class="text-[11px] font-bold uppercase tracking-[.08em] text-ink-3">Outstanding</div>
+        <div id="t-out" class="font-display text-2xl text-danger mt-1">—</div>
+    </div>
+</div>
+
+<div class="bg-surface border border-line rounded-2xl shadow-soft p-5 mb-6">
+    <h2 class="font-semibold text-ink mb-3">Billed vs Collected (12 months)</h2>
+    <canvas id="revChart" height="120"></canvas>
+</div>
+
+<div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
+    <div class="px-5 py-3 border-b border-line"><h2 class="font-semibold text-ink">Collected by category (this year)</h2></div>
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead class="bg-surface-2 border-b border-line">
+                <tr>
+                    <th class="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Category</th>
+                    <th class="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Collected</th>
+                </tr>
+            </thead>
+            <tbody id="cat-rows" class="divide-y divide-line"></tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function money(v) { return '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+async function load() {
+    let d;
+    try { d = await (await fetch('/api/reports/revenue')).json(); }
+    catch (e) { return; }
+    document.getElementById('t-month').textContent = money(d.totals.collected_this_month);
+    document.getElementById('t-year').textContent = money(d.totals.collected_this_year);
+    document.getElementById('t-all').textContent = money(d.totals.collected_all_time);
+    document.getElementById('t-out').textContent = money(d.totals.outstanding);
+
+    const cats = document.getElementById('cat-rows');
+    cats.innerHTML = d.by_category.length
+        ? d.by_category.map(c => `<tr class="hover:bg-surface-2">
+            <td class="px-5 py-3 text-ink capitalize">${c.category}</td>
+            <td class="px-5 py-3 text-right text-ink font-bold">${money(c.amount)}</td></tr>`).join('')
+        : '<tr><td colspan="2" class="px-5 py-6 text-center text-ink-3">No payments recorded this year yet.</td></tr>';
+
+    new Chart(document.getElementById('revChart'), {
+        type: 'bar',
+        data: {
+            labels: d.monthly.map(m => m.month),
+            datasets: [
+                { label: 'Billed', data: d.monthly.map(m => m.charged), backgroundColor: '#e3c9ec' },
+                { label: 'Collected', data: d.monthly.map(m => m.collected), backgroundColor: '#8f2db5' },
+            ],
+        },
+        options: { responsive: true, plugins: { legend: { position: 'bottom' } },
+                   scales: { y: { beginAtZero: true } } },
+    });
+}
+load();
+</script>
+{% endblock %}

@@ -175,6 +175,7 @@
                 {{ nl('Payments', 'main.transactions', 'dollar-sign', ['transaction']) }}
                 {% if current_user.is_admin %}{{ nl('Pending', 'main.pending_payments_page', 'clock', ['pending'], pending_payment_count) }}{% endif %}
                 {% if current_user.is_admin %}{{ nl('Payment Methods', 'main.settings_page', 'gear', ['settings']) }}{% endif %}
+                {% if current_user.is_admin %}{{ nl('Revenue', 'main.revenue_report_page', 'chart-column', ['revenue']) }}{% endif %}
                 {% if current_user.is_admin %}{{ nl('Aging (A/R)', 'main.aging_report_page', 'file-invoice-dollar', ['aging']) }}{% endif %}
                 {% if current_user.is_admin %}{{ nl('Donations', 'main.donations_page', 'hand-holding-heart', ['donations']) }}{% endif %}
 

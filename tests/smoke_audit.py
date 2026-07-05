@@ -125,6 +125,7 @@ def run_idor(ids):
             ("GET", "/api/attendance/today"),  # attendance
             ("GET", "/api/dashboard/stats"),   # studio stats
             ("GET", "/api/reports/aging"),     # A/R aging report
+            ("GET", "/api/reports/revenue"),   # revenue report
         ]
         for method, path in staff_only:
             resp = c.open(path, method=method)
@@ -205,6 +206,10 @@ def run_csv_exports(ids):
         record(f"Transactions CSV export well-formed -> {r2.status_code}",
                r2.status_code == 200 and r2.get_data(as_text=True).startswith("Date,Student"),
                f"head={r2.get_data(as_text=True)[:40]!r}", "P2")
+        rev = c.get("/api/reports/revenue").get_json()
+        ok = (rev and isinstance(rev.get("monthly"), list) and len(rev["monthly"]) == 12
+              and "totals" in rev and "collected_this_year" in rev["totals"])
+        record("Revenue report returns 12 months + totals", ok, str(rev)[:80], "P2")
 
 
 def run_js_syntax():

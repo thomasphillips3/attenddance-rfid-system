@@ -911,6 +911,69 @@ def export_transactions_csv():
     return _csv_response(f'transactions-{date.today().isoformat()}.csv', header, rows)
 
 
+def _month_buckets(n):
+    """(label, start, end) for the last n calendar months, oldest first."""
+    month_start = date.today().replace(day=1)
+    out = []
+    for i in range(n - 1, -1, -1):
+        year = month_start.year + (month_start.month - 1 - i) // 12
+        month = (month_start.month - 1 - i) % 12 + 1
+        ms = date(year, month, 1)
+        me = date(year + (month // 12), (month % 12) + 1, 1)
+        out.append((ms.strftime('%b %y'), ms, me))
+    return out
+
+
+@bp.route('/reports/revenue', methods=['GET'])
+@login_required
+def revenue_report():
+    """Money report for the owner: charged vs collected by month, collected by
+    category this year, and headline totals. Staff-only."""
+    err = _staff_only()
+    if err:
+        return err
+
+    def _sum(type_, start=None, end=None):
+        q = db.session.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
+            Transaction.type == type_)
+        if start is not None:
+            q = q.filter(Transaction.transaction_date >= start)
+        if end is not None:
+            q = q.filter(Transaction.transaction_date < end)
+        return float(q.scalar() or 0)
+
+    monthly = [{
+        'month': label,
+        'charged': round(_sum('charge', ms, me), 2),
+        'collected': round(_sum('payment', ms, me), 2),
+    } for label, ms, me in _month_buckets(12)]
+
+    year_start = date.today().replace(month=1, day=1)
+    cat_rows = (db.session.query(Transaction.category, func.sum(Transaction.amount))
+                .filter(Transaction.type == 'payment', Transaction.transaction_date >= year_start)
+                .group_by(Transaction.category).all())
+    by_category = sorted(
+        [{'category': c or 'uncategorized', 'amount': round(float(a or 0), 2)} for c, a in cat_rows],
+        key=lambda x: x['amount'], reverse=True)
+
+    students = Student.query.filter_by(is_active=True).all()
+    bals = calc_balance_bulk([s.id for s in students])
+    outstanding = round(sum(b['balance'] for b in bals.values() if b['balance'] > 0), 2)
+    month_start = date.today().replace(day=1)
+
+    return jsonify({
+        'monthly': monthly,
+        'by_category': by_category,
+        'totals': {
+            'collected_this_month': round(_sum('payment', month_start), 2),
+            'collected_this_year': round(_sum('payment', year_start), 2),
+            'collected_all_time': round(_sum('payment'), 2),
+            'outstanding': outstanding,
+        },
+        'active_students': len(students),
+    })
+
+
 @bp.route('/students/<int:student_id>/ledger', methods=['GET'])
 @login_required
 def get_student_ledger(student_id):
