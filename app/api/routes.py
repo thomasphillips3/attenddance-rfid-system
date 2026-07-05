@@ -3948,25 +3948,49 @@ def submit_registration():
     import json
     if not Setting.get_bool('registration_open'):
         return jsonify({'error': 'Registration is currently closed'}), 403
-    data = request.get_json() or {}
-    parent_name = (data.get('parent_name') or '').strip()
-    parent_email = (data.get('parent_email') or '').strip()
-    students = data.get('students') or []
+    # Public + unauthenticated: never trust the shape of the payload. Coerce every
+    # field so a non-string name or a non-list `students` can't 500 the endpoint.
+    data = request.get_json(silent=True) or {}
+    parent_name = _clean_str(data.get('parent_name'))
+    parent_email = _clean_str(data.get('parent_email'))
     if not parent_name or not parent_email:
         return jsonify({'error': 'Parent name and email are required'}), 400
     if '@' not in parent_email or '.' not in parent_email.split('@')[-1]:
         return jsonify({'error': 'Please enter a valid email address'}), 400
-    students = [s for s in students if (s.get('first_name') or '').strip()]
+    raw_students = data.get('students')
+    if not isinstance(raw_students, list):
+        raw_students = []
+    # Store only cleaned, expected fields (not the raw dicts) so a non-string
+    # last_name/dob can't 500 the admin approve flow later, and cap the count so
+    # a scripted submit can't stuff thousands of rows into one registration.
+    students = []
+    for s in raw_students:
+        if not isinstance(s, dict):
+            continue
+        fn = _clean_str(s.get('first_name'))
+        if not fn:
+            continue
+        students.append({
+            'first_name': fn,
+            'last_name': _clean_str(s.get('last_name')),
+            'dob': _clean_str(s.get('dob')),
+            'allergies': _clean_str(s.get('allergies')),
+        })
+        if len(students) >= 30:
+            break
     if not students:
         return jsonify({'error': 'Add at least one dancer'}), 400
+    raw_class_ids = data.get('class_ids')
+    if not isinstance(raw_class_ids, list):
+        raw_class_ids = []
 
     reg = Registration(
         parent_name=parent_name,
         parent_email=parent_email,
-        parent_phone=(data.get('parent_phone') or '').strip() or None,
+        parent_phone=_clean_str(data.get('parent_phone')) or None,
         students_json=json.dumps(students),
-        class_ids=','.join(str(int(c)) for c in (data.get('class_ids') or []) if str(c).isdigit()),
-        note=(data.get('note') or '').strip() or None,
+        class_ids=','.join(str(int(c)) for c in raw_class_ids if str(c).isdigit()),
+        note=_clean_str(data.get('note')) or None,
     )
     db.session.add(reg)
     db.session.commit()

@@ -741,6 +741,47 @@ def run_registration_flow():
             record(f"Re-approve is rejected (idempotent) -> {r.status_code}",
                    r.status_code == 400, f"got {r.status_code}", "P2")
 
+    # The public endpoint is UNAUTHENTICATED — it must never 500 on a malformed
+    # payload (non-list students, non-dict elements, non-string names), must cap
+    # the dancer count, and its stored XSS must survive an admin approve + render.
+    import json as _json
+    from app.models import Registration as _Reg
+    with app.test_client() as pub:  # no login
+        malformed = [
+            ({"parent_name": "P", "parent_email": "p@x.com", "students": "notalist"}, 400, "students=string"),
+            ({"parent_name": "P", "parent_email": "p@x.com", "students": [123]}, 400, "students=[int]"),
+            ({"parent_name": "P", "parent_email": "p@x.com", "students": {"first_name": "x"}}, 400, "students=dict"),
+            ({"parent_name": 123, "parent_email": "p@x.com", "students": [{"first_name": "Ok"}]}, 201, "parent_name=int"),
+            ({"parent_name": "P", "parent_email": "bad", "students": [{"first_name": "Ok"}]}, 400, "bad email"),
+        ]
+        for body, want, label in malformed:
+            r = pub.post("/api/register", json=body)
+            record(f"Public register robust: {label} -> {r.status_code}",
+                   r.status_code == want and r.status_code < 500, f"got {r.status_code} (want {want})", "P2")
+        # Cap: 100 dancers submitted -> at most 30 stored.
+        pub.post("/api/register", json={"parent_name": "Capped", "parent_email": "cap@x.com",
+                                        "students": [{"first_name": f"D{i}"} for i in range(100)]})
+    with app.app_context():
+        capped = _Reg.query.filter_by(parent_email="cap@x.com").first()
+        n = len(_json.loads(capped.students_json)) if capped else 999
+        record(f"Public register caps dancer count (stored {n})", n <= 30, f"stored {n}", "P3")
+    # Malformed + XSS registration approves cleanly and renders escaped-at-output.
+    with app.test_client() as pub:
+        pub.post("/api/register", json={
+            "parent_name": "<script>x</script>", "parent_email": "xss@x.com",
+            "students": [{"first_name": "<script>", "last_name": 123, "dob": "bad"}, "junk"]})
+    with app.app_context():
+        xreg = _Reg.query.filter_by(parent_email="xss@x.com", status="pending").first()
+        xrid = xreg.id if xreg else None
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        ra = c.post(f"/api/registrations/{xrid}/approve") if xrid else None
+        record(f"Approve of a malformed/XSS registration doesn't 500 -> {ra.status_code if ra else 'n/a'}",
+               ra is not None and ra.status_code in (200, 201), f"got {ra.status_code if ra else 'n/a'}", "P2")
+        record(f"Registrations + students lists render after XSS approve",
+               c.get("/api/registrations?status=all").status_code == 200 and c.get("/api/students").status_code == 200,
+               "a list 500'd", "P2")
+
 
 def run_amount_validation(ids):
     """Financial write endpoints must reject bad amounts (negative = balance
