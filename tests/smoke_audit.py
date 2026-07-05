@@ -2504,6 +2504,21 @@ def run_messages_pagination():
                len(p2.get("messages", [])) >= 10, str(p2.get("pagination")), "P3")
 
 
+def run_sqlite_wal_guard():
+    """SQLite must run in WAL mode with a busy timeout. One gunicorn worker runs
+    4 gthread threads plus background send threads (auto/manual reminders), all
+    on one DB file — the default 'delete' journal blocks readers against the
+    writer (the historical 'database is locked' failure). WAL lets concurrent
+    readers run alongside the single writer; the busy timeout absorbs brief
+    contention instead of erroring immediately."""
+    from sqlalchemy import text
+    with app.app_context():
+        jm = (db.session.execute(text("PRAGMA journal_mode")).scalar() or "").lower()
+        bt = db.session.execute(text("PRAGMA busy_timeout")).scalar() or 0
+    record(f"SQLite runs in WAL with a busy timeout (journal={jm}, busy_timeout={bt}ms)",
+           jm == "wal" and bt >= 1000, f"journal_mode={jm} busy_timeout={bt}", "P2")
+
+
 def run_logging_config_guard():
     """Logging must be configured at run.py MODULE level, not only inside
     `if __name__ == '__main__'`. Production runs `gunicorn run:app`, which IMPORTS
@@ -2813,6 +2828,7 @@ def main():
     run_global_search()
     run_dead_handler_guard()
     run_logging_config_guard()
+    run_sqlite_wal_guard()
     run_auth_form_labels()
     run_transactions_pagination(ids)
     run_students_roster_complete()

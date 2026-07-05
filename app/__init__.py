@@ -7,6 +7,8 @@ import threading
 from flask import Flask, current_app
 from flask_login import LoginManager
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 
 from config.config import config
 
@@ -14,6 +16,27 @@ logger = logging.getLogger(__name__)
 
 db = SQLAlchemy()
 login_manager = LoginManager()
+
+
+@event.listens_for(Engine, "connect")
+def _set_sqlite_pragmas(dbapi_conn, connection_record):
+    """On every SQLite connection: enable WAL and a generous busy timeout.
+
+    The app runs one gunicorn worker with 4 gthread threads plus background send
+    threads (auto/manual reminders), all hitting one SQLite file on a Fly volume.
+    The default `delete` journal makes a writer block all readers (and vice
+    versa) — under that concurrency, and given the historical 'database is locked'
+    trouble, that risks lock errors. WAL lets concurrent readers run alongside a
+    single writer without blocking. Safe here: the DB is on a LOCAL Fly volume
+    (not a network FS), and the backup uses SQLite's online backup API, which is
+    WAL-aware. `synchronous` is left at the default FULL for maximum durability of
+    money data (WAL's perf is fine without lowering it for a low-traffic studio)."""
+    import sqlite3
+    if isinstance(dbapi_conn, sqlite3.Connection):
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=10000")
+        cur.close()
 
 
 def _process_recurring_charges(today=None):

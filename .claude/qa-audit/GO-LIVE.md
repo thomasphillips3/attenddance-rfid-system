@@ -79,6 +79,12 @@ with a "copy these emails" fallback until SMTP is set). Turn them on as ready.
   and race on SQLite migrations). Migrations run automatically on boot.
 - **Data lives on the Fly volume** (`/data/attendance.db`); settings are in the
   prod DB, not env — configure them through the UI, not local scripts.
+- **SQLite runs in WAL mode** (enabled automatically — for concurrency under the
+  gthread worker + background send threads). After the first boot you'll see
+  `attendance.db-wal` and `attendance.db-shm` next to the DB on the volume;
+  that's expected. The **Download backup** button uses SQLite's online backup
+  API, so it captures a consistent snapshot including any WAL data — no manual
+  checkpoint needed.
 - **Backups — the whole studio is one file, so keep copies.** Two layers:
   1. **Manual (do this regularly):** `/settings` → **Data & Backup** → **Download
      backup** pulls a complete, consistent snapshot of everything (families,
