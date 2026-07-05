@@ -29,6 +29,58 @@
         </table>
     </div>
 </div>
+
+{% set lbl = "block text-sm font-medium text-ink-2 mb-1" %}
+{% set fld = "block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
+
+<!-- Log makeup modal -->
+<div id="makeup-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="closeMakeupModal()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="font-display text-2xl text-ink">Log a makeup</h3>
+                <button onclick="closeMakeupModal()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div><label class="{{ lbl }}" for="mk-student">Dancer *</label><select id="mk-student" class="{{ fld }}"><option value="">Pick a dancer…</option></select></div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="{{ lbl }}" for="mk-missed-class">Missed class</label><select id="mk-missed-class" class="{{ fld }}"><option value="">—</option></select></div>
+                    <div><label class="{{ lbl }}" for="mk-missed-date">Missed date</label><input id="mk-missed-date" type="date" class="{{ fld }}"></div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="{{ lbl }}" for="mk-makeup-class">Makeup class</label><select id="mk-makeup-class" class="{{ fld }}"><option value="">—</option></select></div>
+                    <div><label class="{{ lbl }}" for="mk-makeup-date">Makeup date</label><input id="mk-makeup-date" type="date" class="{{ fld }}"></div>
+                </div>
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+                <button onclick="closeMakeupModal()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="submitMakeup()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Log makeup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Schedule makeup modal -->
+<div id="schedule-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="closeSchedule()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="font-display text-2xl text-ink">Schedule makeup</h3>
+                <button onclick="closeSchedule()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div><label class="{{ lbl }}" for="sch-class">Makeup class</label><select id="sch-class" class="{{ fld }}"><option value="">—</option></select></div>
+                <div><label class="{{ lbl }}" for="sch-date">Makeup date</label><input id="sch-date" type="date" class="{{ fld }}"></div>
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+                <button onclick="closeSchedule()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="submitSchedule()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Schedule</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 {% block extra_js %}
 <script>
@@ -55,17 +107,48 @@ async function load(){
             <button onclick="del(${m.id})" class="text-xs text-danger hover:underline">Delete</button>
         </td></tr>`).join('');
 }
-async function createMakeup(){
-    const slist=STUDENTS.map(s=>`${s.id}. ${s.name}`).join('\n');
-    const sid=prompt(`Dancer? Enter ID:\n${slist}`);if(!STUDENTS.find(s=>s.id==sid))return;
-    const missed=prompt(`Missed class? Enter class ID (optional):\n${classOptions()}`)||'';
-    const missed_date=prompt('Missed date (YYYY-MM-DD, optional):')||'';
-    const makeup=prompt(`Makeup class? Enter class ID (optional):\n${classOptions()}`)||'';
-    const makeup_date=prompt('Makeup date (YYYY-MM-DD, optional):')||'';
-    const r=await fetch('/api/makeups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({student_id:sid,missed_class_id:missed,missed_date,makeup_class_id:makeup,makeup_date})});
+function _fillSelect(id, items, placeholder){
+    document.getElementById(id).innerHTML = `<option value="">${placeholder}</option>` +
+        items.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');
+}
+function createMakeup(){
+    _fillSelect('mk-student', STUDENTS, 'Pick a dancer…');
+    _fillSelect('mk-missed-class', CLASSES, '—');
+    _fillSelect('mk-makeup-class', CLASSES, '—');
+    for(const i of ['mk-missed-date','mk-makeup-date']) document.getElementById(i).value='';
+    document.getElementById('makeup-modal').classList.remove('hidden');
+    document.getElementById('mk-student').focus();
+}
+function closeMakeupModal(){document.getElementById('makeup-modal').classList.add('hidden');}
+async function submitMakeup(){
+    const sid=document.getElementById('mk-student').value;
+    if(!sid){msg('Pick a dancer',false);return;}
+    const r=await fetch('/api/makeups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        student_id:sid,
+        missed_class_id:document.getElementById('mk-missed-class').value,
+        missed_date:document.getElementById('mk-missed-date').value,
+        makeup_class_id:document.getElementById('mk-makeup-class').value,
+        makeup_date:document.getElementById('mk-makeup-date').value})});
+    if(r.ok)closeMakeupModal();
     msg(r.ok?'Makeup logged':'Error',r.ok);if(r.ok)load();
 }
-async function schedule(id){const makeup=prompt(`Makeup class ID:\n${classOptions()}`)||'';const makeup_date=prompt('Makeup date (YYYY-MM-DD):')||'';const r=await fetch(`/api/makeups/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'scheduled',makeup_class_id:makeup,makeup_date})});if(r.ok)load();}
+let scheduleTargetId=null;
+function schedule(id){
+    scheduleTargetId=id;
+    _fillSelect('sch-class', CLASSES, '—');
+    document.getElementById('sch-date').value='';
+    document.getElementById('schedule-modal').classList.remove('hidden');
+}
+function closeSchedule(){document.getElementById('schedule-modal').classList.add('hidden');}
+async function submitSchedule(){
+    if(scheduleTargetId===null)return;
+    const r=await fetch(`/api/makeups/${scheduleTargetId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        status:'scheduled',
+        makeup_class_id:document.getElementById('sch-class').value,
+        makeup_date:document.getElementById('sch-date').value})});
+    if(r.ok)closeSchedule();
+    msg(r.ok?'Makeup scheduled':'Error',r.ok);if(r.ok)load();
+}
 async function setStatus(id,status){const r=await fetch(`/api/makeups/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});if(r.ok)load();}
 async function del(id){if(!confirm('Delete this makeup record?'))return;const r=await fetch(`/api/makeups/${id}`,{method:'DELETE'});if(r.ok)load();}
 load();
