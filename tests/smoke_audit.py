@@ -1299,6 +1299,65 @@ def run_reminder_non_blocking():
            elapsed < 1.0, f"took {elapsed:.2f}s — sending appears to block the boot/request thread", "P1")
 
 
+def run_recurring_short_month_clamp():
+    """The recurring-charge engine auto-creates tuition every month and runs
+    unattended — so it needs a real regression guard. A charge set for the 31st
+    must still fire in a short month, on that month's LAST day (else the studio
+    silently loses that tuition), fire exactly once (idempotent), and NOT fire
+    before the clamped day. The processor takes an injectable `today`, so Feb is
+    exercised deterministically without freezing the clock."""
+    from datetime import date, time as _time
+    from app import _process_recurring_charges
+    from app.models import (User, DanceClass, Student, Family, ClassEnrollment,
+                            RecurringCharge, Transaction)
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        fam = Family(name="Clamp Fam")
+        db.session.add(fam)
+        db.session.flush()
+        s = Student(first_name="Clamp", last_name="Kid", family_id=fam.id, is_active=True)
+        db.session.add(s)
+        db.session.flush()
+        cls = DanceClass(name="ClampClass", day_of_week=0, start_time=_time(16, 0),
+                         end_time=_time(17, 0), instructor_id=adm.id)
+        db.session.add(cls)
+        db.session.flush()
+        db.session.add(ClassEnrollment(student_id=s.id, class_id=cls.id))
+        rc = RecurringCharge(class_id=cls.id, amount=77.77, category="tuition",
+                             day_of_month=31, created_by=adm.id)
+        db.session.add(rc)
+        db.session.commit()
+        rc_id, sid = rc.id, s.id
+
+    def _count():
+        with app.app_context():
+            return Transaction.query.filter_by(recurring_charge_id=rc_id).count()
+
+    # Feb 27: day-31 clamps to Feb's last day (28); 27 < 28 -> must NOT fire yet.
+    with app.app_context():
+        _process_recurring_charges(today=date(2026, 2, 27))
+    before = _count()
+    # Feb 28 (Feb's last day): clamps to 28; fires exactly once.
+    with app.app_context():
+        _process_recurring_charges(today=date(2026, 2, 28))
+    after_first = _count()
+    # Re-run same day: idempotent (existing charge this month) -> no double-charge.
+    with app.app_context():
+        _process_recurring_charges(today=date(2026, 2, 28))
+    after_second = _count()
+    with app.app_context():
+        t = Transaction.query.filter_by(recurring_charge_id=rc_id).first()
+        charge_ok = (t is not None and float(t.amount) == 77.77
+                     and t.transaction_date == date(2026, 2, 28) and t.student_id == sid)
+    record("Recurring day-31 charge does not fire before the clamped short-month day (Feb 27)",
+           before == 0, f"fired early: {before} charge(s) on Feb 27", "P2")
+    record("Recurring day-31 charge fires on Feb 28 (clamped) exactly once, idempotent on re-run",
+           after_first == 1 and after_second == 1,
+           f"after_first={after_first} after_second={after_second} (want 1/1)", "P1")
+    record("Recurring short-month charge lands on the clamped last day with the right amount",
+           charge_ok, f"charge check failed for rc {rc_id}", "P2")
+
+
 def run_message_blast_non_blocking():
     """A message blast must background its SMTP send. A whole-studio 'all' blast
     is one SMTP round-trip per family; sent inline it would exceed the 120s
@@ -3414,6 +3473,7 @@ def main():
     run_attendance(ids)
     run_message_blast(ids)
     run_message_blast_non_blocking()
+    run_recurring_short_month_clamp()
     run_full_mutation_fuzz()
     run_update_fuzz()
     run_get_queryparam_fuzz(ids)
