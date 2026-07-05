@@ -127,11 +127,33 @@ def test_aging():
            ag["d31_60"] == 75.0 and ag["total"] == 75.0, str(ag))
 
 
+def test_money_precision():
+    """Summing many cent-level transactions must not drift (guards against a
+    future switch away from Numeric columns, or float creeping into the sums)."""
+    from decimal import Decimal
+    with app.app_context():
+        s = Student(first_name="Cent", last_name="Precision")
+        db.session.add(s)
+        db.session.flush()
+        for _ in range(100):
+            db.session.add(Transaction(student_id=s.id, type="charge", amount="10.01",
+                                       category="tuition", payment_method="n/a", description="c"))
+        for _ in range(50):
+            db.session.add(Transaction(student_id=s.id, type="payment", amount="3.33",
+                                       category="tuition", payment_method="cash", description="p"))
+        db.session.commit()
+        exact = float(Decimal("10.01") * 100 - Decimal("3.33") * 50)  # 834.50
+        b = calc_balance(s.id)
+        record(f"balance of 100x$10.01 - 50x$3.33 == ${exact:.2f} (got ${b['balance']:.2f})",
+               round(b["balance"], 2) == exact, f"{b['balance']} != {exact}")
+
+
 def main():
     ids = seed()
     test_allocation(ids)
     test_late_fee_idempotent(ids)
     test_aging()
+    test_money_precision()
     fails = [r for r in results if not r[1]]
     print("\n" + "=" * 56)
     print(f"SUMMARY: {len(results) - len(fails)}/{len(results)} passed, {len(fails)} failed.")
