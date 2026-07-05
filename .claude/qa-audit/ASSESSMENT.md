@@ -111,7 +111,7 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 | Financial statements | **PRESENT** | Year-end student/family + 501(c)(3) giving statements |
 | Waivers & policies | **PRESENT** | Digital waivers + per-rule acknowledgment |
 | Staff/teacher roles | **PARTIAL** | admin vs teacher tiers exist, but coarse — a teacher sees all students, not just their classes |
-| Management reporting (revenue/enrollment/**AR aging**) | **PARTIAL→improved** | ✅ AR aging report now built (`/reports/aging`, FIFO 30/60/90/90+ buckets); retention analytics + ticket revenue exist; still no revenue/enrollment reports or CSV export |
+| Management reporting (revenue/enrollment/**AR aging**/**export**) | **PARTIAL→improved** | ✅ AR aging report (`/reports/aging`, FIFO buckets) + ✅ CSV export (roster + transactions) now built; retention analytics + ticket revenue exist; still no revenue-by-month/enrollment summary reports |
 
 **Top parity risks for fall, ranked:** (1) auto-pay/cards-on-file — manual collection is the daily tax; (2) AR aging report — the owner will want a "who owes, how overdue" view to chase tuition; (3) confirm SMTP/Twilio are configured so receipts/reminders actually send (currently save-only).
 
@@ -158,5 +158,8 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 6 — DONE (whole-app runtime verification)
 - **Swept the entire client-side runtime** (see the Functional section): node-checked every rendered inline script (56 across 84 pages), cross-checked all 147 `fetch()` calls against the route map (0 dead endpoints), and browser-loaded 13 JS-heavy staff pages — **all clean, zero console errors, zero failed requests**. Confirms P1-4 was the only runtime break; the app's JS layer is now sound end-to-end.
 
+### Iteration 7 — DONE (verified live; smoke 37/37)
+- **CSV export built** (`/api/reports/students.csv` + `/api/reports/transactions.csv`, staff-only): roster export (contacts, DOB, emergency, allergies, balance) and transaction ledger export (optional `?start=&end=` range) with proper attachment headers. "Export CSV" buttons on the Students and Payments pages; an "Aging" shortcut added to Payments too. Closes the "get my data out" reporting gap Jackrabbit covers. Verified live — real roster CSV downloads with correct data; parents blocked (403).
+
 ### Remaining for next iterations
-- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~50 staff-side `prompt()` flows → modals, per-page `aria-label`s, revenue/enrollment reports + CSV export prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
+- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), revenue-by-month/enrollment summary reports, ~50 staff-side `prompt()` flows → modals, per-page `aria-label`s prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.

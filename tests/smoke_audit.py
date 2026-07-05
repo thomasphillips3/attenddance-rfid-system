@@ -180,6 +180,33 @@ def run_csrf():
                b'Cross-origin' not in resp.data, "blocked a no-Origin request", "P2")
 
 
+def run_csv_exports(ids):
+    """CSV exports: staff get a well-formed CSV; parents are blocked."""
+    # Parent blocked.
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        for path in ("/api/reports/students.csv", "/api/reports/transactions.csv"):
+            r = c.get(path)
+            record(f"Parent blocked from {path} -> {r.status_code}",
+                   r.status_code in (401, 403), f"got {r.status_code}", "P0")
+    # Admin gets CSV with header + the seeded students.
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r = c.get("/api/reports/students.csv")
+        ct = r.headers.get("Content-Type", "")
+        body = r.get_data(as_text=True)
+        ok = r.status_code == 200 and "text/csv" in ct and body.startswith("Last name,First name")
+        record(f"Students CSV export well-formed -> {r.status_code}, ct={ct.split(';')[0]}",
+               ok, f"status={r.status_code} ct={ct} head={body[:40]!r}", "P2")
+        has_dispo = "attachment" in r.headers.get("Content-Disposition", "")
+        record("Students CSV has attachment disposition", has_dispo,
+               r.headers.get("Content-Disposition", "<none>"), "P3")
+        r2 = c.get("/api/reports/transactions.csv")
+        record(f"Transactions CSV export well-formed -> {r2.status_code}",
+               r2.status_code == 200 and r2.get_data(as_text=True).startswith("Date,Student"),
+               f"head={r2.get_data(as_text=True)[:40]!r}", "P2")
+
+
 def run_js_syntax():
     """Node-check the inline <script> of JS-heavy pages. A rendered-JS syntax
     error (e.g. a bad string escape) silently kills a whole page's behavior and
@@ -242,6 +269,7 @@ def main():
     ids = seed()
     run_idor(ids)
     run_csrf()
+    run_csv_exports(ids)
     run_js_syntax()
     run_smoke()
 

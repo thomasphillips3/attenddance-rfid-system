@@ -7,9 +7,14 @@
         <h1 class="font-display text-3xl text-ink leading-tight mt-1">Students</h1>
         <p class="mt-1 text-sm text-ink-2">Manage your dance studio's students.</p>
     </div>
-    <button onclick="openAddModal()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">
-        <i class="fas fa-user-plus"></i>Add Student
-    </button>
+    <div class="flex flex-wrap gap-2">
+        <a href="/api/reports/students.csv" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">
+            <i class="fas fa-file-csv" aria-hidden="true"></i>Export CSV
+        </a>
+        <button onclick="openAddModal()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">
+            <i class="fas fa-user-plus"></i>Add Student
+        </button>
+    </div>
 </div>
 
 <div class="relative mb-5 max-w-md">

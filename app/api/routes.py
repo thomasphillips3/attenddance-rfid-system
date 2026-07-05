@@ -842,6 +842,75 @@ def aging_report():
     })
 
 
+def _csv_response(filename, header, rows):
+    """Build a downloadable CSV Response from a header + iterable of row lists."""
+    import csv
+    import io
+
+    from flask import Response
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(header)
+    for r in rows:
+        writer.writerow(r)
+    return Response(
+        buf.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
+@bp.route('/reports/students.csv', methods=['GET'])
+@login_required
+def export_students_csv():
+    """Roster export — for the accountant, mail-merge, or an owner-held backup."""
+    err = _staff_only()
+    if err:
+        return err
+    students = Student.query.filter_by(is_active=True).order_by(
+        Student.last_name, Student.first_name).all()
+    bals = calc_balance_bulk([s.id for s in students])
+    header = ['Last name', 'First name', 'Family', 'Date of birth', 'Age',
+              'Parent email', 'Parent phone', 'Emergency contact', 'Emergency phone',
+              'Allergies', 'Special needs', 'Balance']
+    rows = ([
+        s.last_name, s.first_name, s.family.name if s.family else '',
+        s.date_of_birth.isoformat() if s.date_of_birth else '', s.age if s.age is not None else '',
+        s.parent_email or '', s.parent_phone or '',
+        s.emergency_contact_name or '', s.emergency_contact_phone or '',
+        s.allergies or '', s.special_needs or '', f"{bals[s.id]['balance']:.2f}",
+    ] for s in students)
+    return _csv_response(f'students-{date.today().isoformat()}.csv', header, rows)
+
+
+@bp.route('/reports/transactions.csv', methods=['GET'])
+@login_required
+def export_transactions_csv():
+    """Transaction ledger export for bookkeeping/taxes. Optional ?start=&end= (YYYY-MM-DD)."""
+    err = _staff_only()
+    if err:
+        return err
+    q = Transaction.query
+    for param, op in (('start', '>='), ('end', '<=')):
+        val = request.args.get(param)
+        if val:
+            try:
+                d = datetime.strptime(val, '%Y-%m-%d').date()
+                q = q.filter(Transaction.transaction_date >= d if op == '>='
+                             else Transaction.transaction_date <= d)
+            except ValueError:
+                pass
+    txns = q.order_by(Transaction.transaction_date, Transaction.created_at).all()
+    header = ['Date', 'Student', 'Type', 'Category', 'Amount', 'Method', 'Description']
+    rows = ([
+        t.transaction_date.isoformat(), t.student.full_name if t.student else '',
+        t.type, t.category, f"{float(t.amount):.2f}",
+        t.payment_method if t.payment_method and t.payment_method != 'n/a' else '',
+        t.description or '',
+    ] for t in txns)
+    return _csv_response(f'transactions-{date.today().isoformat()}.csv', header, rows)
+
+
 @bp.route('/students/<int:student_id>/ledger', methods=['GET'])
 @login_required
 def get_student_ledger(student_id):

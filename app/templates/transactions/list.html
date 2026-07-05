@@ -10,6 +10,8 @@
         <p class="mt-1 text-sm text-ink-2">Track charges, payments, and balances.</p>
     </div>
     <div class="flex flex-wrap gap-2">
+        <a href="/api/reports/transactions.csv" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2"><i class="fas fa-file-csv" aria-hidden="true"></i>Export CSV</a>
+        <a href="/reports/aging" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2"><i class="fas fa-file-invoice-dollar" aria-hidden="true"></i>Aging</a>
         <button onclick="openChargeModal()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border-[1.5px] border-danger text-danger text-sm font-bold hover:bg-danger/5"><i class="fas fa-file-invoice-dollar"></i>Add Charge</button>
         <button onclick="openPaymentModal()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-ok text-white text-sm font-bold hover:opacity-90 shadow-sm"><i class="fas fa-money-bill-wave"></i>Add Payment</button>
         <button onclick="openBulkModal()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-users"></i>Bulk Charge</button>
