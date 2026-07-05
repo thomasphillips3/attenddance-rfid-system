@@ -1253,6 +1253,51 @@ def run_amount_validation(ids):
                    rr.status_code == want and rr.status_code < 500, f"got {rr.status_code} (want {want})", "P2")
 
 
+def run_recital_money(ids):
+    """Recital-adjacent money: charging a costume fee must be idempotent (a
+    double-click can't double-charge every dancer), and ticket-order totals must
+    be right (qty x price), splitting paid revenue from pending."""
+    from datetime import time as _time
+    from app.models import (User, Costume, CostumeAssignment, Performance,
+                            PerformanceGroup, TicketType, Transaction)
+    a, b = ids["child_a"], ids["child_b"]
+    with app.app_context():
+        cst = Costume(name="Recital Tutu", fee=45)
+        db.session.add(cst)
+        db.session.flush()
+        db.session.add_all([CostumeAssignment(costume_id=cst.id, student_id=a),
+                            CostumeAssignment(costume_id=cst.id, student_id=b)])
+        g = PerformanceGroup(name="Ticket Co")
+        db.session.add(g)
+        db.session.flush()
+        p = Performance(title="Ticket Show", group_id=g.id)
+        db.session.add(p)
+        db.session.flush()
+        tt = TicketType(performance_id=p.id, name="GA", price=12.50)
+        db.session.add(tt)
+        db.session.commit()
+        cid, pid, ttid = cst.id, p.id, tt.id
+
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r1 = (c.post(f"/api/costumes/{cid}/charge").get_json() or {}).get("count")
+        r2 = (c.post(f"/api/costumes/{cid}/charge").get_json() or {}).get("count")  # double-click
+        with app.app_context():
+            n = Transaction.query.filter_by(category="costumes",
+                                            description="Costume: Recital Tutu").count()
+        record(f"Costume charge is idempotent (#1={r1} #2={r2}, {n} charges)",
+               r1 == 2 and r2 == 0 and n == 2, f"{r1}/{r2}/{n}", "P2")
+        # Ticket totals: 3 paid + 2 unpaid -> 5 tickets, $37.50 revenue, $25 pending.
+        c.post(f"/api/performances/{pid}/ticket-orders",
+               json={"ticket_type_id": ttid, "student_id": a, "quantity": 3, "paid": True})
+        c.post(f"/api/performances/{pid}/ticket-orders",
+               json={"ticket_type_id": ttid, "student_id": b, "quantity": 2, "paid": False})
+        summ = (c.get(f"/api/performances/{pid}/ticket-orders").get_json() or {}).get("summary", {})
+        record(f"Ticket totals correct (tickets={summ.get('total_tickets')} rev={summ.get('revenue')} pending={summ.get('pending')})",
+               summ.get("total_tickets") == 5 and summ.get("revenue") == "37.50"
+               and summ.get("pending") == "25.00", str(summ), "P2")
+
+
 def run_transaction_delete(ids):
     """An admin must be able to correct a mistake by deleting a posted charge or
     payment, and the balance must recompute. A parent must NOT be able to delete
@@ -1882,6 +1927,7 @@ def main():
     run_registration_flow()
     run_amount_validation(ids)
     run_payment_plans(ids)
+    run_recital_money(ids)
     run_transaction_delete(ids)
     run_input_robustness(ids)
     run_parent_input_robustness(ids)
