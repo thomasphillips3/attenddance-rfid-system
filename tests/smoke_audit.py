@@ -582,8 +582,10 @@ def run_password_reset():
 
     with app.app_context():
         from app.models import User
-        uid = User.query.filter_by(email='a@x.com').first().id
-        token = _reset_serializer().dumps(uid)
+        u0 = User.query.filter_by(email='a@x.com').first()
+        uid = u0.id
+        # Token must embed the current password-hash slice (single-use scheme).
+        token = _reset_serializer().dumps({'uid': uid, 'pw': u0.password_hash[-16:]})
         bad = token[:-3] + 'zzz'
 
     with app.test_client() as c:
@@ -597,6 +599,16 @@ def run_password_reset():
                     data={'password': 'brandnewpw', 'confirm_password': 'brandnewpw'},
                     follow_redirects=False)
         record(f"Reset sets a new password -> {rr.status_code}", rr.status_code == 302, "", "P1")
+    # Single-use: replaying the SAME token must NOT reset again (the hash changed).
+    with app.test_client() as c:
+        replay = c.post('/auth/reset-password/' + token,
+                        data={'password': 'attackerpw', 'confirm_password': 'attackerpw'},
+                        follow_redirects=False)
+    with app.app_context():
+        from app.models import User as _U
+        took = _U.query.filter_by(email='a@x.com').first().check_password('attackerpw')
+    record("Reset token is single-use (replay after use is rejected)",
+           not took, "a used reset link was replayable — account takeover", "P0")
     with app.test_client() as c:  # fresh client (not logged in)
         ok = c.post('/auth/login', data={'username': 'a@x.com', 'password': 'brandnewpw'},
                     follow_redirects=False)

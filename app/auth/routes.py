@@ -252,7 +252,10 @@ def forgot_password():
             return render_template('auth/forgot_password.html')
         user = User.query.filter_by(email=email, is_active=True).first()
         if user:
-            token = _reset_serializer().dumps(user.id)
+            # Embed a slice of the current password hash so the token is
+            # single-use: once the password changes, the slice no longer matches
+            # and the link can't be replayed (even within its 1-hour window).
+            token = _reset_serializer().dumps({'uid': user.id, 'pw': user.password_hash[-16:]})
             link = url_for('auth.reset_password', token=token, _external=True)
             body = (f"Hi {user.first_name},\n\nSomeone requested a password reset for your "
                     f"LaShelle's School of Dance account. Use the link below to set a new "
@@ -274,16 +277,18 @@ def reset_password(token):
         return redirect(url_for('main.dashboard'))
     from itsdangerous import BadSignature, SignatureExpired
     try:
-        user_id = _reset_serializer().loads(token, max_age=3600)
+        data = _reset_serializer().loads(token, max_age=3600)
     except SignatureExpired:
         flash('That reset link has expired — please request a new one.', 'error')
         return redirect(url_for('auth.forgot_password'))
     except BadSignature:
         flash('That reset link is invalid.', 'error')
         return redirect(url_for('auth.forgot_password'))
-    user = User.query.get(user_id)
-    if not user or not user.is_active:
-        flash('That reset link is invalid.', 'error')
+    user = User.query.get(data.get('uid')) if isinstance(data, dict) else None
+    # Reject if the account is gone/inactive, or if the password has changed since
+    # the link was issued (single-use: a used or replayed link no longer matches).
+    if not user or not user.is_active or data.get('pw') != (user.password_hash or '')[-16:]:
+        flash('That reset link is invalid or has already been used.', 'error')
         return redirect(url_for('auth.forgot_password'))
     if request.method == 'POST':
         pw = request.form.get('password', '')
