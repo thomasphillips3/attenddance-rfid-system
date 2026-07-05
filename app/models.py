@@ -46,11 +46,16 @@ class User(UserMixin, db.Model):
     
     @property
     def is_parent(self):
-        return self.role == 'parent'
+        # An admin is never treated as a parent, so a stale role can't route an
+        # admin into the read-only parent portal (defends the is_admin/role split
+        # that let the seeded admin's role drift to 'teacher').
+        return self.role == 'parent' and not self.is_admin
 
     @property
     def is_staff(self):
-        return self.role in ('admin', 'teacher')
+        # An admin is always staff regardless of role — the is_admin bool and the
+        # role string can't diverge into an "admin locked out of staff pages" state.
+        return self.is_admin or self.role in ('admin', 'teacher')
 
     def get_children(self):
         """Get students linked to this parent user."""

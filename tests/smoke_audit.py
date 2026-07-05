@@ -2560,6 +2560,25 @@ def run_registrations_pagination():
                len(p2.get("registrations", [])) >= 10, str(p2.get("pagination")), "P3")
 
 
+def run_admin_identity_invariants():
+    """Defend the is_admin/role split that caused the notification bug: an
+    is_admin user must always be staff and never a parent, even if its role
+    string drifts to a non-admin value. Verifies the User.is_staff / is_parent
+    properties are robust by construction (not merely by keeping role in sync)."""
+    from app.models import User
+    weird = User(username="x", email="x@x.com", first_name="X", last_name="Y",
+                 is_admin=True, role="parent")   # contradictory role
+    adm = User(username="y", email="y@x.com", first_name="A", last_name="B",
+               is_admin=True, role="admin")
+    par = User(username="z", email="z@x.com", first_name="P", last_name="Q",
+               is_admin=False, role="parent")
+    ok = (weird.is_staff and not weird.is_parent
+          and adm.is_staff and not adm.is_parent
+          and par.is_parent and not par.is_staff)
+    record("is_admin user is always staff, never parent (role drift can't lock them out)",
+           ok, f"weird staff={weird.is_staff} parent={weird.is_parent}", "P2")
+
+
 def run_admin_role_consistency():
     """The default admin must be created with role='admin' (not just is_admin=True).
     Admin email notifications query filter_by(role='admin'), so a role/is_admin
@@ -2940,6 +2959,7 @@ def main():
     run_registrations_pagination()
     run_registration_notify_throttle()
     run_admin_role_consistency()
+    run_admin_identity_invariants()
     run_js_syntax()
     run_smoke()
     run_empty_state()
