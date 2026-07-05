@@ -225,6 +225,46 @@ def run_multichild_invite_merge():
                "leftover invites", "P2")
 
 
+def run_enrollment(ids):
+    """Class enrollment (fall-critical): enroll a student, dedup a repeat,
+    unenroll, and confirm counts. Parents can't enroll."""
+    from datetime import time as _time
+    from app.models import DanceClass, ClassEnrollment, User
+
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        dc = DanceClass(name="Ballet I", day_of_week=0, start_time=_time(17, 0),
+                        end_time=_time(18, 0), instructor_id=admin.id, max_students=10)
+        db.session.add(dc)
+        db.session.commit()
+        cid = dc.id
+    sid = ids["child_a"]
+
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r = c.post(f"/api/classes/{cid}/enroll", json={"student_id": sid})
+        record(f"Enroll a student -> {r.status_code}", r.status_code == 201, r.get_data(as_text=True)[:60], "P1")
+        # duplicate enroll is skipped, not 500
+        r2 = c.post(f"/api/classes/{cid}/enroll", json={"student_id": sid})
+        d2 = r2.get_json() or {}
+        record(f"Duplicate enroll skipped (no 500) -> {r2.status_code}",
+               r2.status_code == 201 and d2.get("skipped"), str(d2)[:60], "P1")
+        with app.app_context():
+            eid = ClassEnrollment.query.filter_by(class_id=cid, student_id=sid, is_active=True).first().id
+            count = ClassEnrollment.query.filter_by(class_id=cid, is_active=True).count()
+        record(f"Exactly one active enrollment (got {count})", count == 1, "", "P1")
+        # unenroll
+        r3 = c.delete(f"/api/enrollments/{eid}")
+        record(f"Unenroll -> {r3.status_code}", r3.status_code == 200, "", "P2")
+        with app.app_context():
+            still = ClassEnrollment.query.filter_by(class_id=cid, is_active=True).count()
+        record(f"Unenroll removed the active enrollment (now {still})", still == 0, "", "P1")
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        r = c.post(f"/api/classes/{cid}/enroll", json={"student_id": sid})
+        record(f"Parent cannot enroll -> {r.status_code}", r.status_code == 403, f"got {r.status_code}", "P0")
+
+
 def run_deactivation_revokes_session():
     """Deactivating an account must revoke access immediately, not only block
     fresh logins — a just-fired teacher shouldn't keep their live session."""
@@ -622,6 +662,7 @@ def main():
     run_attendance(ids)
     run_message_blast()
     run_multichild_invite_merge()
+    run_enrollment(ids)
     run_deactivation_revokes_session()
     run_password_reset()
     run_login_by_email()
