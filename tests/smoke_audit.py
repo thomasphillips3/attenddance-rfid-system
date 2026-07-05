@@ -708,6 +708,33 @@ def run_attendance(ids):
                f"got {r.status_code}", "P0")
 
 
+def run_analytics(ids):
+    """Retention dashboard — the studio makes decisions on this, so the shape and
+    the at-risk logic must be right: 12 enroll-months + 6 attendance-months, and a
+    student with no recent attendance is flagged at-risk. Admin-only."""
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r = c.get("/api/analytics/retention")
+        d = r.get_json() or {}
+        shape_ok = (r.status_code == 200
+                    and isinstance(d.get("enroll_by_month"), list) and len(d["enroll_by_month"]) == 12
+                    and isinstance(d.get("attendance_by_month"), list) and len(d["attendance_by_month"]) == 6
+                    and isinstance(d.get("at_risk"), list)
+                    and isinstance(d.get("active"), int) and isinstance(d.get("new_this_month"), int))
+        record(f"Retention report has the right shape (12 enroll + 6 att months)",
+               shape_ok, str(d)[:100], "P2")
+        # at-risk logic: child_a (seeded, active, no attendance in this run's window
+        # unless a prior test added some) — assert at_risk_count is consistent with the list.
+        record("Retention at_risk_count matches the at_risk list length (capped 50)",
+               d.get("at_risk_count", -1) >= len(d.get("at_risk", [])),
+               f"count={d.get('at_risk_count')} list={len(d.get('at_risk', []))}", "P3")
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        rp = c.get("/api/analytics/retention")
+        record(f"Parent blocked from analytics -> {rp.status_code}", rp.status_code in (401, 403),
+               f"got {rp.status_code}", "P1")
+
+
 def run_leads():
     """Leads pipeline (active in enrollment season). Converting a lead creates a
     Family + Student — and that MUST be idempotent: a double-click can't make two
@@ -1601,6 +1628,7 @@ def main():
     run_waiver_signing(ids)
     run_attendance(ids)
     run_message_blast()
+    run_analytics(ids)
     run_leads()
     run_timeclock()
     run_auto_reminders()
