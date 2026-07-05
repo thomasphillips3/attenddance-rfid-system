@@ -4540,7 +4540,17 @@ def promote_waitlist(wid):
     if err:
         return err
     w = WaitlistEntry.query.get_or_404(wid)
-    if not ClassEnrollment.query.filter_by(class_id=w.class_id, student_id=w.student_id, is_active=True).first():
+    already = ClassEnrollment.query.filter_by(
+        class_id=w.class_id, student_id=w.student_id, is_active=True).first()
+    if not already:
+        # Respect capacity — promoting into a still-full class would overbook and
+        # defeat the point of the waitlist. Free a spot (unenroll) or raise the cap first.
+        cls = w.dance_class
+        capacity = (cls.max_students or 0) if cls else 0
+        if capacity and ClassEnrollment.query.filter_by(
+                class_id=w.class_id, is_active=True).count() >= capacity:
+            return jsonify({'error': f'{cls.name} is full ({capacity} max). '
+                                     'Free a spot or raise the capacity before promoting.'}), 400
         db.session.add(ClassEnrollment(student_id=w.student_id, class_id=w.class_id))
     w.status = 'enrolled'
     AuditLog.record(current_user.id, 'waitlist.promote',

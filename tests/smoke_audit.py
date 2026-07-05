@@ -2742,6 +2742,26 @@ def run_class_capacity():
            small_n == 2 and len(d.get("full", [])) == 1 and unlim_n == 3,
            f"small={small_n} full={d.get('full')} unlim={unlim_n}", "P1")
 
+    # The waitlist promote path must ALSO respect capacity (else you overbook via
+    # the waitlist, defeating the point). The small class is now full (2/2).
+    from app.models import WaitlistEntry
+    with app.app_context():
+        extra = Student(first_name="CapWait", last_name="X",
+                        family_id=Student.query.get(sids[0]).family_id, is_active=True)
+        db.session.add(extra)
+        db.session.flush()
+        w = WaitlistEntry(class_id=scid, student_id=extra.id, status="waiting")
+        db.session.add(w)
+        db.session.commit()
+        wid = w.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        pr = c.post(f"/api/waitlist/{wid}/promote")
+    with app.app_context():
+        after = ClassEnrollment.query.filter_by(class_id=scid, is_active=True).count()
+    record(f"Waitlist promote into a full class is blocked (no overbook) -> {pr.status_code}",
+           pr.status_code == 400 and after == 2, f"status={pr.status_code} enrollments={after}", "P1")
+
 
 def run_recurring_charge_edit():
     """An auto-billing rule must be editable (raise tuition / shift the billing
