@@ -94,6 +94,11 @@ The most-load-bearing untrusted flow for fall was reviewed end-to-end and comes 
 - **All fetch endpoints exist:** 147 `fetch('/api/...')` calls across the templates cross-checked against the registered route map — 0 dead endpoints (the only "unmatched" were string-concatenation prefixes whose real routes exist).
 - **Browser runtime sweep:** loaded 13 JS-heavy staff pages (transactions, pending, recital-hub, company, analytics, calendar, waivers, skills, leads, makeups, timeclock, settings, dashboard) + the parent portal in a real browser — **zero console errors, zero failed API requests**.
 
+**Deletion / cascade integrity — audited (all 30 DELETE endpoints), sound:**
+- SQLite FK enforcement is off (no `PRAGMA foreign_keys=ON`), so orphaned rows are *possible* in principle — but the app avoids them by design: **containers soft-delete** (student, location, performance group, costume, skill → `is_active=False`), and **family/class have no delete endpoint at all**, so students/enrollments can't be orphaned by removing a parent.
+- The one hard-delete with dependents (`delete_ticket_type`) explicitly removes its `TicketOrder`s first — verified empirically (deleting a type with a live order leaves 0 orphaned orders).
+- Net: no cascade/orphan bug. (Flipping on FK enforcement is *not* recommended without adding `ON DELETE` rules first — the current manual-cleanup pattern assumes it's off, so enabling it would make existing hard-deletes error.)
+
 Server-side areas most likely to hide bugs; no new P0/P1 beyond what's already fixed:
 - **Migrations are idempotent** (`app/migrations.py`): every `ALTER TABLE` is guarded by a column-existence check and is additive-only; `db.create_all()` handles new tables before migrations run. Fresh DB and existing prod DB both boot.
 - **Silent failures:** the `except Exception:` blocks log via `logger.exception`; the one `except: pass` (`email.py`) is on `smtp.quit()` in a `finally` — harmless, real send errors propagate.
@@ -180,6 +185,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 
 ### Iteration 10 — DONE (smoke 53/53)
 - **Audited + verified the public self-registration flow** (the critical fall-enrollment path): confirmed no stored XSS (admin page escapes all fields), no mass assignment on approval, idempotent. Hardened: email-format validation on submit, and approval now filters to existing class IDs (prevents dangling enrollments that would 500 the roster). Added a full submit→queue→approve→create regression (7 checks).
+
+### Iteration 11 — DONE (deletion/cascade integrity audit)
+- **Audited all 30 DELETE endpoints + cascade behavior** (see the Deletion section): sound. Containers soft-delete; family/class aren't deletable; the one hard-delete-with-dependents cleans up first (verified empirically — 0 orphaned orders). No cascade/orphan bug despite SQLite FK enforcement being off. This clears the last major server-side risk area I hadn't checked.
 
 ### Remaining for next iterations
 - P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~50 staff-side `prompt()` flows → modals, per-page `aria-label`s, P3-4 Subresource Integrity on CDN scripts prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
