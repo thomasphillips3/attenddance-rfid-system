@@ -2,6 +2,15 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# The studio is in Michigan (Eastern) and holds classes in the evening. Fly runs
+# UTC by default, so naive date.today()/datetime.now() would attribute an 8pm+ ET
+# class's attendance and late-evening payments to the NEXT calendar day. Install
+# tzdata and set the container timezone so business dates are local. (utcnow()
+# stays UTC for system/audit timestamps.) Keep this in sync with config TIMEZONE.
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
+    && rm -rf /var/lib/apt/lists/*
+ENV TZ=America/New_York
+
 COPY requirements-deploy.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
