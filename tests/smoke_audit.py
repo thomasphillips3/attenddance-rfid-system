@@ -1019,6 +1019,42 @@ def run_timeclock():
                f"got {rp.status_code}", "P1")
 
 
+def run_get_queryparam_fuzz(ids):
+    """Companion to the mutation fuzz for the read surface: every /api GET must
+    tolerate malformed query params (a garbage ?year=/?page=/?start= must not 500
+    a report, paginated list, or CSV export). Uses seeded ids for the param routes
+    and bogus ids elsewhere, then hits each with a battery of bad query strings."""
+    import re as _re
+    qs_battery = ["year=abc", "page=xyz", "per_page=-1", "limit=notnum", "status=%00",
+                  "start=notadate&end=alsobad", "month=99", "active=maybe",
+                  "year=999999999999999999", "page=0", "q=" + "A" * 4000]
+    sub_map = {"student_id": ids["child_a"], "family_id": ids["fam_a"]}
+    with app.app_context():
+        gets = []
+        for r in app.url_map.iter_rules():
+            if "GET" not in r.methods or not str(r).startswith("/api/"):
+                continue
+            url = str(r)
+            for k, v in sub_map.items():
+                url = url.replace(f"<int:{k}>", str(v))
+            url = _re.sub(r"<[^>]*>", "424242", url)
+            gets.append(url)
+    bad = []
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        for url in gets:
+            for qs in qs_battery:
+                try:
+                    if c.get(f"{url}?{qs}").status_code >= 500:
+                        bad.append(f"{url}?{qs}")
+                        break
+                except Exception as e:  # noqa: BLE001
+                    bad.append(f"{url}!{type(e).__name__}")
+                    break
+    record(f"Every GET endpoint tolerates malformed query params ({len(gets)} fuzzed)",
+           not bad, f"5xx on: {bad[:12]}", "P2")
+
+
 def run_full_mutation_fuzz():
     """Comprehensive robustness guarantee: fuzz EVERY /api POST/PUT/PATCH endpoint
     with malformed payloads (no body, empty, garbage-typed) as admin, and assert
@@ -1955,6 +1991,7 @@ def main():
     run_attendance(ids)
     run_message_blast(ids)
     run_full_mutation_fuzz()
+    run_get_queryparam_fuzz(ids)
     run_skills(ids)
     run_analytics(ids)
     run_leads()
