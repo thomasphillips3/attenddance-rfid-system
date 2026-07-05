@@ -3236,7 +3236,9 @@ def cron_run():
     and auto-reminders. Token from Setting 'cron_token' or env CRON_TOKEN."""
     token = Setting.get('cron_token', '') or current_app.config.get('CRON_TOKEN') or os.environ.get('CRON_TOKEN', '')
     provided = request.args.get('token') or request.headers.get('X-Cron-Token', '')
-    if not token or provided != token:
+    # Constant-time compare to avoid leaking the token via response timing; an
+    # unset token (`not token`) always rejects rather than accepting an empty one.
+    if not token or not secrets.compare_digest(str(provided), str(token)):
         return jsonify({'error': 'Invalid or missing cron token'}), 403
     from app import _process_auto_reminders, _process_recurring_charges
     _process_recurring_charges()

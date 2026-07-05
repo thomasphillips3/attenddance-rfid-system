@@ -56,7 +56,7 @@ Severity counts: **2 P0, 3 P1, 5 P2, 3 P3** (this pass; billing/bug/parity depth
 - **[P2-2] 126 raw `prompt()/alert()/confirm()` calls** across ~20 templates for data entry and errors. `confirm()` on deletes is tolerable; `prompt()` for data entry (recital new-year, late fees, payment-plan create, donate, makeup-request) is unprofessional for a paying client. Replace the `prompt()` flows with real modals.
 - **[P2-3] Four parallel toast/flash systems** (base flash, parent `toast()`, recital `msg()`, pending `showMsg()`). Unify into one helper for consistent feedback.
 - **[P2-4] Zero `aria-label`s app-wide** — every icon-only button (hamburger, close X, chevrons, search, logout) is unnamed for screen readers. Add labels; it's cheap.
-- **[P2-5] Verify the `/api/cron/run` token compare is constant-time and rejects empty tokens** (`routes.py:3099`) — confirm an unset `cron_token` can't be bypassed with an empty string. (Needs a focused read next iteration.)
+- **[P2-5] `/api/cron/run` token compare — ✅ FIXED.** The `not token` guard already rejected an unset token (no empty-string bypass), but the comparison used `!=`. Switched to `secrets.compare_digest` (constant-time) to avoid leaking the token via response timing. Verified: no/wrong token → 403, correct → 200.
 
 ## P3 — Polish
 
