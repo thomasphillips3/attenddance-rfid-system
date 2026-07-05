@@ -1,5 +1,8 @@
 """Authentication routes for AttenDANCE system."""
 
+import threading
+import time
+from collections import defaultdict
 from datetime import datetime
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
@@ -9,6 +12,40 @@ from urllib.parse import urlparse
 from app import db
 from app.auth import bp
 from app.models import ParentStudent, Student, User
+
+# --- Login brute-force throttle (in-memory, per-username) ---
+# Single gthread worker on Fly, so a process-local dict + lock is enough. Keyed on
+# username (not IP): studio families share the studio's IP, so an IP lockout would
+# lock them all out; a per-account lockout targets the account under attack. The
+# threshold is generous and the cooldown short, so a legit user who fumbles their
+# password a few times isn't locked out, but automated guessing is throttled to a
+# useless rate. Clears on a successful login.
+_login_attempts: dict[str, list[float]] = defaultdict(list)
+_login_lock = threading.Lock()
+_LOGIN_MAX_FAILS = 8      # failures allowed within the window before cooldown
+_LOGIN_WINDOW = 900.0     # 15 min sliding window
+_LOGIN_COOLDOWN = 300.0   # 5 min lockout once the threshold is hit
+
+
+def _login_lockout_remaining(key: str) -> int:
+    """Seconds this account must wait before another login attempt, or 0."""
+    now = time.monotonic()
+    with _login_lock:
+        recent = [t for t in _login_attempts.get(key, []) if now - t < _LOGIN_WINDOW]
+        _login_attempts[key] = recent
+        if len(recent) >= _LOGIN_MAX_FAILS:
+            return max(0, int(_LOGIN_COOLDOWN - (now - max(recent))))
+    return 0
+
+
+def _record_login_failure(key: str) -> None:
+    with _login_lock:
+        _login_attempts[key].append(time.monotonic())
+
+
+def _clear_login_failures(key: str) -> None:
+    with _login_lock:
+        _login_attempts.pop(key, None)
 
 
 @bp.route('/login', methods=['GET', 'POST'])
@@ -34,6 +71,17 @@ def login():
             flash(error_msg, 'error')
             return render_template('auth/login.html')
 
+        # Throttle brute-force: after too many recent failures for this account,
+        # require a cooldown before another attempt.
+        throttle_key = username.lower()
+        wait = _login_lockout_remaining(throttle_key)
+        if wait > 0:
+            error_msg = f'Too many attempts. Please wait {wait} seconds and try again.'
+            if request.is_json:
+                return jsonify({'success': False, 'message': error_msg}), 429
+            flash(error_msg, 'error')
+            return render_template('auth/login.html')
+
         # Accept username OR email. Invited parents get an auto-generated
         # `parent-<code>` username they never see, and they register with an
         # email — so email login is the only way they can get back in after
@@ -43,6 +91,7 @@ def login():
             user = User.query.filter_by(email=username).first()
 
         if user is None or not user.check_password(password):
+            _record_login_failure(throttle_key)
             error_msg = 'Invalid username or password'
             if request.is_json:
                 return jsonify({'success': False, 'message': error_msg}), 401
@@ -56,6 +105,7 @@ def login():
             flash(error_msg, 'error')
             return render_template('auth/login.html')
 
+        _clear_login_failures(throttle_key)
         login_user(user, remember=remember_me)
         user.last_login = datetime.utcnow()
         db.session.commit()

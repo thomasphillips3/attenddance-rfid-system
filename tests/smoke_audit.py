@@ -613,6 +613,51 @@ def run_deactivation_revokes_session():
                f"got {r.status_code} (200 = still had access)", "P2")
 
 
+def run_login_throttle():
+    """Login must throttle brute-force: after several failures for one account, a
+    cooldown kicks in (even a correct password is blocked until it passes), the
+    throttle is per-account (doesn't lock out other users), and a real login clears
+    it. Uses a dedicated user + clears its counter so it can't affect other tests."""
+    from app.auth.routes import _clear_login_failures, _LOGIN_MAX_FAILS
+    from app.models import User
+    with app.app_context():
+        if not User.query.filter_by(username="throttle_u").first():
+            u = User(username="throttle_u", email="throttle@x.com", role="parent",
+                     first_name="Th", last_name="Ro", is_active=True)
+            u.set_password("realpassword")
+            db.session.add(u)
+            db.session.commit()
+    _clear_login_failures("throttle_u")
+    try:
+        # Exhaust the allowed failures, then the next attempt is throttled (429).
+        codes = []
+        for _ in range(_LOGIN_MAX_FAILS):
+            with app.test_client() as c:
+                codes.append(c.post("/auth/login", json={"username": "throttle_u", "password": "nope"}).status_code)
+        with app.test_client() as c:
+            over = c.post("/auth/login", json={"username": "throttle_u", "password": "nope"}).status_code
+        record(f"Login throttles brute-force ({_LOGIN_MAX_FAILS} fails then {over})",
+               set(codes) == {401} and over == 429, f"codes={set(codes)} over={over}", "P1")
+        # Even the CORRECT password is blocked while throttled.
+        with app.test_client() as c:
+            locked = c.post("/auth/login", json={"username": "throttle_u", "password": "realpassword"}).status_code
+        record(f"Throttle blocks even a correct password -> {locked}", locked == 429,
+               f"got {locked}", "P2")
+        # Per-account: a DIFFERENT user is unaffected.
+        with app.test_client() as c:
+            other = c.post("/auth/login", json={"username": "admin", "password": "admin123"}).status_code
+        record(f"Throttle is per-account (admin unaffected) -> {other}", other == 200,
+               f"got {other}", "P1")
+        # A real login (after clearing) resets the counter.
+        _clear_login_failures("throttle_u")
+        with app.test_client() as c:
+            ok = c.post("/auth/login", json={"username": "throttle_u", "password": "realpassword"}).status_code
+        record(f"Cleared throttle lets a valid login through -> {ok}", ok == 200,
+               f"got {ok}", "P2")
+    finally:
+        _clear_login_failures("throttle_u")
+
+
 def run_password_reset():
     """Self-service password reset: request page degrades gracefully without
     SMTP, the signed token resets the password, and old creds stop working."""
@@ -1799,6 +1844,7 @@ def main():
     run_enrollment(ids)
     run_deactivation_revokes_session()
     run_password_reset()
+    run_login_throttle()
     run_login_by_email()
     run_registration_flow()
     run_amount_validation(ids)
