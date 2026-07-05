@@ -276,6 +276,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 25 — DONE
 - **Scoped the one remaining item — auto-pay** ([AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)): decision-ready design so it can be greenlit/deferred. Grounded in the app's existing Square integration (customer helper + idempotent recurring scheduler already exist), it lays out the Cards-API/Web-Payments-SDK approach, `SavedCard` model, charge-on-schedule + failure handling, PCI (SAQ-A) posture, a ~3–4 day phased build, risks, and the recommendation to launch fall on manual and build auto-pay as the first post-launch project. This turns "what remains" into an actionable decision for the one open item.
 
+### Iteration 38 — DONE (billing 20/20)
+- **Regression-guarded recurring-charge idempotency** — the highest-stakes billing invariant. Auto-billing runs on every app boot, and Fly auto-sleeps/wakes several times a day, so a broken guard would **double-charge every family monthly**. Verified: a recurring charge bills each enrolled student exactly once, and a second run (simulating a Fly wake in the same month) charges nobody again, at the configured amount. Sound — no bug — but it now can't silently regress.
+
 ### Iteration 37 — DONE (smoke 95/95)
 - **Regression-guarded the core tuition-collection flow.** The pending-payment reconciliation (parent claims a payment → admin confirms → payment Transaction created + balance drops) is how the studio collects tuition manually all fall (no auto-pay). Verified end-to-end: claim creates a PendingPayment; a parent can't confirm (admin-only, 403); admin confirm creates the payment and drops the balance $100→$40; double-confirm is rejected (idempotent). Sound — no bug — but this money-critical flow had no coverage. Added 7 checks.
 

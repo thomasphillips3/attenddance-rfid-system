@@ -127,6 +127,47 @@ def test_aging():
            ag["d31_60"] == 75.0 and ag["total"] == 75.0, str(ag))
 
 
+def test_recurring_charge_idempotent():
+    """Recurring auto-billing runs on every app boot, and Fly auto-sleeps/wakes
+    several times a day — so it MUST be idempotent within a month, or families
+    get double-charged. Verify it charges each enrolled student once, then that
+    a second run charges nobody again."""
+    from datetime import time as _time
+    from app import _process_recurring_charges
+    from app.models import DanceClass, ClassEnrollment, RecurringCharge, Transaction, User
+
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        s1 = Student(first_name="Rec", last_name="A")
+        s2 = Student(first_name="Rec", last_name="B")
+        db.session.add_all([s1, s2])
+        db.session.flush()
+        dc = DanceClass(name="Recurring Class", day_of_week=0, start_time=_time(17, 0),
+                        end_time=_time(18, 0), instructor_id=admin.id)
+        db.session.add(dc)
+        db.session.flush()
+        db.session.add_all([
+            ClassEnrollment(student_id=s1.id, class_id=dc.id),
+            ClassEnrollment(student_id=s2.id, class_id=dc.id),
+        ])
+        rc = RecurringCharge(class_id=dc.id, amount=50, category="tuition", day_of_month=1)
+        db.session.add(rc)
+        db.session.commit()
+        rcid = rc.id
+
+        _process_recurring_charges()
+        n1 = Transaction.query.filter_by(recurring_charge_id=rcid).count()
+        record(f"first run charges each enrolled student once (got {n1}, want 2)", n1 == 2, "", )
+
+        _process_recurring_charges()  # simulate a second Fly wake this month
+        n2 = Transaction.query.filter_by(recurring_charge_id=rcid).count()
+        record(f"second run does not double-charge (still {n2}, want 2)", n2 == 2,
+               f"{n2} != 2 — DOUBLE CHARGE")
+        amt_ok = all(float(t.amount) == 50.0 for t in
+                     Transaction.query.filter_by(recurring_charge_id=rcid).all())
+        record("recurring charges are the configured $50", amt_ok, "")
+
+
 def test_money_precision():
     """Summing many cent-level transactions must not drift (guards against a
     future switch away from Numeric columns, or float creeping into the sums)."""
@@ -153,6 +194,7 @@ def main():
     test_allocation(ids)
     test_late_fee_idempotent(ids)
     test_aging()
+    test_recurring_charge_idempotent()
     test_money_precision()
     fails = [r for r in results if not r[1]]
     print("\n" + "=" * 56)
