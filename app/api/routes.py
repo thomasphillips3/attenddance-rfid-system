@@ -528,13 +528,18 @@ def toggle_attendance():
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
-    student_id = data.get('student_id')
-    class_id = data.get('class_id')
-    if not all([student_id, class_id]):
-        return jsonify({'error': 'student_id and class_id required'}), 400
+    student_id, serr = _valid_id(data.get('student_id'))
+    if serr:
+        return serr
+    class_id, cerr = _valid_id(data.get('class_id'))
+    if cerr:
+        return cerr
+    # Validate the student and class exist (manual_checkin does this too) so a
+    # bad id can't create an orphan attendance row.
+    Student.query.get_or_404(student_id)
+    DanceClass.query.get_or_404(class_id)
 
-    att_date = data.get('date')
-    target_date = datetime.strptime(att_date, '%Y-%m-%d').date() if att_date else date.today()
+    target_date = _parse_date(data.get('date')) or date.today()
 
     existing = Attendance.query.filter(
         Attendance.student_id == student_id,

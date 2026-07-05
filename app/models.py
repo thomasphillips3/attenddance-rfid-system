@@ -330,9 +330,12 @@ class Attendance(db.Model):
     # Status
     is_present = db.Column(db.Boolean, default=True, nullable=False)
     
-    # Unique constraint to prevent duplicate check-ins on same day
+    # Lookup index for the per-(student, class, day) dedup query. NOTE: this is a
+    # plain index, NOT a uniqueness guarantee — duplicate check-ins are prevented
+    # at the APPLICATION level (manual_checkin returns 400 if already present;
+    # toggle_attendance deletes-or-creates). Keep those checks; the DB won't.
     __table_args__ = (
-        db.Index('idx_attendance_date_student', 'student_id', 
+        db.Index('idx_attendance_date_student', 'student_id',
                 db.func.date('check_in_time'), 'class_id'),
     )
     

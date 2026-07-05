@@ -574,26 +574,56 @@ def run_waiver_signing(ids):
 
 
 def run_attendance(ids):
-    """Taking attendance — the most-used fall feature: mark present persists,
-    toggling again removes it, and parents can't mark attendance."""
+    """Taking attendance — the most-used fall feature. Mark present persists,
+    toggling again removes it (no duplicate rows), manual check-in dedups, the
+    endpoints validate the student/class exist and don't 500 on a bad date, and
+    parents can't mark attendance."""
+    from datetime import time as _time
+    from app.models import DanceClass, ClassEnrollment, Attendance
     sid = ids["child_a"]
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        dc = DanceClass(name="Attn Class", day_of_week=0, start_time=_time(17, 0),
+                        end_time=_time(18, 0), instructor_id=admin.id)
+        db.session.add(dc)
+        db.session.flush()
+        db.session.add(ClassEnrollment(student_id=sid, class_id=dc.id))
+        db.session.commit()
+        cid = dc.id
+
+    def rows():
+        with app.app_context():
+            return Attendance.query.filter_by(student_id=sid, class_id=cid).count()
+
     with app.test_client() as c:
         login(c, "admin", "admin123")
-        r1 = c.post("/api/attendance/toggle", json={"student_id": sid, "class_id": 4321})
+        r1 = c.post("/api/attendance/toggle", json={"student_id": sid, "class_id": cid})
         d1 = r1.get_json() or {}
         record(f"Mark present -> {r1.status_code} present={d1.get('present')}",
                r1.status_code == 201 and d1.get("present") is True, str(d1), "P1")
-        r2 = c.post("/api/attendance/toggle", json={"student_id": sid, "class_id": 4321})
+        r2 = c.post("/api/attendance/toggle", json={"student_id": sid, "class_id": cid})
         d2 = r2.get_json() or {}
         record(f"Toggle again removes attendance -> {r2.status_code} present={d2.get('present')}",
-               r2.status_code == 200 and d2.get("present") is False, str(d2), "P1")
+               r2.status_code == 200 and d2.get("present") is False and rows() == 0, str(d2), "P1")
+        # Manual check-in dedups: 2nd check-in same day is rejected, leaves one row.
+        c.post("/api/attendance/checkin", json={"student_id": sid, "class_id": cid})
+        rc = c.post("/api/attendance/checkin", json={"student_id": sid, "class_id": cid})
+        record(f"Manual check-in dedups (2nd -> {rc.status_code}, {rows()} row)",
+               rc.status_code == 400 and rows() == 1, f"status={rc.status_code} rows={rows()}", "P2")
+        # Validation: nonexistent class 404s (no orphan row), garbage id 400s, bad date doesn't 500.
+        rb1 = c.post("/api/attendance/toggle", json={"student_id": sid, "class_id": 999999})
+        rb2 = c.post("/api/attendance/toggle", json={"student_id": "xyz", "class_id": cid})
+        rb3 = c.post("/api/attendance/toggle", json={"student_id": sid, "class_id": cid, "date": "not-a-date"})
+        record(f"Toggle validates existence + bad date (404={rb1.status_code}, 400={rb2.status_code}, date={rb3.status_code})",
+               rb1.status_code == 404 and rb2.status_code == 400 and rb3.status_code != 500,
+               f"{rb1.status_code}/{rb2.status_code}/{rb3.status_code}", "P3")
         # missing fields rejected
         r3 = c.post("/api/attendance/toggle", json={"student_id": sid})
         record(f"Attendance toggle requires class_id -> {r3.status_code}", r3.status_code == 400,
                f"got {r3.status_code}", "P3")
     with app.test_client() as c:
         login(c, "parent_a", "pw")
-        r = c.post("/api/attendance/toggle", json={"student_id": sid, "class_id": 4321})
+        r = c.post("/api/attendance/toggle", json={"student_id": sid, "class_id": cid})
         record(f"Parent cannot mark attendance -> {r.status_code}", r.status_code == 403,
                f"got {r.status_code}", "P0")
 
