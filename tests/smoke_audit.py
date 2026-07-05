@@ -147,6 +147,7 @@ def run_idor(ids):
             "/api/donations",             # all donations
             "/api/locations",            # venues + internal notes/phone
             "/api/classes",               # full class list (instructors, rosters)
+            "/api/instructors",           # instructor picker (staff names)
             "/api/skills",                # skill catalog
             "/api/costumes",              # costume catalog
             "/api/recurring-charges",     # every recurring charge
@@ -2721,6 +2722,37 @@ def run_class_crud():
            live_enroll == 0 and live_wait == 0, f"lingering enroll={live_enroll} wait={live_wait}", "P2")
 
 
+def run_class_instructor_assignment():
+    """A class's instructor must be assignable/reassignable (teachers change for
+    fall). Verify /api/instructors lists active teachers/admins, create with an
+    instructor sets it, and edit reassigns it."""
+    from app.models import User
+    with app.app_context():
+        t = User(username="instr_teacher", email="instr@x.com", first_name="Ada",
+                 last_name="Instructor", role="teacher", is_active=True)
+        t.set_password("pw")
+        db.session.add(t)
+        db.session.commit()
+        tid = t.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        instrs = (c.get("/api/instructors").get_json() or {}).get("instructors", [])
+        listed = any(i["id"] == tid and i["name"] == "Ada Instructor" for i in instrs)
+        r = c.post("/api/classes", json={"name": "Instr Class", "day_of_week": 1,
+                                         "start_time": "16:00", "end_time": "17:00",
+                                         "instructor_id": tid})
+        cid = (r.get_json() or {}).get("id")
+        created_ok = r.status_code == 201 and (r.get_json() or {}).get("instructor_name") == "Ada Instructor"
+        # reassign to the admin — check the id changed (robust to the admin's name)
+        with app.app_context():
+            adm = User.query.filter_by(username="admin").first().id
+        e = c.put(f"/api/classes/{cid}", json={"instructor_id": adm})
+        reassigned = e.status_code == 200 and (e.get_json() or {}).get("instructor_id") == adm
+    record(f"Class instructor assignable/reassignable (listed={listed}, created={created_ok}, reassigned={reassigned})",
+           listed and created_ok and reassigned,
+           f"listed={listed} created={created_ok} reassigned={reassigned}", "P2")
+
+
 def run_class_capacity():
     """Enrollment must respect max_students so a class can't be silently
     overbooked (that's what the waitlist is for). Enroll 3 into a max=2 class →
@@ -3234,6 +3266,7 @@ def main():
     run_withdrawn_student_balance()
     run_withdraw_frees_enrollment()
     run_class_crud()
+    run_class_instructor_assignment()
     run_class_capacity()
     run_recurring_charge_edit()
     run_page_route_authz(ids)

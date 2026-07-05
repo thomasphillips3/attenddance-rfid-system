@@ -61,6 +61,12 @@
                         </select>
                     </div>
                     <div>
+                        <label class="{{ lbl }}">Instructor</label>
+                        <select id="instructor-id" class="{{ inp }}">
+                            <option value="">Me (default)</option>
+                        </select>
+                    </div>
+                    <div>
                         <label class="{{ lbl }}">Max Students</label>
                         <input type="number" id="max-students" value="20" min="1" class="{{ inp }}">
                     </div>
@@ -181,6 +187,7 @@ function openEditModal(id) {
     document.getElementById('end-time').value = cls.end_time || '';
     document.getElementById('level').value = cls.level || '';
     document.getElementById('location-id').value = cls.location_id || '';
+    document.getElementById('instructor-id').value = cls.instructor_id || '';
     document.getElementById('max-students').value = cls.max_students || 20;
     document.getElementById('class-modal').classList.remove('hidden');
 }
@@ -200,6 +207,11 @@ async function saveClass(e) {
         location_id: document.getElementById('location-id').value || null,
         max_students: parseInt(document.getElementById('max-students').value) || 20,
     };
+    // Only send instructor_id when one is chosen — on create, an empty value must
+    // fall through to the endpoint's default (the current user), and on edit an
+    // empty value means "leave the instructor unchanged".
+    const instructorId = document.getElementById('instructor-id').value;
+    if (instructorId) body.instructor_id = parseInt(instructorId);
     try {
         const res = await fetch(id ? `/api/classes/${id}` : '/api/classes',
             { method: id ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
@@ -225,6 +237,16 @@ async function loadLocations() {
         const sel = document.getElementById('location-id');
         sel.innerHTML = '<option value="">No location</option>' +
             data.locations.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+    } catch (err) {}
+}
+
+async function loadInstructors() {
+    try {
+        const res = await fetch('/api/instructors');
+        const data = await res.json();
+        const sel = document.getElementById('instructor-id');
+        sel.innerHTML = '<option value="">Me (default)</option>' +
+            (data.instructors || []).map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('');
     } catch (err) {}
 }
 
@@ -370,5 +392,6 @@ async function unenrollStudent(enrollmentId) {
 
 loadClasses();
 loadLocations();
+loadInstructors();
 </script>
 {% endblock %}

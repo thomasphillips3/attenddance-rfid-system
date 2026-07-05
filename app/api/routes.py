@@ -454,6 +454,21 @@ def get_classes():
     return jsonify({'classes': [class_to_dict(cls) for cls in query.all()]})
 
 
+@bp.route('/instructors', methods=['GET'])
+@login_required
+def list_instructors():
+    """Active teachers/admins (id + name only) for the class instructor picker.
+    Staff-accessible — instructor names already appear on class cards, so this
+    exposes nothing new (unlike /api/staff, which carries staff PII + is admin-only)."""
+    err = _staff_only()
+    if err:
+        return err
+    users = (User.query
+             .filter(User.role.in_(['admin', 'teacher']), User.is_active.is_(True))
+             .order_by(User.last_name, User.first_name).all())
+    return jsonify({'instructors': [{'id': u.id, 'name': u.full_name} for u in users]})
+
+
 @bp.route('/classes/<int:class_id>', methods=['GET'])
 @login_required
 def get_class(class_id):
