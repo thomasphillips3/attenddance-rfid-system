@@ -5,6 +5,7 @@ import os
 import secrets
 import tempfile
 import threading
+import time
 from datetime import date, datetime, timedelta
 
 from flask import current_app, jsonify, request, send_file
@@ -4122,6 +4123,37 @@ def registration_open_info():
     })
 
 
+# Throttle admin "new registration" notifications. The public submit is
+# unauthenticated and emailed the admins on EVERY submission, so a scripted flood
+# (possible while registration is open) could email-bomb the studio — getting the
+# account rate-limited by Gmail and burying real alerts. Admins see every request
+# on the (paginated) Registrations page regardless; this is only the nudge, so at
+# most one every _REG_NOTIFY_WINDOW seconds is plenty. Process-local (single worker).
+_REG_NOTIFY_WINDOW = 120
+_last_reg_notify = [0.0]
+
+
+def _notify_admins_new_registration():
+    now = time.time()
+    if now - _last_reg_notify[0] < _REG_NOTIFY_WINDOW:
+        return
+    from app import email as email_service
+    if not email_service.is_configured():
+        return
+    admins = {u.email for u in User.query.filter_by(role='admin', is_active=True).all()
+              if u.email and '@' in u.email}
+    if not admins:
+        return
+    _last_reg_notify[0] = now  # mark before sending so a burst doesn't all fire
+    try:
+        email_service.send_email(
+            admins, 'New enrollment request(s)',
+            'One or more new registration requests were received. '
+            'Review them on the Registrations page.')
+    except Exception:
+        logger.exception("Failed to notify admins of registration")
+
+
 @bp.route('/register', methods=['POST'])
 def submit_registration():
     """Public: submit an enrollment request for admin review."""
@@ -4174,18 +4206,7 @@ def submit_registration():
     )
     db.session.add(reg)
     db.session.commit()
-
-    # Notify admins
-    from app import email as email_service
-    if email_service.is_configured():
-        admins = {u.email for u in User.query.filter_by(role='admin', is_active=True).all() if u.email and '@' in u.email}
-        if admins:
-            try:
-                email_service.send_email(admins, 'New registration request',
-                                         f'{parent_name} ({parent_email}) registered {len(students)} dancer(s). '
-                                         f'Review it in the Registrations page.')
-            except Exception:
-                logger.exception("Failed to notify admins of registration")
+    _notify_admins_new_registration()
     return jsonify({'message': "Thanks! Your registration was received — the studio will reach out soon."}), 201
 
 
@@ -4197,12 +4218,15 @@ def list_registrations():
         return err
     import json
     status = request.args.get('status', 'pending').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 50, type=int), 100)
     q = Registration.query
     if status and status != 'all':
         q = q.filter_by(status=status)
-    rows = q.order_by(desc(Registration.created_at)).limit(200).all()
+    pagination = (q.order_by(desc(Registration.created_at))
+                  .paginate(page=page, per_page=per_page, error_out=False))
     out = []
-    for r in rows:
+    for r in pagination.items:
         try:
             students = json.loads(r.students_json or '[]')
         except ValueError:
@@ -4216,7 +4240,13 @@ def list_registrations():
             'parent_phone': r.parent_phone, 'students': students, 'class_names': class_names,
             'note': r.note, 'status': r.status, 'created_at': _utc_iso(r.created_at),
         })
-    return jsonify({'registrations': out})
+    return jsonify({
+        'registrations': out,
+        'pagination': {
+            'page': page, 'pages': pagination.pages,
+            'per_page': per_page, 'total': pagination.total,
+        },
+    })
 
 
 @bp.route('/registrations/count', methods=['GET'])

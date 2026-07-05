@@ -2533,6 +2533,110 @@ def run_logging_config_guard():
            bool(cfg) and module_level, f"basicConfig lines: {cfg}", "P2")
 
 
+def run_registrations_pagination():
+    """The admin registrations inbox paginates (was capped at 200 newest, which
+    during a busy enrollment season — or a flood of the public unauthenticated
+    submit — buried the *earliest* registrants past the cutoff). Seed 60 pending
+    and assert page 1 returns 50 with pages>=2 and page 2 the overflow."""
+    import json as _json
+    from app.models import Registration
+    with app.app_context():
+        db.session.add_all([
+            Registration(parent_name=f"Reg {i}", parent_email=f"reg{i}@x.com",
+                         status="pending", class_ids="",
+                         students_json=_json.dumps([{"first_name": f"K{i}", "last_name": "R"}]))
+            for i in range(60)
+        ])
+        db.session.commit()
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        p1 = c.get("/api/registrations?status=pending&per_page=50&page=1").get_json() or {}
+        p2 = c.get("/api/registrations?status=pending&per_page=50&page=2").get_json() or {}
+        pg = p1.get("pagination", {})
+        record(f"Registrations page 1 caps at 50 with pages>=2 (total={pg.get('total')})",
+               len(p1.get("registrations", [])) == 50 and pg.get("total", 0) >= 60 and pg.get("pages", 0) >= 2,
+               str(pg), "P2")
+        record(f"Registrations page 2 carries the overflow ({len(p2.get('registrations', []))})",
+               len(p2.get("registrations", [])) >= 10, str(p2.get("pagination")), "P3")
+
+
+def run_admin_role_consistency():
+    """The default admin must be created with role='admin' (not just is_admin=True).
+    Admin email notifications query filter_by(role='admin'), so a role/is_admin
+    mismatch means the studio's primary admin silently gets no 'new registration'
+    or 'reported payment' alerts. Boot a fresh app in a clean subprocess and check
+    the seeded admin's role (in-process the shared app's admin may be mutated)."""
+    import subprocess
+    import tempfile as _tf
+    tmp = _tf.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    snippet = (
+        "from app import create_app\n"
+        "app = create_app()\n"
+        "with app.app_context():\n"
+        "    from app.models import User\n"
+        "    a = User.query.filter_by(username='admin').first()\n"
+        "    print('ROLE=' + (a.role if a and a.role else 'NONE'))\n"
+    )
+    env = dict(os.environ, DATABASE_URL=f"sqlite:///{tmp.name}", RFID_ENABLED="false")
+    out = subprocess.run([sys.executable, "-c", snippet], capture_output=True, text=True, env=env)
+    role = ""
+    for ln in (out.stdout or "").splitlines():
+        if ln.startswith("ROLE="):
+            role = ln[5:]
+    try:
+        os.unlink(tmp.name)
+    except OSError:
+        pass
+    record(f"Default admin is seeded with role='admin' (got {role!r})",
+           role == "admin", f"role={role!r}; stderr={out.stderr[-200:]}", "P2")
+
+
+def run_registration_notify_throttle():
+    """The public /api/register submit emails admins per submission — a flood
+    would email-bomb the studio. The notification must be throttled to at most
+    one per window. Fire several rapid submits and assert at most one email."""
+    from app import email as email_service
+    from app.api import routes as api_routes
+    from app.models import Setting, User
+    with app.app_context():
+        Setting.set("registration_open", "1")
+        # Ensure a valid active admin exists so the FIRST notification fires (this
+        # is robust to earlier tests that may have deactivated/re-roled the admin).
+        adm = User.query.filter_by(username="admin").first()
+        if adm:
+            adm.role, adm.is_active = "admin", True
+            if not (adm.email and "@" in adm.email):
+                adm.email = "admin@attenddance.local"
+        db.session.commit()
+    app.config["MAIL_SERVER"] = "smtp.example.com"
+    api_routes._last_reg_notify[0] = 0.0  # reset throttle window
+    calls = [0]
+    orig = email_service.send_email
+
+    def counting_send(*a, **k):
+        calls[0] += 1
+        return 1
+
+    email_service.send_email = counting_send
+    try:
+        with app.test_client() as c:
+            codes = []
+            for i in range(5):
+                r = c.post("/api/register", json={
+                    "parent_name": f"Flood{i}", "parent_email": f"flood{i}@x.com",
+                    "students": [{"first_name": "K", "last_name": "F"}]})
+                codes.append(r.status_code)
+    finally:
+        email_service.send_email = orig
+        app.config["MAIL_SERVER"] = None
+        with app.app_context():
+            Setting.set("registration_open", "0")
+    record(f"Registration admin-notify fires once then throttles (5 submits {codes} -> {calls[0]} email)",
+           all(c == 201 for c in codes) and calls[0] == 1,
+           f"{calls[0]} notification emails for 5 rapid submits (want exactly 1); codes={codes}", "P2")
+
+
 def run_auth_form_labels():
     """Accessibility guard: every text/email/password field on the standalone auth
     forms (login, change/forgot/reset password) must have an accessible name — an
@@ -2833,6 +2937,9 @@ def main():
     run_transactions_pagination(ids)
     run_students_roster_complete()
     run_messages_pagination()
+    run_registrations_pagination()
+    run_registration_notify_throttle()
+    run_admin_role_consistency()
     run_js_syntax()
     run_smoke()
     run_empty_state()

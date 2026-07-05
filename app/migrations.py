@@ -46,6 +46,17 @@ def _add_missing_columns(conn, inspector, table, columns):
             conn.execute(sqlalchemy.text(f'ALTER TABLE {table} ADD COLUMN {col} {coltype}'))
 
 
+def _reconcile_admin_role(conn):
+    """The default admin was seeded with is_admin=1 but role defaulted to
+    'teacher', so `filter_by(role='admin')` missed it — meaning admin email
+    notifications (new registration requests, parent-reported payments) silently
+    went to nobody on the studio's primary account. Reconcile role='admin' for
+    any is_admin user whose role disagrees. Idempotent."""
+    conn.execute(sqlalchemy.text(
+        "UPDATE users SET role='admin' "
+        "WHERE is_admin=1 AND (role IS NULL OR role != 'admin')"))
+
+
 def _enforce_attendance_uniqueness(conn):
     """One attendance row per (student, class, day). The Attendance model has no
     UniqueConstraint, so a concurrent double-tap could create duplicate 'present'
@@ -67,6 +78,8 @@ def run_migrations(db):
         inspector = sqlalchemy.inspect(db.engine)
         _add_missing_columns(conn, inspector, 'students', STUDENT_COLUMNS)
         _add_missing_columns(conn, inspector, 'users', USER_COLUMNS)
+        if 'users' in inspector.get_table_names():
+            _reconcile_admin_role(conn)
         if 'transactions' in inspector.get_table_names():
             _add_missing_columns(conn, inspector, 'transactions', TRANSACTION_COLUMNS)
         if 'classes' in inspector.get_table_names():

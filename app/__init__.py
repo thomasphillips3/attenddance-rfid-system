@@ -248,6 +248,8 @@ def create_app(config_name=None):
                 first_name='Admin',
                 last_name='User',
                 is_admin=True,
+                role='admin',  # keep role consistent with is_admin; queries that
+                               # filter_by(role='admin') (admin notifications) rely on it
             )
             admin.set_password('admin123')
             db.session.add(admin)
