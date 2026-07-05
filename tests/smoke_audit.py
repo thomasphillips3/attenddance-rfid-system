@@ -2336,6 +2336,41 @@ def run_late_fee_race():
            f"late_fee_charges={n} codes={sorted(codes)}", "P1")
 
 
+def run_auth_form_labels():
+    """Accessibility guard: every text/email/password field on the standalone auth
+    forms (login, change/forgot/reset password) must have an accessible name — an
+    `id` (paired with a `<label for>`), an `aria-label`, a `placeholder`, or a
+    wrapping `<label>`. A nameless field is announced as an anonymous 'edit text'
+    by a screen reader (this caught change-password's three unlabeled inputs)."""
+    import re
+    from pathlib import Path
+    tpl = Path(__file__).resolve().parent.parent / "app" / "templates"
+    forms = ["auth/login.html", "auth/change_password.html",
+             "auth/forgot_password.html", "auth/reset_password.html"]
+    nameless = []
+    for rel in forms:
+        f = tpl / rel
+        if not f.exists():
+            continue
+        txt = f.read_text()
+        label_fors = set(re.findall(r'<label[^>]*\bfor="([^"]+)"', txt))
+        for m in re.finditer(r'<input\b[^>]*>', txt):
+            tag = m.group(0)
+            typ = (re.search(r'type="([^"]+)"', tag) or [None, "text"])[1]
+            if typ in ("hidden", "submit", "button", "checkbox", "radio"):
+                continue
+            iid = (re.search(r'\bid="([^"]+)"', tag) or [None, None])[1]
+            has_name = (
+                (iid and iid in label_fors)
+                or "aria-label" in tag
+                or "placeholder" in tag
+            )
+            if not has_name:
+                nameless.append(f"{rel}: {tag[:70]}")
+    record(f"Auth-form fields all have an accessible name ({len(nameless)} nameless)",
+           not nameless, "; ".join(nameless), "P2")
+
+
 def run_dead_handler_guard():
     """Static guard: every inline on-click/change/submit/input handler must call a
     function that's actually defined (in the same template or the shared base.html
@@ -2593,6 +2628,7 @@ def main():
     run_late_fee_race()
     run_global_search()
     run_dead_handler_guard()
+    run_auth_form_labels()
     run_js_syntax()
     run_smoke()
     run_empty_state()
