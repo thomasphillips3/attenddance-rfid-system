@@ -2462,6 +2462,20 @@ def run_messages_pagination():
                len(p2.get("messages", [])) >= 10, str(p2.get("pagination")), "P3")
 
 
+def run_logging_config_guard():
+    """Logging must be configured at run.py MODULE level, not only inside
+    `if __name__ == '__main__'`. Production runs `gunicorn run:app`, which IMPORTS
+    the module (so __main__ never runs) — if basicConfig were __main__-only, prod
+    would silently drop every INFO log (the operational confirmations that the
+    automated engines ran: recurring charges, auto-reminders, boot)."""
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "run.py").read_text().splitlines()
+    cfg = [ln for ln in src if "basicConfig" in ln]
+    module_level = any(ln == ln.lstrip() for ln in cfg)  # indentation 0 == module scope
+    record("Logging configured at run.py module level (emits under gunicorn)",
+           bool(cfg) and module_level, f"basicConfig lines: {cfg}", "P2")
+
+
 def run_auth_form_labels():
     """Accessibility guard: every text/email/password field on the standalone auth
     forms (login, change/forgot/reset password) must have an accessible name — an
@@ -2755,6 +2769,7 @@ def main():
     run_late_fee_race()
     run_global_search()
     run_dead_handler_guard()
+    run_logging_config_guard()
     run_auth_form_labels()
     run_transactions_pagination(ids)
     run_students_roster_complete()

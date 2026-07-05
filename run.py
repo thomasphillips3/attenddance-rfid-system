@@ -5,7 +5,14 @@ import logging
 import os
 import threading
 
-from app import create_app
+# Configure logging at import time so it applies under BOTH gunicorn (which
+# imports `run:app`, so __main__ never runs) and the dev server. Without this,
+# production silently drops every INFO log — the operator can't confirm from the
+# logs that the automated engines ran (recurring charges, auto-reminders) or that
+# the app booted. basicConfig is a no-op if the root logger is already configured.
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+
+from app import create_app  # noqa: E402 — after logging setup so boot logs are captured
 
 logger = logging.getLogger(__name__)
 
@@ -45,5 +52,4 @@ def main():
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     main()
