@@ -2443,12 +2443,25 @@ def confirm_pending_payment(pid):
             db.session.flush()
             first_txn = t
 
-    p.status = 'confirmed'
-    p.reviewed_at = datetime.utcnow()
-    p.reviewed_by = current_user.id
-    p.transaction_id = first_txn.id if first_txn else None
-    if data.get('admin_note'):
-        p.admin_note = _clean_str(data['admin_note'])
+    # Atomically claim this pending payment. Two concurrent confirms (an admin
+    # double-click, or two open tabs) both pass the status check above before
+    # either commits; without this guard both create payment transactions and
+    # the family is credited twice. The conditional UPDATE re-checks status in
+    # the DB at write time, so only the first confirm wins — the second matches
+    # 0 rows and rolls back (its just-inserted transactions included) instead of
+    # double-crediting.
+    note = _clean_str(data['admin_note']) if data.get('admin_note') else p.admin_note
+    claimed = db.session.query(PendingPayment).filter_by(
+        id=pid, status='pending').update({
+            'status': 'confirmed',
+            'reviewed_at': datetime.utcnow(),
+            'reviewed_by': current_user.id,
+            'transaction_id': first_txn.id if first_txn else None,
+            'admin_note': note,
+        }, synchronize_session=False)
+    if not claimed:
+        db.session.rollback()
+        return jsonify({'error': 'Already processed'}), 400
 
     AuditLog.record(current_user.id, 'payment.confirm',
                     f'Confirmed ${amount:.2f} {method_label} for {who}')

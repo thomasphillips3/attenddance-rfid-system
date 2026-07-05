@@ -2155,6 +2155,53 @@ def run_email_header_injection():
            "P1")
 
 
+def run_confirm_payment_race():
+    """Confirming a PendingPayment is a check-then-act on real money: an admin
+    double-click (or two open tabs) fires two concurrent confirms that both pass
+    the status check before either commits, and without an atomic claim BOTH
+    create payment transactions — the family is credited twice. Fire two
+    simultaneous confirms at one pending payment and assert exactly one
+    transaction is created (one 200, one 400)."""
+    import threading
+    from app.models import User, Student, Family, PendingPayment, Transaction
+    with app.app_context():
+        fam = Family(name="Race Fam", primary_email="race@x.com")
+        parent = User(username="race_parent", email="racep@x.com",
+                      first_name="R", last_name="P", role="parent")
+        parent.set_password("pw")
+        db.session.add_all([fam, parent])
+        db.session.flush()
+        st = Student(first_name="Race", last_name="Kid", family_id=fam.id, is_active=True)
+        db.session.add(st)
+        db.session.flush()
+        pp = PendingPayment(student_id=st.id, parent_id=parent.id, amount=100.0,
+                            method="zelle", status="pending")
+        db.session.add(pp)
+        db.session.commit()
+        pid, sid = pp.id, st.id
+
+    barrier = threading.Barrier(2)
+    codes = []
+
+    def worker():
+        with app.test_client() as c:
+            login(c, "admin", "admin123")
+            barrier.wait()
+            codes.append(c.post(f"/api/pending-payments/{pid}/confirm", json={}).status_code)
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    with app.app_context():
+        n_txn = Transaction.query.filter_by(student_id=sid, type="payment").count()
+    record("Concurrent double-confirm credits the family exactly once (no double-pay)",
+           n_txn == 1 and sorted(codes) == [200, 400],
+           f"transactions={n_txn} codes={sorted(codes)}", "P1")
+
+
 def run_xss_guard():
     """Static guard: user-controlled name/text fields must never be interpolated
     into a JS template literal without esc(). These fields come from public
@@ -2328,6 +2375,7 @@ def main():
     run_cashtag_sanitize()
     run_qr_upload_safety()
     run_email_header_injection()
+    run_confirm_payment_race()
     run_js_syntax()
     run_smoke()
     run_empty_state()
