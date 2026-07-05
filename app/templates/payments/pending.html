@@ -74,6 +74,76 @@
         </div>
     </div>
 </div>
+
+{% set lbl = "block text-sm font-medium text-ink-2 mb-1" %}
+{% set fld = "block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
+
+<!-- Apply late fees modal -->
+<div id="latefee-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="closeLateFee()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="font-display text-2xl text-ink">Apply late fees</h3>
+                <button onclick="closeLateFee()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div><label class="{{ lbl }}" for="lf-amount">Late fee amount ($)</label><input id="lf-amount" type="number" step="0.01" min="0" class="{{ fld }}" placeholder="blank = Settings default"></div>
+                <div><label class="{{ lbl }}" for="lf-min">Only charge balances over ($)</label><input id="lf-min" type="number" step="0.01" min="0" value="0" class="{{ fld }}"></div>
+                <p class="text-xs text-ink-3">Applies once per family this month — running it again skips anyone already charged.</p>
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+                <button onclick="closeLateFee()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="submitLateFee()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Apply</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New payment plan modal -->
+<div id="plan-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="closePlan()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="font-display text-2xl text-ink">New payment plan</h3>
+                <button onclick="closePlan()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div><label class="{{ lbl }}" for="plan-student">Student *</label><select id="plan-student" class="{{ fld }}"><option value="">Pick a student…</option></select></div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="{{ lbl }}" for="plan-amount">Installment ($) *</label><input id="plan-amount" type="number" step="0.01" min="0.01" class="{{ fld }}"></div>
+                    <div><label class="{{ lbl }}" for="plan-num"># of installments *</label><input id="plan-num" type="number" min="1" class="{{ fld }}"></div>
+                </div>
+                <div><label class="{{ lbl }}" for="plan-day">Day of month due (1–28)</label><input id="plan-day" type="number" min="1" max="28" value="1" class="{{ fld }}"></div>
+                <div><label class="{{ lbl }}" for="plan-note">Note</label><input id="plan-note" class="{{ fld }}"></div>
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+                <button onclick="closePlan()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="submitPlan()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Create plan</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reject payment modal -->
+<div id="reject-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="closeReject()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="font-display text-2xl text-ink">Reject payment</h3>
+                <button onclick="closeReject()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <label class="{{ lbl }}" for="reject-note">Reason <span class="text-ink-3 font-normal">(optional — shown to the family)</span></label>
+            <textarea id="reject-note" rows="2" class="{{ fld }}"></textarea>
+            <div class="mt-5 flex justify-end gap-2">
+                <button onclick="closeReject()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="submitReject()" class="px-4 py-2 rounded-xl bg-danger text-white text-sm font-bold hover:opacity-90 shadow-sm">Reject payment</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -139,14 +209,23 @@ async function confirmPay(id) {
     } catch { showMsg('Network error', false); }
 }
 
-async function rejectPay(id) {
-    const note = prompt('Reason for rejecting (optional):') || '';
+let rejectTargetId = null;
+function rejectPay(id) {
+    rejectTargetId = id;
+    document.getElementById('reject-note').value = '';
+    document.getElementById('reject-modal').classList.remove('hidden');
+}
+function closeReject() { document.getElementById('reject-modal').classList.add('hidden'); }
+async function submitReject() {
+    if (rejectTargetId === null) return;
+    const note = document.getElementById('reject-note').value.trim();
     try {
-        const res = await fetch(`/api/pending-payments/${id}/reject`, {
+        const res = await fetch(`/api/pending-payments/${rejectTargetId}/reject`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({admin_note: note}),
         });
         const d = await res.json();
+        if (res.ok) closeReject();
         showMsg(res.ok ? d.message : (d.error || 'Error'), res.ok);
         loadPending(); loadAudit();
     } catch { showMsg('Network error', false); }
@@ -183,18 +262,22 @@ async function loadAudit() {
     }
 }
 
-async function applyLateFees() {
-    const amount = prompt('Late fee amount ($) — blank uses the Settings default:');
-    if (amount === null) return;
-    const min = prompt('Only charge students whose balance is over ($):', '0');
-    if (min === null) return;
-    if (!confirm('Apply this late fee to all qualifying students?')) return;
+function applyLateFees() {
+    document.getElementById('lf-amount').value = '';
+    document.getElementById('lf-min').value = '0';
+    document.getElementById('latefee-modal').classList.remove('hidden');
+}
+function closeLateFee() { document.getElementById('latefee-modal').classList.add('hidden'); }
+async function submitLateFee() {
+    const amount = document.getElementById('lf-amount').value;
+    const min = document.getElementById('lf-min').value || 0;
     try {
         const res = await fetch('/api/balances/apply-late-fees', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({amount: amount || undefined, min_balance: min || 0}),
+            body: JSON.stringify({amount: amount || undefined, min_balance: min}),
         });
         const d = await res.json();
+        if (res.ok) closeLateFee();
         showMsg(res.ok ? d.message : (d.error || 'Error'), res.ok);
         loadAudit();
     } catch { showMsg('Network error', false); }
@@ -223,23 +306,32 @@ async function loadPlans() {
     } catch { el.innerHTML = '<p class="text-danger text-sm">Failed to load.</p>'; }
 }
 async function createPlan() {
+    const sel = document.getElementById('plan-student');
     if (!PLAN_STUDENTS.length) {
         const data = await (await fetch('/api/balances')).json();
         PLAN_STUDENTS = (data.balances || []).map(b => ({id: b.student_id, name: b.student_name, balance: b.balance}));
     }
-    const list = PLAN_STUDENTS.map((s, i) => `${i+1}. ${s.name} (owes $${s.balance})`).join('\n');
-    const pick = prompt(`Which student? Enter number:\n${list}`);
-    const s = PLAN_STUDENTS[parseInt(pick) - 1];
-    if (!s) return;
-    const amount = prompt(`Installment amount for ${s.name} ($):`); if (!amount) return;
-    const num = prompt('Number of installments:'); if (!num) return;
-    const day = prompt('Day of month due (1-28):', '1') || '1';
-    const note = prompt('Note (optional):') || '';
-    const res = await fetch(`/api/students/${s.id}/payment-plan`, {
+    sel.innerHTML = '<option value="">Pick a student…</option>' +
+        PLAN_STUDENTS.map(s => `<option value="${s.id}">${esc(s.name)} (owes $${s.balance})</option>`).join('');
+    for (const id of ['plan-amount', 'plan-num', 'plan-note']) document.getElementById(id).value = '';
+    document.getElementById('plan-day').value = '1';
+    document.getElementById('plan-modal').classList.remove('hidden');
+}
+function closePlan() { document.getElementById('plan-modal').classList.add('hidden'); }
+async function submitPlan() {
+    const sid = document.getElementById('plan-student').value;
+    if (!sid) { showMsg('Pick a student', false); return; }
+    const amount = document.getElementById('plan-amount').value;
+    const num = document.getElementById('plan-num').value;
+    if (!amount || !num) { showMsg('Installment amount and count are required', false); return; }
+    const res = await fetch(`/api/students/${sid}/payment-plan`, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({installment_amount: amount, num_installments: num, day_of_month: day, note}),
+        body: JSON.stringify({installment_amount: amount, num_installments: num,
+                              day_of_month: document.getElementById('plan-day').value || '1',
+                              note: document.getElementById('plan-note').value.trim()}),
     });
     const d = await res.json();
+    if (res.ok) closePlan();
     showMsg(res.ok ? 'Payment plan created' : (d.error || 'Error'), res.ok);
     if (res.ok) loadPlans();
 }
