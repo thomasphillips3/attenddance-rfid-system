@@ -180,6 +180,43 @@ def run_csrf():
                b'Cross-origin' not in resp.data, "blocked a no-Origin request", "P2")
 
 
+def run_js_syntax():
+    """Node-check the inline <script> of JS-heavy pages. A rendered-JS syntax
+    error (e.g. a bad string escape) silently kills a whole page's behavior and
+    is invisible to Jinja compile/render checks — this catches that class."""
+    import re
+    import shutil
+    import subprocess
+    import tempfile as _tf
+
+    node = shutil.which("node")
+    if not node:
+        record("JS syntax check (node not found — skipped)", True, "", "P3")
+        return
+
+    pages = [("admin", "admin123", ["/dashboard", "/reports/aging"]),
+             ("parent_a", "pw", ["/parent"])]
+    bad = []
+    for user, pw, paths in pages:
+        with app.test_client() as c:
+            login(c, user, pw)
+            for path in paths:
+                html = c.get(path).get_data(as_text=True)
+                for i, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
+                    if "function" not in script and "=>" not in script:
+                        continue
+                    f = _tf.NamedTemporaryFile("w", suffix=".js", delete=False)
+                    f.write(script)
+                    f.close()
+                    r = subprocess.run([node, "--check", f.name], capture_output=True, text=True)
+                    os.unlink(f.name)
+                    if r.returncode != 0:
+                        first = (r.stderr.strip().splitlines() or ["?"])[-3:]
+                        bad.append(f"{path}#script{i}: {' '.join(first)[:120]}")
+    record(f"Rendered inline JS parses on {sum(len(p[2]) for p in pages)} JS-heavy pages",
+           not bad, "; ".join(bad), "P1")
+
+
 def run_smoke():
     """As admin, GET every no-arg GET route; assert no 500s."""
     with app.test_client() as c:
@@ -205,6 +242,7 @@ def main():
     ids = seed()
     run_idor(ids)
     run_csrf()
+    run_js_syntax()
     run_smoke()
 
     fails = [r for r in results if not r[2]]

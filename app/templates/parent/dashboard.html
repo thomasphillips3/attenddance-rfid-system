@@ -181,6 +181,57 @@
         </div>
     </div>
 </div>
+
+<!-- Donate modal -->
+<div id="donate-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="closeDonate()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="font-display text-2xl text-ink">Make a donation</h3>
+                <button onclick="closeDonate()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <label class="block text-sm font-medium text-ink-2" for="donate-amount">Amount</label>
+            <div class="mt-1 flex mb-4">
+                <span class="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-line-2 bg-surface-2 text-ink-3">$</span>
+                <input type="number" id="donate-amount" step="0.01" min="0.01" placeholder="0.00" class="flex-1 block w-full bg-surface border border-line-2 rounded-r-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+            </div>
+            <label class="block text-sm font-medium text-ink-2" for="donate-method">How are you sending it?</label>
+            <select id="donate-method" class="mt-1 mb-5 block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+                <option value="zelle">Zelle</option>
+                <option value="cashapp">Cash App</option>
+                <option value="cash">Cash</option>
+                <option value="check">Check</option>
+                <option value="other">Other</option>
+            </select>
+            <div class="flex justify-end gap-2">
+                <button onclick="closeDonate()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="submitDonate()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Donate</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Makeup request modal -->
+<div id="makeup-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="closeMakeup()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="font-display text-2xl text-ink">Request a makeup <span id="makeup-name" class="text-primary-600"></span></h3>
+                <button onclick="closeMakeup()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <label class="block text-sm font-medium text-ink-2" for="makeup-date">What date was the missed class?</label>
+            <input type="date" id="makeup-date" class="mt-1 mb-4 block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+            <label class="block text-sm font-medium text-ink-2" for="makeup-note">Anything to add? <span class="text-ink-3 font-normal">(which class, preferred time — optional)</span></label>
+            <textarea id="makeup-note" rows="2" class="mt-1 mb-5 block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400"></textarea>
+            <div class="flex justify-end gap-2">
+                <button onclick="closeMakeup()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="submitMakeup()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Send request</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -220,7 +271,7 @@ function renderMethods() {
                 <div class="border border-primary-200 rounded-xl p-3 bg-primary-50">
                     <div class="font-bold text-primary-800 text-sm mb-1"><i class="fas fa-qrcode mr-1"></i>Zelle — ${esc(opt.name || 'the studio')}</div>
                     ${opt.qr ? `<img src="${opt.qr}" alt="Zelle QR" class="mx-auto my-2 max-w-[200px]">`
-                              : '<p class="text-xs text-ink-3 my-2">QR code not uploaded yet — search the name above in your bank\\'s Zelle.</p>'}
+                              : '<p class="text-xs text-ink-3 my-2">QR code not uploaded yet — search the name above in your bank\'s Zelle.</p>'}
                     ${opt.memo ? `<p class="text-xs text-primary-700">${esc(opt.memo)}</p>` : ''}
                 </div>`;
             cHtml += `<button onclick="submitClaim('zelle')" class="px-3 py-2 bg-primary-500 text-white rounded-xl text-sm font-bold hover:bg-primary-600">I sent it with Zelle</button>`;
@@ -486,10 +537,19 @@ async function loadDonate() {
     } catch {}
 }
 
-async function openDonate() {
-    const amount = prompt('Donation amount ($):');
-    if (!amount) return;
-    const method = prompt('How are you sending it? (zelle, cashapp, cash, check, other)', 'zelle') || '';
+function openDonate() {
+    document.getElementById('donate-amount').value = '';
+    document.getElementById('donate-method').value = 'zelle';
+    document.getElementById('donate-modal').classList.remove('hidden');
+    document.getElementById('donate-amount').focus();
+}
+function closeDonate() {
+    document.getElementById('donate-modal').classList.add('hidden');
+}
+async function submitDonate() {
+    const amount = document.getElementById('donate-amount').value;
+    if (!amount || Number(amount) <= 0) { toast('Enter a donation amount', false); return; }
+    const method = document.getElementById('donate-method').value;
     try {
         const res = await fetch('/api/donations', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -497,21 +557,33 @@ async function openDonate() {
         });
         const d = await res.json();
         toast(res.ok ? (d.message || 'Thank you!') : (d.error || 'Error'), res.ok);
+        if (res.ok) closeDonate();
     } catch { toast('Network error', false); }
 }
 
-async function requestMakeup(studentId, name) {
-    const missed_date = prompt(`What date did ${name} miss? (YYYY-MM-DD)`);
-    if (missed_date === null) return;
-    const note = prompt('Anything to add? (which class, preferred makeup time)') || '';
+let makeupTarget = {id: null, name: ''};
+function requestMakeup(studentId, name) {
+    makeupTarget = {id: studentId, name};
+    document.getElementById('makeup-name').textContent = 'for ' + name;
+    document.getElementById('makeup-date').value = '';
+    document.getElementById('makeup-note').value = '';
+    document.getElementById('makeup-modal').classList.remove('hidden');
+}
+function closeMakeup() {
+    document.getElementById('makeup-modal').classList.add('hidden');
+}
+async function submitMakeup() {
+    const missed_date = document.getElementById('makeup-date').value;
+    if (!missed_date) { toast('Pick the date the class was missed', false); return; }
+    const note = document.getElementById('makeup-note').value;
     try {
         const res = await fetch('/api/makeups', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({student_id: studentId, missed_date, note}),
+            body: JSON.stringify({student_id: makeupTarget.id, missed_date, note}),
         });
         const d = await res.json();
         toast(res.ok ? 'Makeup request sent — the studio will schedule it.' : (d.error || 'Error'), res.ok);
-        if (res.ok) loadMakeups();
+        if (res.ok) { closeMakeup(); loadMakeups(); }
     } catch { toast('Network error', false); }
 }
 

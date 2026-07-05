@@ -9,7 +9,7 @@
 
 **Not production-ready as-is — but close, and the blockers are concentrated.** The feature breadth is genuinely impressive and the UI redesign is fully landed (0 legacy-style files remain). What stands between here and go-live is **two P0 security holes that are individually catastrophic for a system holding minors' PII and money**, one P1 billing defect, and a short list of parity/polish gaps. The P0s are both fixable in an afternoon; neither requires new features.
 
-**UPDATE (after 3 fix iterations):** both P0s, both fixable P1s (Square overcharge, CSRF), and four P2/P3s are now **fixed and verified** by two runtime harnesses (`tests/smoke_audit.py` 30/30, `tests/test_billing.py` 11/11) on branch `fix/api-authorization-and-secret-key`. The app is **safe to onboard real families onto once `SECRET_KEY` is set as a Fly secret**. What remains is one feature decision (auto-pay) and UX polish — not data-safety or money-correctness blockers.
+**UPDATE (after 5 fix iterations):** both P0s and the serious P1s are now **fixed and verified** by two runtime harnesses (`tests/smoke_audit.py` 32/32, `tests/test_billing.py` 16/16) on branch `fix/api-authorization-and-secret-key`, plus an A/R aging report was built and the parent portal's fatal JS bug (P1-4 — the whole portal's JavaScript was dead) was found and fixed by running it in a real browser. The app is **safe to onboard real families onto once `SECRET_KEY` is set as a Fly secret and the seeded admin password is changed**. What remains is one feature decision (auto-pay) and staff-side UX polish — not data-safety or money-correctness blockers.
 
 Original headline (now resolved): any logged-in parent could read every other family's child records and the studio's entire ledger, and anyone with the repo could forge an admin login.
 
@@ -38,6 +38,12 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 
 ## P1 — Serious (fix before relying on the feature)
 
+### [P1-4] The ENTIRE parent portal's JavaScript was broken by an escaping bug — ✅ FIXED
+- **Where:** `parent/dashboard.html` — a Zelle help string was written `...bank\\'s Zelle...` (double backslash). In a single-quoted JS string `\\` is a literal backslash, so the `'` **closed the string early**, producing a `SyntaxError` that killed the whole `{% block extra_js %}` script.
+- **Impact (severe):** *nothing* dynamic on the parent dashboard ran — no payment methods, no "I paid" reporting, no makeup requests, no company/recital/costume/ticket sections, no forms badges. Parents saw a static shell. Confirmed live: before the fix, **zero** `/api/*` calls reached the server on `/parent`; after, all 8 `init()` fetches fire.
+- **Why the earlier harness missed it:** the template verification harness Jinja-compiles and renders templates — it can't catch a *JavaScript runtime* syntax error. Only running the page in a real browser surfaced it. (Lesson logged: the smoke harness should node-check rendered inline scripts.)
+- **Fix:** `\\'` → `\'`. Verified: `node --check` clean, and both rebuilt modals POST successfully end-to-end.
+
 ### [P1-1] Square invoice OVERCHARGES families who have paid down their balance ✅ FIXED
 - **Where:** `app/api/routes.py` (`send_student_invoice`). Line items were built from **all charges ever** (ignoring payments). Critically, `square_service.send_invoice`'s own docstring says *"amount_cents … unused directly — line items drive it"* — so Square's order total is the **sum of line items = gross charges**, and the `amount_cents` (balance) was ignored entirely. A student with $200 charged / $150 paid was invoiced **$200**, not $50. Confirmed overcharge, not just a display bug.
 - **Fix applied:** line items now carry a single "Outstanding balance" line equal to the net balance, so the Square total == the amount owed. Endpoint also gated staff-only.
@@ -55,7 +61,7 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 ## P2 — Should fix
 
 - **[P2-1] Recurring charges silently skip short months — ✅ FIXED.** `_process_recurring_charges` skipped a charge when `today.day < day_of_month`, so a charge set for the 29th–31st never fired in Feb (and 31 never fired in any 30-day month) → missed tuition 1–5 months/yr with no error. Now clamps the due day to the month's last day (`min(day_of_month, monthrange)`), so it fires on the last day of short months. Math verified (Feb + day-31 → fires day 28). A date-frozen regression test needs `freezegun` (not yet a dep — see P3-3).
-- **[P2-2] 126 raw `prompt()/alert()/confirm()` calls** across ~20 templates for data entry and errors. `confirm()` on deletes is tolerable; `prompt()` for data entry (recital new-year, late fees, payment-plan create, donate, makeup-request) is unprofessional for a paying client. Replace the `prompt()` flows with real modals.
+- **[P2-2] Raw `prompt()` data-entry flows → modals — parent-facing DONE; staff remaining.** The two **parent-facing** flows (donate, makeup request) are now real modals, verified end-to-end in the browser. ~50 `prompt()` calls remain in **staff** tools (recital, donations admin, leads, waivers, skills, company, makeups, pending) — lower priority (staff tolerate rougher UX). `confirm()` guards on deletes are fine to keep.
 - **[P2-3] Four parallel toast/flash systems** (base flash, parent `toast()`, recital `msg()`, pending `showMsg()`). Unify into one helper for consistent feedback.
 - **[P2-4] `aria-label`s — ✅ base shell FIXED; per-page remaining.** Added labels + `aria-hidden` on the shared shell icon buttons (hamburger, close, account menu) and the search input in `base.html` — the chrome on every page. Icon-only buttons inside ~14 individual templates (delete X's, chevrons) still need labels; mechanical, low-risk, next pass.
 - **[P2-5] `/api/cron/run` token compare — ✅ FIXED.** The `not token` guard already rejected an unset token (no empty-string bypass), but the comparison used `!=`. Switched to `secrets.compare_digest` (constant-time) to avoid leaking the token via response timing. Verified: no/wrong token → 403, correct → 200.
@@ -139,5 +145,10 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 - **Found + fixed via preview:** login page exposed demo `admin/admin123` — now gated behind `config.DEBUG` (P2-6), hidden in production.
 - `run.py` now honors `PORT` (12-factor) so it runs under any harness/PaaS.
 
+### Iteration 5 — DONE (verified live in browser; smoke 32/32, billing 16/16)
+- **P1-4 — found & fixed the parent portal's fatal JS escaping bug** (see P1-4). The whole parent dashboard was non-functional; now all sections load. **This was the most impactful find of the audit** and only surfaced by running the page in a real browser.
+- **Parent-facing `prompt()` flows → real modals** (donate + makeup request), verified end-to-end (both POST 201 in the live preview) with on-brand styling and accessible close buttons.
+- **Added a rendered-inline-JS `node --check` guard to the smoke harness** so a JS syntax error in any JS-heavy page fails CI instead of silently bricking a page.
+
 ### Remaining for next iterations
-- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), P2-6 remove demo creds from login, per-page `aria-label`s, P2-2 prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
+- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~50 staff-side `prompt()` flows → modals, per-page `aria-label`s, revenue/enrollment reports + CSV export prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
