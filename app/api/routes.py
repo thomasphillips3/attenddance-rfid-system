@@ -1887,6 +1887,30 @@ def get_messages():
     })
 
 
+def _send_email_async(emails, subject, body):
+    """Fire-and-forget a best-effort email off the request thread. Admin
+    notifications (a new pending payment, a new registration) are best-effort —
+    the user doesn't need them to land before their response, and the admins see
+    every item in the UI regardless. Sending inline couples the user's latency
+    (and, at worst, the 120s worker timeout) to Gmail's responsiveness, which is
+    wrong for a notification the user never sees. Resolve recipients before
+    calling this (a fast DB query); only the SMTP send is backgrounded."""
+    app = current_app._get_current_object()
+    recipients = list(emails)
+    if not recipients:
+        return
+
+    def _worker():
+        with app.app_context():
+            from app import email as email_service
+            try:
+                email_service.send_email(recipients, subject, body)
+            except Exception:
+                logger.exception("Async email send failed: %s", subject)
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
 def _send_message_blast(app, message_id, emails, subject, body):
     """Background worker for a message blast. Runs off the request thread: a
     whole-studio blast ('all' recipients) is one SMTP round-trip per family and
@@ -2645,15 +2669,12 @@ def claim_payment():
         who = p.student.full_name if p.student else (p.family.name + ' (family)' if p.family else 'a family')
         admin_emails = {u.email for u in User.query.filter_by(role='admin', is_active=True).all() if u.email and '@' in u.email}
         if admin_emails:
-            try:
-                email_service.send_email(
-                    admin_emails,
-                    f'New payment to confirm — {who}',
-                    f'{current_user.full_name} reported a {method} payment of ${amount:.2f} for {who}.\n\n'
-                    f'Reference: {p.reference or "(none)"}\n\nConfirm it in the Pending Payments page.',
-                )
-            except Exception:
-                logger.exception("Failed to notify admins of pending payment")
+            _send_email_async(
+                admin_emails,
+                f'New payment to confirm — {who}',
+                f'{current_user.full_name} reported a {method} payment of ${amount:.2f} for {who}.\n\n'
+                f'Reference: {p.reference or "(none)"}\n\nConfirm it in the Pending Payments page.',
+            )
 
     return jsonify({'message': 'Payment reported — the studio will confirm it shortly.',
                     'pending_payment': _pending_to_dict(p)}), 201
@@ -4370,13 +4391,10 @@ def _notify_admins_new_registration():
     if not admins:
         return
     _last_reg_notify[0] = now  # mark before sending so a burst doesn't all fire
-    try:
-        email_service.send_email(
-            admins, 'New enrollment request(s)',
-            'One or more new registration requests were received. '
-            'Review them on the Registrations page.')
-    except Exception:
-        logger.exception("Failed to notify admins of registration")
+    _send_email_async(
+        admins, 'New enrollment request(s)',
+        'One or more new registration requests were received. '
+        'Review them on the Registrations page.')
 
 
 @bp.route('/register', methods=['POST'])

@@ -2715,6 +2715,14 @@ def run_registration_notify_throttle():
                     "parent_name": f"Flood{i}", "parent_email": f"flood{i}@x.com",
                     "students": [{"first_name": "K", "last_name": "F"}]})
                 codes.append(r.status_code)
+        # The notify now sends in a background thread (best-effort, off the public
+        # request path), so wait for the single throttled send to land, then a
+        # grace window to catch any erroneous extra send.
+        import time as _t
+        deadline = _t.monotonic() + 2.0
+        while _t.monotonic() < deadline and calls[0] < 1:
+            _t.sleep(0.02)
+        _t.sleep(0.15)
     finally:
         email_service.send_email = orig
         app.config["MAIL_SERVER"] = None
@@ -2723,6 +2731,34 @@ def run_registration_notify_throttle():
     record(f"Registration admin-notify fires once then throttles (5 submits {codes} -> {calls[0]} email)",
            all(c == 201 for c in codes) and calls[0] == 1,
            f"{calls[0]} notification emails for 5 rapid submits (want exactly 1); codes={codes}", "P2")
+    # The public funnel must not block on a slow admin-notify send: arm a slow
+    # sender, reset the throttle, and assert the submit still returns fast.
+    import time as _t2
+    api_routes._last_reg_notify[0] = 0.0
+    app.config["MAIL_SERVER"] = "smtp.example.com"
+
+    def slow_notify(*a, **k):
+        _t2.sleep(2)
+        return 1
+
+    email_service.send_email = slow_notify
+    try:
+        with app.app_context():
+            Setting.set("registration_open", "1")
+        with app.test_client() as c:
+            t0 = _t2.monotonic()
+            r = c.post("/api/register", json={
+                "parent_name": "SlowNotify", "parent_email": "slow@x.com",
+                "students": [{"first_name": "S", "last_name": "N"}]})
+            elapsed = _t2.monotonic() - t0
+    finally:
+        email_service.send_email = orig
+        app.config["MAIL_SERVER"] = None
+        with app.app_context():
+            Setting.set("registration_open", "0")
+    record(f"Public registration submit doesn't block on the admin-notify send (returned in {elapsed:.2f}s)",
+           r.status_code == 201 and elapsed < 1.0,
+           f"status={r.status_code} elapsed={elapsed:.2f}s", "P2")
 
 
 def run_class_crud():
