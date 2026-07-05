@@ -183,6 +183,48 @@ def run_csrf():
                b'Cross-origin' not in resp.data, "blocked a no-Origin request", "P2")
 
 
+def run_multichild_invite_merge():
+    """Sibling families get one invite per child. Registering the 2nd+ invite
+    with the same email must MERGE the dancer onto the parent's existing account
+    (one login shows all kids), not 500 on the unique-email constraint."""
+    from app.models import User, Student, ParentStudent
+
+    with app.app_context():
+        k1 = Student(first_name="Sib", last_name="One")
+        k2 = Student(first_name="Sib", last_name="Two")
+        db.session.add_all([k1, k2])
+        db.session.flush()
+        for code, kid in (("MCODE1", k1), ("MCODE2", k2)):
+            u = User(username=f"parent-{code}", email=f"invite-{code}@pending.local",
+                     first_name="Pending", last_name="Parent", role="parent",
+                     is_active=False, invite_code=code, password_hash="x")
+            db.session.add(u)
+            db.session.flush()
+            db.session.add(ParentStudent(parent_id=u.id, student_id=kid.id))
+        db.session.commit()
+
+    with app.test_client() as c:
+        r1 = c.post("/auth/register", data={"invite_code": "MCODE1", "first_name": "Sib",
+                    "last_name": "Parent", "email": "sibs@x.com", "password": "pw"})
+        record(f"Sibling invite 1 registers -> {r1.status_code}", r1.status_code in (200, 302),
+               f"got {r1.status_code}", "P1")
+    with app.test_client() as c:
+        r2 = c.post("/auth/register", data={"invite_code": "MCODE2", "first_name": "Sib",
+                    "last_name": "Parent", "email": "sibs@x.com", "password": "pw"},
+                    follow_redirects=False)
+        record(f"Sibling invite 2 (same email) merges, no 500 -> {r2.status_code}",
+               r2.status_code in (200, 302), f"got {r2.status_code} (500=the bug)", "P1")
+    with app.app_context():
+        accts = User.query.filter_by(email="sibs@x.com", is_active=True).all()
+        one_acct = len(accts) == 1
+        both_kids = one_acct and len({s.last_name for s in accts[0].get_children()} | {"One", "Two"}) == 2 \
+            and len(accts[0].get_children()) == 2
+        record("Both siblings under one account", one_acct and both_kids,
+               f"accounts={len(accts)}, kids={[s.full_name for s in accts[0].get_children()] if accts else []}", "P1")
+        record("No orphaned invite accounts", User.query.filter(User.invite_code.isnot(None)).count() == 0,
+               "leftover invites", "P2")
+
+
 def run_login_by_email():
     """Invited parents get an auto-generated `parent-<code>` username they never
     see and register with an email — so login MUST accept email, or they're
@@ -508,6 +550,7 @@ def main():
     run_waiver_signing(ids)
     run_attendance(ids)
     run_message_blast()
+    run_multichild_invite_merge()
     run_login_by_email()
     run_registration_flow()
     run_amount_validation(ids)

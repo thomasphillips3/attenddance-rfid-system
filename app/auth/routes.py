@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 from app import db
 from app.auth import bp
-from app.models import Student, User
+from app.models import ParentStudent, Student, User
 
 
 @bp.route('/login', methods=['GET', 'POST'])
@@ -179,6 +179,35 @@ def register_parent():
         if not invite_user:
             flash('Invalid invite code', 'error')
             return render_template('auth/register.html')
+
+        # If this email already belongs to an active account, don't create a
+        # duplicate. Sibling families get one invite per child, so the second+
+        # invite should ADD the dancer to the parent's existing login rather
+        # than 500 on the unique-email constraint or split kids across accounts.
+        existing = User.query.filter(User.email == email, User.is_active == True,  # noqa: E712
+                                     User.id != invite_user.id).first()
+        if existing:
+            if not existing.is_parent:
+                flash('That email is already in use. Please use a different email.', 'error')
+                return render_template('auth/register.html')
+            # Move the invited dancer(s) onto the existing parent account, then
+            # drop the redundant invite account. Use bulk queries (not ORM object
+            # mutation) so deleting the invite user can't cascade-null the moved
+            # links; commit the move before the delete.
+            existing_links = {ps.student_id for ps in
+                              ParentStudent.query.filter_by(parent_id=existing.id).all()}
+            if existing_links:
+                ParentStudent.query.filter(
+                    ParentStudent.parent_id == invite_user.id,
+                    ParentStudent.student_id.in_(existing_links),
+                ).delete(synchronize_session=False)
+            ParentStudent.query.filter_by(parent_id=invite_user.id).update(
+                {'parent_id': existing.id}, synchronize_session=False)
+            db.session.commit()
+            db.session.delete(invite_user)
+            db.session.commit()
+            flash('This dancer was added to your existing account — please log in.', 'success')
+            return redirect(url_for('auth.login'))
 
         invite_user.first_name = first_name
         invite_user.last_name = last_name

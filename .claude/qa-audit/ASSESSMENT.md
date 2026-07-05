@@ -68,6 +68,10 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 - **Impact:** every invited family locked out of the parent portal after their first session → support tickets during fall enrollment.
 - **Fix:** login now accepts **username OR email** (email is `unique`, so unambiguous); staff username login unchanged. Login form label/placeholder updated to "Username or email." Verified: email login → 302, username → 302, unknown email → rejected. Regression-guarded.
 
+### [P1-6] Sibling families couldn't onboard both kids (500 + split accounts) — ✅ FIXED
+- **Where:** `auth/routes.py` `register_parent`. The invite flow creates **one parent User per student**, so a family with 2+ dancers gets 2+ invite codes. Registering the 2nd invite with the same email set `invite_user.email = email` and committed with **no uniqueness check** → uncaught `IntegrityError` (email is `unique`) → **500**. Even with different emails, each child landed on a **separate account** — so no single login showed all a family's dancers (a core Jackrabbit behavior).
+- **Fix:** when the register email already belongs to an active parent, **merge** — move the invited dancer's link onto that existing account (bulk-update to avoid cascade-nulling the FK), delete the redundant invite account, and send the parent to log in. Verified end-to-end: 2nd sibling invite merges (no 500), one account shows both kids, no orphaned invites, email login works after. Regression-guarded (4 checks). A non-parent email collision returns a friendly error.
+
 ## P2 — Should fix
 
 - **[P2-9] Stored XSS: two staff/admin views rendered user names unescaped — ✅ FIXED.** A systematic sweep of `innerHTML` interpolations found two spots that injected user-controlled names without `esc()`: the **A/R aging report** (`student_name`/`family_name`) and the **time-clock payroll report** (staff `name`). Student names come from **public self-registration**, so a dancer registered as `<img src=x onerror=…>` would execute in the admin's session when they open the aging report — stored XSS from an untrusted source into an admin context. Both now `esc()` the fields. Added a static regression guard (`run_xss_guard`) that fails if any known user-name field is interpolated without escaping. (Every other view already escaped; the `confirm()` dialogs that also show names are safe — they render text, not HTML.)
@@ -267,6 +271,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 
 ### Iteration 25 — DONE
 - **Scoped the one remaining item — auto-pay** ([AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)): decision-ready design so it can be greenlit/deferred. Grounded in the app's existing Square integration (customer helper + idempotent recurring scheduler already exist), it lays out the Cards-API/Web-Payments-SDK approach, `SavedCard` model, charge-on-schedule + failure handling, PCI (SAQ-A) posture, a ~3–4 day phased build, risks, and the recommendation to launch fall on manual and build auto-pay as the first post-launch project. This turns "what remains" into an actionable decision for the one open item.
+
+### Iteration 33 — DONE (smoke 74/74)
+- **Found + fixed sibling onboarding (P1-6):** registering a 2nd child's invite with the same email 500'd (unique-email) and, even otherwise, split siblings across separate parent accounts. Now merges the dancer onto the parent's existing login (bulk-update, commit-before-delete to avoid an ORM cascade nulling the moved FK). One family = one login showing all kids, matching Jackrabbit. Added a 4-check regression covering the merge, the account count, and orphan cleanup.
 
 ### Iteration 32 — DONE (smoke 70/70)
 - **Found + fixed a fall-onboarding lockout (P1-5):** login was username-only, but invited parents get a hidden auto-generated `parent-<code>` username and register with email — so they'd be locked out after logging out. Login now accepts email or username (email is unique). Audited the rest of the invite flow: codes are CSPRNG (`secrets.token_hex`), single-use (nulled after register), and pre-bound to a specific parent+student (no account-takeover vector). Added a 3-check regression.
