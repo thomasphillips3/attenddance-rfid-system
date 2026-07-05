@@ -293,6 +293,22 @@
             if (m) m.style.display = 'none';
         }, 5000);
 
+        // Fetch the COMPLETE active-student roster by paging the API (per_page
+        // caps at 100). Any page that loads students into a client-side list or
+        // filter must use this — fetching only page 1 silently hides students past
+        // the first 100. 50-page (5000-student) safety cap guards a runaway loop.
+        window.fetchAllStudents = async function () {
+            var all = [], page = 1, pages = 1;
+            do {
+                var res = await fetch('/api/students?per_page=100&page=' + page);
+                var data = await res.json();
+                all = all.concat(data.students || []);
+                pages = (data.pagination && data.pagination.pages) || 1;
+                page++;
+            } while (page <= pages && page <= 50);
+            return all;
+        };
+
         // Staff topbar search. Defined on window (plain script, runs before the
         // deferred Alpine init) so x-data="globalSearch()" resolves. Results use
         // x-text, so student/family names are auto-escaped — no XSS from names.

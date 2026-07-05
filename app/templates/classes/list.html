@@ -252,14 +252,15 @@ async function toggleAddSection(show) {
     document.getElementById('add-students-section').classList.toggle('hidden', !show);
     document.getElementById('add-btn-row').classList.toggle('hidden', show);
     if (show) {
-        const [studentsRes, enrollRes] = await Promise.all([
-            fetch('/api/students?per_page=100'),
+        // fetchAllStudents (base.html) pages to the COMPLETE roster — fetching only
+        // page 1 would make students past the first 100 un-enrollable via this modal.
+        const [allStudents, enrollRes] = await Promise.all([
+            fetchAllStudents(),
             fetch(`/api/classes/${currentClassId}/enrollments`)
         ]);
-        const studentsData = await studentsRes.json();
         const enrollData = await enrollRes.json();
         const enrolledIds = new Set(enrollData.enrollments.map(e => e.student_id));
-        const available = studentsData.students.filter(s => !enrolledIds.has(s.id));
+        const available = allStudents.filter(s => !enrolledIds.has(s.id));
         const cl = document.getElementById('student-checklist');
         if (!available.length) {
             cl.innerHTML = '<p class="text-ink-3 text-sm py-2 text-center">All students are already enrolled.</p>';

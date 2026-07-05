@@ -136,20 +136,10 @@ let allStudents = [];
 
 async function loadStudents() {
     try {
-        // Fetch the COMPLETE roster by paging through — the API caps per_page at
-        // 100, and the search box below filters this list client-side, so loading
-        // only page 1 would hide (and make unsearchable) every student past the
-        // first 100. The 50-page safety cap (5000 students) far exceeds any real
-        // studio while preventing a pathological loop.
-        let all = [], page = 1, pages = 1;
-        do {
-            const res = await fetch('/api/students?per_page=100&page=' + page);
-            const data = await res.json();
-            all = all.concat(data.students || []);
-            pages = (data.pagination && data.pagination.pages) || 1;
-            page++;
-        } while (page <= pages && page <= 50);
-        allStudents = all;
+        // fetchAllStudents (base.html) pages the API to the COMPLETE roster — the
+        // search box below filters this list client-side, so loading only page 1
+        // would hide (and make unsearchable) every student past the first 100.
+        allStudents = await fetchAllStudents();
         renderStudents(allStudents);
     } catch (err) {
         document.getElementById('students-table').innerHTML =

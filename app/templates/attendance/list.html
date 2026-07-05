@@ -106,9 +106,11 @@ async function loadHistory() {
 
 async function openCheckinModal() {
     document.getElementById('checkin-modal').classList.remove('hidden');
-    const [sRes, cRes] = await Promise.all([fetch('/api/students?per_page=100'), fetch('/api/classes')]);
-    const sData = await sRes.json(), cData = await cRes.json();
-    document.getElementById('checkin-student').innerHTML = '<option value="">Select student...</option>' + sData.students.map(s => `<option value="${s.id}">${esc(s.full_name)}</option>`).join('');
+    // fetchAllStudents (base.html) pages to the full roster — a page-1-only fetch
+    // would leave students past the first 100 unselectable for manual check-in.
+    const [students, cRes] = await Promise.all([fetchAllStudents(), fetch('/api/classes')]);
+    const cData = await cRes.json();
+    document.getElementById('checkin-student').innerHTML = '<option value="">Select student...</option>' + students.map(s => `<option value="${s.id}">${esc(s.full_name)}</option>`).join('');
     document.getElementById('checkin-class').innerHTML = '<option value="">Select class...</option>' + cData.classes.map(c => `<option value="${c.id}">${esc(c.name)} (${esc(c.day_name)} ${esc(c.start_time)})</option>`).join('');
 }
 
