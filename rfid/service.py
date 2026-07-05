@@ -7,6 +7,8 @@ import time
 from datetime import date, datetime, timedelta
 from typing import Optional
 
+from sqlalchemy.exc import IntegrityError
+
 from rfid.reader import create_rfid_reader
 from app.models import Student, Attendance, DanceClass, RFIDLog
 from app import db
@@ -161,13 +163,23 @@ class RFIDService:
                     check_in_method='rfid',
                     is_present=True
                 )
-                
+
                 db.session.add(attendance)
-                db.session.commit()
-                
+                try:
+                    db.session.commit()
+                except IntegrityError:
+                    # A near-simultaneous scan (past the existing-check above) hit
+                    # the unique (student, class, day) index. The student is
+                    # already marked present — recover the session and treat it as
+                    # an already-checked-in success rather than wedging the reader.
+                    db.session.rollback()
+                    self._log_rfid_scan(uid, "already_checked_in", success=True,
+                                        error="Already checked in today", student_id=student.id)
+                    return True
+
                 logger.info(f"✅ Student {student.full_name} checked in to {current_class.name}")
                 self._log_rfid_scan(uid, "checkin", success=True, student_id=student.id)
-                
+
                 return True
                 
         except Exception as e:
