@@ -81,6 +81,13 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 
 ---
 
+## Taking attendance (most-used fall feature) — verified live
+
+The single most-used daily flow was exercised end-to-end and works:
+- The card-based take-attendance UI (`/take-attendance/<class_id>`) renders per-student week grids with the current week highlighted.
+- Marking present persists (`POST /api/attendance/toggle` → 201, `present: true`); tapping again removes it (→ 200, `present: false`) — correct idempotent toggle.
+- Parents can't mark attendance (write-guard, 403). Regression-guarded in the harness.
+
 ## Email/SMS message blasts (studio→families comms) — audited & verified
 
 The fall communication path was reviewed and comes back **sound**:
@@ -219,6 +226,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 
 ### Iteration 18 — DONE
 - **Wrote the go-live runbook** ([GO-LIVE.md](GO-LIVE.md)): the ordered, executable launch sequence — required secrets (SECRET_KEY, admin password) → merge/deploy → post-deploy smoke test → optional client-side config (SMTP, Square, Zelle, Twilio, registration, cron), grounded in the app's actual config mechanisms. Turns the whole audit into an actionable launch plan. (Considered SRI/CDN hardening (P3-4) but left it: the Tailwind Play CDN can't take a stable SRI hash, and a real Tailwind build is a large refactor that would risk the design system — not worth it for a low-likelihood CDN-compromise risk.)
+
+### Iteration 19 — DONE (smoke 61/61)
+- **Verified taking attendance end-to-end** (the most-used fall feature — see the Attendance section): UI renders, mark-present persists (201), toggle-off removes (200), parents blocked (403). Added a 4-check regression. This was the last core fall flow I'd loaded pages around but not actually exercised.
 
 ### Remaining for next iterations
 - P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~30 remaining staff-side `prompt()` flows → modals (spring-only: recital, waivers, skills, makeups, donations-admin), P3-4 SRI (deferred — see above) prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.

@@ -183,6 +183,31 @@ def run_csrf():
                b'Cross-origin' not in resp.data, "blocked a no-Origin request", "P2")
 
 
+def run_attendance(ids):
+    """Taking attendance — the most-used fall feature: mark present persists,
+    toggling again removes it, and parents can't mark attendance."""
+    sid = ids["child_a"]
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r1 = c.post("/api/attendance/toggle", json={"student_id": sid, "class_id": 4321})
+        d1 = r1.get_json() or {}
+        record(f"Mark present -> {r1.status_code} present={d1.get('present')}",
+               r1.status_code == 201 and d1.get("present") is True, str(d1), "P1")
+        r2 = c.post("/api/attendance/toggle", json={"student_id": sid, "class_id": 4321})
+        d2 = r2.get_json() or {}
+        record(f"Toggle again removes attendance -> {r2.status_code} present={d2.get('present')}",
+               r2.status_code == 200 and d2.get("present") is False, str(d2), "P1")
+        # missing fields rejected
+        r3 = c.post("/api/attendance/toggle", json={"student_id": sid})
+        record(f"Attendance toggle requires class_id -> {r3.status_code}", r3.status_code == 400,
+               f"got {r3.status_code}", "P3")
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        r = c.post("/api/attendance/toggle", json={"student_id": sid, "class_id": 4321})
+        record(f"Parent cannot mark attendance -> {r.status_code}", r.status_code == 403,
+               f"got {r.status_code}", "P0")
+
+
 def run_message_blast():
     """Message blasts: validated, resolve recipients, degrade gracefully when
     SMTP isn't configured (save + return emails), and parents can't send."""
@@ -391,6 +416,7 @@ def main():
     ids = seed()
     run_idor(ids)
     run_csrf()
+    run_attendance(ids)
     run_message_blast()
     run_registration_flow()
     run_amount_validation(ids)
