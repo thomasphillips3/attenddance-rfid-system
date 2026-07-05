@@ -94,6 +94,13 @@ def _process_auto_reminders():
         min_bal = 0.0
     send_sms_too = Setting.get_bool('reminders_send_sms')
 
+    # Mark the month done BEFORE sending. Reminders are a best-effort monthly
+    # nudge, and the machine wakes/sleeps all day — if we marked done only at the
+    # end, a mid-loop kill (OOM) or an unhandled send error would re-run and
+    # re-notify families already reminded (spam). At-most-once beats guaranteed
+    # delivery here: the studio still sees unpaid balances on the aging report.
+    Setting.set('reminders_last_run', ym)
+
     students = Student.query.filter_by(is_active=True).all()
     balances = calc_balance_bulk([s.id for s in students])
     email_ok = email_service.is_configured()
@@ -117,9 +124,11 @@ def _process_auto_reminders():
         if sms_ok:
             phone = s.parent_phone or (s.family.primary_phone if s.family else None) or s.phone
             if phone:
-                sms_service.send_sms(phone, body)
+                try:  # a single SMS failure must not abort the whole run
+                    sms_service.send_sms(phone, body)
+                except Exception:
+                    logger.exception("Auto-reminder SMS failed for %s", s.full_name)
 
-    Setting.set('reminders_last_run', ym)
     logger.info("Auto-reminders processed: %d students notified", sent)
 
 

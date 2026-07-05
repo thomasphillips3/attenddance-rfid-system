@@ -655,6 +655,37 @@ def run_attendance(ids):
                f"got {r.status_code}", "P0")
 
 
+def run_auto_reminders():
+    """Auto-reminders email/SMS families with balances, and run on every boot +
+    cron (the machine wakes/sleeps all day). They MUST fire at most once per
+    month or families get spammed. Verify: disabled = no-op; enabled marks the
+    month done BEFORE sending (so a mid-loop crash can't cause a re-send); and a
+    repeat run in the same month is a gated no-op."""
+    from datetime import date
+    from app import _process_auto_reminders
+    from app.models import Setting
+    ym = date.today().strftime("%Y-%m")
+    with app.app_context():
+        # Disabled -> returns before writing the marker.
+        Setting.set("reminders_auto_enabled", "0")
+        Setting.set("reminders_last_run", "SENTINEL")
+        _process_auto_reminders()
+        record("Auto-reminders skip entirely when disabled",
+               Setting.get("reminders_last_run") == "SENTINEL", "ran while disabled", "P2")
+        # Enabled on today's day -> marks the month done (mark-first).
+        Setting.set("reminders_auto_enabled", "1")
+        Setting.set("reminders_day_of_month", str(date.today().day))
+        Setting.set("reminders_last_run", "")
+        _process_auto_reminders()
+        record(f"Auto-reminders mark the month done (mark-first) -> {Setting.get('reminders_last_run')}",
+               Setting.get("reminders_last_run") == ym, f"got {Setting.get('reminders_last_run')}", "P1")
+        # Repeat same month -> gated no-op (the anti-spam guarantee), no error.
+        _process_auto_reminders()
+        record("Repeat run in the same month is a gated no-op",
+               Setting.get("reminders_last_run") == ym, "re-ran within the month", "P1")
+        Setting.set("reminders_auto_enabled", "0")  # leave disabled for other tests
+
+
 def run_message_blast():
     """Message blasts: validated, resolve recipients, degrade gracefully when
     SMTP isn't configured (save + return emails), and parents can't send."""
@@ -1392,6 +1423,7 @@ def main():
     run_waiver_signing(ids)
     run_attendance(ids)
     run_message_blast()
+    run_auto_reminders()
     run_multichild_invite_merge()
     run_square_webhook(ids)
     run_reconciliation(ids)

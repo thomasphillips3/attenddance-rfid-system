@@ -3680,9 +3680,16 @@ def cron_run():
     if not token or not secrets.compare_digest(str(provided), str(token)):
         return jsonify({'error': 'Invalid or missing cron token'}), 403
     from app import _process_auto_reminders, _process_recurring_charges
-    _process_recurring_charges()
-    _process_auto_reminders()
-    return jsonify({'status': 'ran recurring charges + auto reminders'})
+    ran = []
+    for name, fn in (('recurring_charges', _process_recurring_charges),
+                     ('auto_reminders', _process_auto_reminders)):
+        try:
+            fn()
+            ran.append(name)
+        except Exception:
+            db.session.rollback()
+            logger.exception("Cron: %s failed", name)
+    return jsonify({'status': 'ok', 'ran': ran})
 
 
 @bp.route('/balances/apply-late-fees', methods=['POST'])
