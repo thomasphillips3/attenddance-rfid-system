@@ -209,7 +209,7 @@ def acknowledge_rules(student_id):
 
 
 @bp.route('/take-attendance')
-@login_required
+@staff_required
 def take_attendance():
     today = date.today()
     current_weekday = today.weekday()
@@ -384,7 +384,7 @@ def registrations_page():
 
 
 @bp.route('/calendar')
-@login_required
+@staff_required
 def calendar_page():
     return render_template('calendar/view.html')
 

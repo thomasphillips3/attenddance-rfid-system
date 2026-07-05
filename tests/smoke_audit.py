@@ -2723,13 +2723,15 @@ def run_page_route_authz(ids):
             (f"/rules/acknowledge/{other}", other_name),
             (f"/students/{other}/sign-waivers", other_name),
             (f"/take-attendance/{cid}", "AuthzClass"),
+            ("/take-attendance", "AuthzClass"),   # staff attendance landing (renders today's classes)
+            ("/calendar", "AuthzClass"),          # staff class-schedule view
         ):
             r = c.get(path, follow_redirects=False)
             body = r.get_data(as_text=True)
             blocked.append(r.status_code in (301, 302) and marker not in body)
         # own child still reachable
         own = c.get(f"/rules/acknowledge/{mine}", follow_redirects=False)
-        record(f"Parent blocked from other/staff page routes ({sum(blocked)}/4), own child OK -> {own.status_code}",
+        record(f"Parent blocked from other/staff page routes ({sum(blocked)}/{len(blocked)}), own child OK -> {own.status_code}",
                all(blocked) and own.status_code == 200,
                f"blocked={blocked} own={own.status_code}", "P1")
 
