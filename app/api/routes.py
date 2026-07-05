@@ -143,6 +143,24 @@ def _valid_amount(raw):
     return amt, None
 
 
+def _resolve_student_id(raw, required=True):
+    """Validate that a student id is a positive int referring to a real student.
+    Returns (id_or_None, None) on success or (None, (json, status)) on error.
+    Prevents the recurring bug where a create endpoint stores an unchecked
+    student_id and orphans a row that then 500s its roster page. Pass
+    required=False for endpoints where the student link is optional."""
+    if raw in (None, '', 0):
+        if required:
+            return None, (jsonify({'error': 'student_id is required'}), 400)
+        return None, None
+    sid, err = _valid_id(raw)
+    if err:
+        return None, err
+    if Student.query.get(sid) is None:
+        return None, (jsonify({'error': 'student not found'}), 404)
+    return sid, None
+
+
 def _clean_str(value):
     """Coerce a JSON value to a trimmed string. Scalars (str/int/float) stringify;
     None and non-scalars (list/dict) become '' so a `not name` guard still fires.
@@ -2710,15 +2728,18 @@ def add_group_member(gid):
         return err
     g = PerformanceGroup.query.get_or_404(gid)
     data = request.get_json() or {}
-    if not data.get('student_id'):
-        return jsonify({'error': 'student_id is required'}), 400
-    existing = CompanyMembership.query.filter_by(group_id=gid, student_id=data['student_id']).first()
+    student_id, serr = _valid_id(data.get('student_id'))
+    if serr:
+        return serr
+    if Student.query.get(student_id) is None:
+        return jsonify({'error': 'student not found'}), 404
+    existing = CompanyMembership.query.filter_by(group_id=gid, student_id=student_id).first()
     if existing:
         existing.is_active = True
         existing.role = (data.get('role') or existing.role).strip()
         db.session.commit()
         return jsonify({'message': 'Member reactivated'}), 200
-    m = CompanyMembership(group_id=gid, student_id=int(data['student_id']),
+    m = CompanyMembership(group_id=gid, student_id=student_id,
                           role=(data.get('role') or 'Member').strip())
     db.session.add(m)
     db.session.commit()
@@ -2979,11 +3000,14 @@ def add_assignment(pid):
                 added += 1
         db.session.commit()
         return jsonify({'message': f'Assigned {added} group members'}), 201
-    if not data.get('student_id'):
-        return jsonify({'error': 'student_id is required'}), 400
-    if PerformanceAssignment.query.filter_by(performance_id=pid, student_id=data['student_id']).first():
+    student_id, serr = _valid_id(data.get('student_id'))
+    if serr:
+        return serr
+    if Student.query.get(student_id) is None:
+        return jsonify({'error': 'student not found'}), 404
+    if PerformanceAssignment.query.filter_by(performance_id=pid, student_id=student_id).first():
         return jsonify({'error': 'Already assigned'}), 400
-    a = PerformanceAssignment(performance_id=pid, student_id=int(data['student_id']),
+    a = PerformanceAssignment(performance_id=pid, student_id=student_id,
                               notes=(data.get('notes') or '').strip() or None)
     db.session.add(a)
     db.session.commit()
@@ -3360,11 +3384,14 @@ def add_costume_assignment(cid):
         db.session.commit()
         return jsonify({'message': f'Assigned {added} dancers'}), 201
 
-    if not data.get('student_id'):
-        return jsonify({'error': 'student_id is required'}), 400
-    if CostumeAssignment.query.filter_by(costume_id=cid, student_id=data['student_id']).first():
+    student_id, serr = _valid_id(data.get('student_id'))
+    if serr:
+        return serr
+    if Student.query.get(student_id) is None:
+        return jsonify({'error': 'student not found'}), 404
+    if CostumeAssignment.query.filter_by(costume_id=cid, student_id=student_id).first():
         return jsonify({'error': 'Already assigned'}), 400
-    a = CostumeAssignment(costume_id=cid, student_id=int(data['student_id']),
+    a = CostumeAssignment(costume_id=cid, student_id=student_id,
                           size=(data.get('size') or '').strip() or None)
     db.session.add(a)
     db.session.commit()
@@ -4932,6 +4959,10 @@ def add_recital_cast(nid):
     data = request.get_json() or {}
 
     def _add(sid, part=None):
+        # Only cast students that actually exist (skip bad ids) so we don't
+        # orphan a RecitalCast row that then 500s the number's cast display.
+        if Student.query.get(sid) is None:
+            return 0
         if not RecitalCast.query.filter_by(number_id=nid, student_id=sid).first():
             db.session.add(RecitalCast(number_id=nid, student_id=sid, part=part))
             return 1
@@ -4951,13 +4982,19 @@ def add_recital_cast(nid):
         return jsonify({'message': f'Added {added} dancers', 'number': _number_to_dict(n)}), 201
 
     if data.get('student_ids'):
-        added = sum(_add(int(s)) for s in data['student_ids'])
+        ids = []
+        for s in data['student_ids']:
+            v, _e = _valid_id(s)
+            if not _e:
+                ids.append(v)
+        added = sum(_add(s) for s in ids)
         db.session.commit()
         return jsonify({'message': f'Added {added} dancers', 'number': _number_to_dict(n)}), 201
 
-    if not data.get('student_id'):
-        return jsonify({'error': 'student_id is required'}), 400
-    added = _add(int(data['student_id']), (data.get('part') or '').strip() or None)
+    student_id, serr = _resolve_student_id(data.get('student_id'))
+    if serr:
+        return serr
+    added = _add(student_id, (data.get('part') or '').strip() or None)
     if not added:
         return jsonify({'error': 'Dancer already in this number'}), 400
     db.session.commit()
@@ -5013,12 +5050,15 @@ def create_recital_award(rid):
     data = request.get_json() or {}
     if not data.get('title'):
         return jsonify({'error': 'title is required'}), 400
+    award_student_id, serr = _resolve_student_id(data.get('student_id'), required=False)
+    if serr:
+        return serr
     last = r.awards.order_by(RecitalAward.order_index.desc()).first()
     a = RecitalAward(
         recital_id=r.id,
         title=data['title'].strip(),
         category=(data.get('category') or '').strip() or None,
-        student_id=int(data['student_id']) if data.get('student_id') else None,
+        student_id=award_student_id,
         recipient_text=(data.get('recipient_text') or '').strip() or None,
         description=(data.get('description') or '').strip() or None,
         order_index=(last.order_index + 1) if last else 1,
@@ -5093,6 +5133,9 @@ def create_recital_ad(rid):
     data = request.get_json() or {}
     if not data.get('advertiser'):
         return jsonify({'error': 'advertiser is required'}), 400
+    ad_student_id, serr = _resolve_student_id(data.get('student_id'), required=False)
+    if serr:
+        return serr
     size = (data.get('size') or 'shout_out').strip()
     if size not in AD_SIZES:
         size = 'shout_out'
@@ -5105,7 +5148,7 @@ def create_recital_ad(rid):
         content=(data.get('content') or '').strip() or None,
         contact_name=(data.get('contact_name') or '').strip() or None,
         contact_email=(data.get('contact_email') or '').strip() or None,
-        student_id=int(data['student_id']) if data.get('student_id') else None,
+        student_id=ad_student_id,
         status=(data.get('status') or 'submitted').strip(),
         paid=bool(data.get('paid')),
         order_index=(last.order_index + 1) if last else 1,

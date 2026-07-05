@@ -1002,6 +1002,49 @@ def run_backup(ids):
                r.status_code in (401, 403), f"got {r.status_code}", "P0")
 
 
+def run_orphan_guard(ids):
+    """Systematic guard against the recurring orphan-row bug: a create endpoint
+    that stores a request-supplied student_id without checking it exists will
+    orphan a row that then 500s its roster page (hit repeatedly: makeups,
+    attendance, waitlist, and the whole performance/recital assign surface).
+    Every such endpoint must reject a nonexistent id (404), reject garbage (400),
+    and leave its roster page rendering (200)."""
+    from app.models import (PerformanceGroup, Performance, Costume, Recital,
+                            RecitalNumber)
+    with app.app_context():
+        g = PerformanceGroup(name="Orphan Co")
+        db.session.add(g)
+        db.session.flush()
+        p = Performance(title="Orphan Show", group_id=g.id)
+        cst = Costume(name="Orphan Tutu")
+        rec = Recital(year=2027, title="Orphan Recital")
+        db.session.add_all([p, cst, rec])
+        db.session.flush()
+        num = RecitalNumber(recital_id=rec.id, title="Opening", order_index=1)
+        db.session.add(num)
+        db.session.commit()
+        gid, pid, cid, rid, nid = g.id, p.id, cst.id, rec.id, num.id
+
+    # (label, create-url, roster-GET-url, extra required fields)
+    cases = [
+        ("group member", f"/api/performance/groups/{gid}/members", f"/api/performance/groups/{gid}/members", {}),
+        ("perf assignment", f"/api/performance/performances/{pid}/assignments", f"/api/performance/performances/{pid}/assignments", {}),
+        ("costume assign", f"/api/costumes/{cid}/assignments", f"/api/costumes/{cid}/assignments", {}),
+        ("recital cast", f"/api/recital-numbers/{nid}/cast", f"/api/recital-numbers/{nid}/cast", {}),
+        ("recital award", f"/api/recitals/{rid}/awards", f"/api/recitals/{rid}/awards", {"title": "Best"}),
+        ("recital ad", f"/api/recitals/{rid}/ads", f"/api/recitals/{rid}/ads", {"advertiser": "ACME"}),
+    ]
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        for label, post_url, list_url, extra in cases:
+            rn = c.post(post_url, json={"student_id": 999999, **extra})
+            rg = c.post(post_url, json={"student_id": "xyz", **extra})
+            rl = c.get(list_url)
+            ok = rn.status_code == 404 and rg.status_code == 400 and rl.status_code == 200
+            record(f"orphan-guard {label}: nonexistent->{rn.status_code} garbage->{rg.status_code} roster->{rl.status_code}",
+                   ok, f"{rn.status_code}/{rg.status_code}/{rl.status_code} (want 404/400/200)", "P2")
+
+
 def run_csv_exports(ids):
     """CSV exports: staff get a well-formed CSV; parents are blocked."""
     # Parent blocked.
@@ -1178,6 +1221,7 @@ def main():
     run_input_robustness(ids)
     run_parent_input_robustness(ids)
     run_parent_write_authz(ids)
+    run_orphan_guard(ids)
     run_prod_security_config()
     run_backup(ids)
     run_csv_exports(ids)
