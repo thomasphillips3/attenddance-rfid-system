@@ -9,9 +9,11 @@
 
 **Not production-ready as-is — but close, and the blockers are concentrated.** The feature breadth is genuinely impressive and the UI redesign is fully landed (0 legacy-style files remain). What stands between here and go-live is **two P0 security holes that are individually catastrophic for a system holding minors' PII and money**, one P1 billing defect, and a short list of parity/polish gaps. The P0s are both fixable in an afternoon; neither requires new features.
 
-The single most important sentence in this doc: **right now, any parent who logs in can read every other family's child records (allergies, medical needs, emergency contacts) and the studio's entire financial ledger, and anyone who has seen the GitHub repo can forge an admin login.** Fix those two before a single real family gets an account.
+**UPDATE (after 3 fix iterations):** both P0s, both fixable P1s (Square overcharge, CSRF), and four P2/P3s are now **fixed and verified** by two runtime harnesses (`tests/smoke_audit.py` 30/30, `tests/test_billing.py` 11/11) on branch `fix/api-authorization-and-secret-key`. The app is **safe to onboard real families onto once `SECRET_KEY` is set as a Fly secret**. What remains is one feature decision (auto-pay) and UX polish — not data-safety or money-correctness blockers.
 
-Severity counts: **2 P0, 3 P1, 5 P2, 3 P3** (this pass; billing/bug/parity depth still expanding in later iterations).
+Original headline (now resolved): any logged-in parent could read every other family's child records and the studio's entire ledger, and anyone with the repo could forge an admin login.
+
+Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0, 2 P1, 4 P2/P3. Remaining: P1-2 auto-pay (feature), plus UX-polish P2/P3s and parity enhancements (AR aging, per-page a11y).
 
 ---
 
@@ -55,14 +57,50 @@ Severity counts: **2 P0, 3 P1, 5 P2, 3 P3** (this pass; billing/bug/parity depth
 - **[P2-1] Recurring charges silently skip short months — ✅ FIXED.** `_process_recurring_charges` skipped a charge when `today.day < day_of_month`, so a charge set for the 29th–31st never fired in Feb (and 31 never fired in any 30-day month) → missed tuition 1–5 months/yr with no error. Now clamps the due day to the month's last day (`min(day_of_month, monthrange)`), so it fires on the last day of short months. Math verified (Feb + day-31 → fires day 28). A date-frozen regression test needs `freezegun` (not yet a dep — see P3-3).
 - **[P2-2] 126 raw `prompt()/alert()/confirm()` calls** across ~20 templates for data entry and errors. `confirm()` on deletes is tolerable; `prompt()` for data entry (recital new-year, late fees, payment-plan create, donate, makeup-request) is unprofessional for a paying client. Replace the `prompt()` flows with real modals.
 - **[P2-3] Four parallel toast/flash systems** (base flash, parent `toast()`, recital `msg()`, pending `showMsg()`). Unify into one helper for consistent feedback.
-- **[P2-4] Zero `aria-label`s app-wide** — every icon-only button (hamburger, close X, chevrons, search, logout) is unnamed for screen readers. Add labels; it's cheap.
+- **[P2-4] `aria-label`s — ✅ base shell FIXED; per-page remaining.** Added labels + `aria-hidden` on the shared shell icon buttons (hamburger, close, account menu) and the search input in `base.html` — the chrome on every page. Icon-only buttons inside ~14 individual templates (delete X's, chevrons) still need labels; mechanical, low-risk, next pass.
 - **[P2-5] `/api/cron/run` token compare — ✅ FIXED.** The `not token` guard already rejected an unset token (no empty-string bypass), but the comparison used `!=`. Switched to `secrets.compare_digest` (constant-time) to avoid leaking the token via response timing. Verified: no/wrong token → 403, correct → 200.
 
 ## P3 — Polish
 
-- **[P3-1] 2 of 11 `<img>` tags lack `alt`.**
+- **[P3-1] 2 `<img>` tags lacked `alt` — ✅ FIXED** (Zelle QR preview + recital ad; 0 remain).
 - **[P3-2] `SECRET_KEY`/`JWT_SECRET_KEY` still have insecure dev fallbacks** in base `Config` — fine for dev, but the prod guard (P0-1) is what makes them safe.
 - **[P3-3] No automated test suite in-repo** (prior smoke harness wasn't kept). `tests/smoke_audit.py` added this pass is the seed of one; grow it into CI.
+
+---
+
+## Functional / reliability sweep — comes back clean
+
+Checked the areas most likely to hide production bugs; no new P0/P1 beyond what's already fixed:
+- **Migrations are idempotent** (`app/migrations.py`): every `ALTER TABLE` is guarded by a column-existence check and is additive-only; `db.create_all()` handles new tables before migrations run. Fresh DB and existing prod DB both boot.
+- **Silent failures:** the `except Exception:` blocks log via `logger.exception`; the one `except: pass` (`email.py`) is on `smtp.quit()` in a `finally` — harmless, real send errors propagate.
+- **No meaningful N+1 / memory risk at this scale:** singular `calc_balance` calls are all single-student contexts (invoice, reminder, one parent's few children); bulk paths use `calc_balance_bulk` (one aggregate query); unbounded `.all()` only hits the students table (hundreds of rows) — fine on the 256MB box. The 1-worker gthread posture is deliberate and documented.
+- **Startup side effects** (recurring charges, reminders) are wrapped/guarded; recurring is now short-month-safe.
+
+## Jackrabbit parity — capability matrix
+
+Verdict: **strong parity for daily operations; the one structural gap is automated payment collection.** A studio can run the fall session on this today (registration, scheduling, attendance, tuition charges, parent portal, recital, comms all work), but tuition *collection* is manual — the biggest ongoing difference from Jackrabbit.
+
+| Capability | Status | Notes |
+|---|---|---|
+| Online registration & enrollment | **PRESENT** | Public `/register` → Registration → admin approve; class waitlists |
+| Family & student management | **PRESENT** | Family/siblings, full student records + measurements |
+| Class scheduling (day/time/level/age) | **PRESENT** | `DanceClass` + visual `/calendar` |
+| Attendance & absences | **PRESENT** | Attendance + RFID + makeups |
+| Tuition charges & recurring billing | **PRESENT** | Recurring charge rows, per-category balances, bulk charge |
+| **Auto-pay / cards on file** | **MISSING** | No saved-card auto-charge — the #1 gap (P1-2) |
+| Online card payment | **PARTIAL** | One-off Square invoices (manual send); no integrated checkout/autopay |
+| Payment reconciliation | **PRESENT** | Parent "I paid" → admin confirm inbox; family-split allocation |
+| Parent portal | **PRESENT** | View account/schedule, report payments, waivers, tickets, makeups, donate |
+| Skills / levels | **PRESENT** | Skill/StudentSkill + printable certificates |
+| Costume & recital management | **PRESENT** | Recital Hub: numbers/cast/costumes/tickets/awards/ads/booklet |
+| Email / SMS communication | **PRESENT*** | Blasts + Twilio SMS — *needs SMTP/Twilio creds entered to actually send |
+| Late / returned-payment fees | **PARTIAL** | Late fees ✅ (now idempotent); no NSF/returned-payment or refund/void path |
+| Financial statements | **PRESENT** | Year-end student/family + 501(c)(3) giving statements |
+| Waivers & policies | **PRESENT** | Digital waivers + per-rule acknowledgment |
+| Staff/teacher roles | **PARTIAL** | admin vs teacher tiers exist, but coarse — a teacher sees all students, not just their classes |
+| Management reporting (revenue/enrollment/**AR aging**) | **PARTIAL** | Retention analytics, ticket revenue, all-balances view + reminders; no aging buckets (30/60/90) or revenue/enrollment reports or CSV export |
+
+**Top parity risks for fall, ranked:** (1) auto-pay/cards-on-file — manual collection is the daily tax; (2) AR aging report — the owner will want a "who owes, how overdue" view to chase tuition; (3) confirm SMTP/Twilio are configured so receipts/reminders actually send (currently save-only).
 
 ---
 
@@ -89,5 +127,10 @@ Severity counts: **2 P0, 3 P1, 5 P2, 3 P3** (this pass; billing/bug/parity depth
 - **Billing correctness verified (no change needed):** `allocate_family_payment` loses/invents no pennies across exact/partial/overpayment/odd-cent inputs and caps each child at their balance (money is `Numeric(10,2)` at rest; the `float()` casts in helpers are a smell but safe given 2-decimal values). `confirm_pending_payment` blocks re-confirm (`status != 'pending'`). Square webhook is idempotent (`if rec.paid_at`) and HMAC-verified when keyed.
 - **New P2 logged:** Square webhook records the *full* invoice amount on a `PARTIALLY_PAID` event and then sets `paid_at`, so the later `PAID` event is ignored — over-counts the payment and drops the remainder. Needs a product call on partial-payment semantics; Square isn't active yet so it's not urgent.
 
+### Iteration 3 — DONE
+- **Functional/reliability sweep** (migrations idempotency, silent failures, N+1/memory) — clean, no new bugs (see section above).
+- **Jackrabbit parity matrix** produced (see section above) — verdict: strong daily-ops parity, auto-pay is the one structural gap.
+- **Accessibility:** base-shell icon buttons + search input labelled (`aria-label`/`aria-hidden`); both missing `<img alt>` fixed. All 46 templates still Jinja-compile.
+
 ### Remaining for next iterations
-- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), P2-2 prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
+- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), AR-aging report (parity), per-page `aria-label`s, P2-2 prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.

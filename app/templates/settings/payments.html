@@ -217,7 +217,7 @@ function renderQR(dataOrPath) {
     const prev = document.getElementById('qr-preview');
     const removeBtn = document.getElementById('qr-remove');
     if (dataOrPath) {
-        prev.innerHTML = `<img src="${dataOrPath}" class="w-full h-full object-contain">`;
+        prev.innerHTML = `<img src="${dataOrPath}" alt="Zelle QR code" class="w-full h-full object-contain">`;
         removeBtn.classList.remove('hidden');
     } else {
         prev.innerHTML = '<span class="text-ink-3 text-xs text-center px-2">No QR uploaded</span>';

@@ -101,7 +101,7 @@
 {% macro account_menu() %}
     {% if current_user.is_authenticated %}
     <div class="relative" x-data="{ open:false }">
-        <button @click="open=!open" class="flex items-center gap-2 rounded-full focus:outline-none">
+        <button @click="open=!open" aria-label="Account menu" aria-haspopup="true" class="flex items-center gap-2 rounded-full focus:outline-none">
             <span class="h-9 w-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-sm font-bold">{{ current_user.first_name[0]|upper }}{{ current_user.last_name[0]|upper }}</span>
             <span class="hidden sm:block text-sm font-bold text-ink">{{ current_user.first_name }}</span>
             <i class="fas fa-chevron-down text-xs text-ink-3"></i>
@@ -132,7 +132,7 @@
                 {% elif category == 'warning' %}<i class="fas fa-triangle-exclamation text-warn mt-0.5"></i>
                 {% else %}<i class="fas fa-circle-info text-info mt-0.5"></i>{% endif %}
                 <p class="text-sm font-medium text-ink flex-1">{{ message }}</p>
-                <button @click="show=false" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark"></i></button>
+                <button @click="show=false" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
             </div>
         </div>
         {% endfor %}
@@ -150,7 +150,7 @@
                :class="sidebar && '!translate-x-0'">
             <div class="flex items-center gap-2 px-4 pt-4 pb-3">
                 <a href="{{ url_for('main.dashboard') }}" class="logo-plate flex flex-1 items-center justify-center" style="padding:9px 13px"><img src="{{ url_for('static', filename='lsodance-logo.png') }}" alt="LSO Dance" class="block w-auto" style="height:26px"></a>
-                <button @click="sidebar=false" class="lg:hidden text-ink-3 p-1"><i class="fas fa-xmark"></i></button>
+                <button @click="sidebar=false" aria-label="Close menu" class="lg:hidden text-ink-3 p-1"><i class="fas fa-xmark" aria-hidden="true"></i></button>
             </div>
             <nav class="flex-1 overflow-y-auto px-3 pb-4">
                 {{ group_label('Overview') }}
@@ -202,11 +202,11 @@
         <!-- Main column -->
         <div class="min-w-0 flex flex-col min-h-screen">
             <header class="sticky top-0 z-30 flex items-center gap-3 px-4 sm:px-7 py-2.5 border-b border-line bg-surface/80 backdrop-blur">
-                <button @click="sidebar=true" class="lg:hidden text-ink-2 p-2 -ml-2"><i class="fas fa-bars text-lg"></i></button>
+                <button @click="sidebar=true" aria-label="Open menu" class="lg:hidden text-ink-2 p-2 -ml-2"><i class="fas fa-bars text-lg" aria-hidden="true"></i></button>
                 <a href="{{ url_for('main.dashboard') }}" class="lg:hidden logo-plate inline-flex items-center" style="padding:6px 9px"><img src="{{ url_for('static', filename='lsodance-logo.png') }}" alt="LSO Dance" class="block w-auto" style="height:18px"></a>
                 <div class="relative flex-1 max-w-sm hidden md:block">
                     <i class="fas fa-search text-xs text-ink-3 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
-                    <input placeholder="Search students, families, classes…" class="w-full pl-9 pr-3 py-2 text-sm bg-surface border border-line-2 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+                    <input aria-label="Search students, families, classes" placeholder="Search students, families, classes…" class="w-full pl-9 pr-3 py-2 text-sm bg-surface border border-line-2 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
                 </div>
                 <div class="flex-1"></div>
                 <a href="{{ url_for('main.take_attendance') }}" class="hidden sm:inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-clipboard-check"></i>Take attendance</a>

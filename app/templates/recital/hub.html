@@ -401,7 +401,7 @@ async function loadAds(){
         </div>
         ${a.content?'<p class="text-sm text-ink-2 mt-2">'+esc(a.content)+'</p>':''}
         ${a.student_name?'<p class="text-xs text-ink-3 mt-1">In honor of '+esc(a.student_name)+'</p>':''}
-        ${a.has_image?`<img src="/api/recital-ads/${a.id}/image?_=${Date.now()}" onerror="this.style.display='none'" class="mt-2 max-h-28 rounded-xl border border-line">`:''}
+        ${a.has_image?`<img src="/api/recital-ads/${a.id}/image?_=${Date.now()}" alt="${esc(a.title||'Program ad')}" onerror="this.style.display='none'" class="mt-2 max-h-28 rounded-xl border border-line">`:''}
         ${IS_ADMIN?`<div class="mt-3 flex items-center gap-3 text-sm">
             <label class="text-primary-600 hover:underline cursor-pointer">${a.has_image?'Replace image':'Upload image'}<input type="file" accept="image/*" class="hidden" onchange="uploadAdImage(${a.id},this)"></label>
             <button onclick="togglePaid(${a.id},${!a.paid})" class="text-ink-2 hover:underline">${a.paid?'Mark unpaid':'Mark paid'}</button>
