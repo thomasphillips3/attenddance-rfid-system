@@ -2113,14 +2113,19 @@ def upload_zelle_qr():
     if len(raw) > 2 * 1024 * 1024:
         return jsonify({'error': 'Image too large (max 2MB)'}), 400
 
+    # Whitelist the content type to EXACT values — never trust the raw mimetype.
+    # It comes from the client's multipart Content-Type header, so a prefix check
+    # (startswith 'image/') would let `image/png"><script>` through and into the
+    # data URI, which then renders in an unescaped src= (parent-portal XSS).
+    VALID_IMAGE_TYPES = {'image/png', 'image/jpeg', 'image/gif', 'image/webp'}
+    ext_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+               'gif': 'image/gif', 'webp': 'image/webp'}
     content_type = (f.mimetype or '').lower()
-    if not content_type.startswith('image/'):
-        # Fall back to extension sniffing
+    if content_type not in VALID_IMAGE_TYPES:
         ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
-        ext_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp'}
         content_type = ext_map.get(ext, '')
-        if not content_type:
-            return jsonify({'error': 'File must be an image (PNG, JPG, GIF, or WebP)'}), 400
+    if content_type not in VALID_IMAGE_TYPES:
+        return jsonify({'error': 'File must be an image (PNG, JPG, GIF, or WebP)'}), 400
 
     data_uri = f'data:{content_type};base64,' + base64.b64encode(raw).decode('ascii')
     Setting.set('payments_zelle_qr_data', data_uri)

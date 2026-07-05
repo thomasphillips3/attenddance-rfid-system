@@ -2002,6 +2002,34 @@ def run_cashtag_sanitize():
         db.session.commit()
 
 
+def run_qr_upload_safety():
+    """The Zelle QR is stored as a data URI and rendered in an unescaped src= on
+    the parent portal. The content-type is client-controlled (multipart mimetype),
+    so it MUST be whitelisted to exact values — a `image/png"><script>` mimetype
+    would otherwise inject into the src=. Verify a crafted mimetype yields a clean
+    data URI and a fully-bad upload is rejected."""
+    import io
+    from app.models import Setting
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        # Malicious mimetype but a .png extension -> falls back to the whitelist.
+        r = c.post("/api/settings/payments/zelle-qr",
+                   data={"file": (io.BytesIO(b"\x89PNGfake"), "x.png", 'image/png"><script>alert(1)</script>')},
+                   content_type="multipart/form-data")
+        with app.app_context():
+            uri = Setting.get("payments_zelle_qr_data", "")
+        header = uri.split("base64,")[0]
+        record(f"QR upload sanitizes a hostile mimetype (header={header!r})",
+               r.status_code == 200 and all(ch not in header for ch in ("<", ">", '"', "'")),
+               f"unsafe data URI header: {header}", "P2")
+        # Fully-malicious (bad mimetype + bad extension) -> rejected.
+        rb = c.post("/api/settings/payments/zelle-qr",
+                    data={"file": (io.BytesIO(b"x"), "x.evil", 'image/png"><script>')},
+                    content_type="multipart/form-data")
+        record(f"QR upload rejects a non-image -> {rb.status_code}", rb.status_code == 400,
+               f"got {rb.status_code}", "P3")
+
+
 def run_xss_guard():
     """Static guard: user-controlled name/text fields must never be interpolated
     into a JS template literal without esc(). These fields come from public
@@ -2172,6 +2200,7 @@ def main():
     run_statements(ids)
     run_xss_guard()
     run_cashtag_sanitize()
+    run_qr_upload_safety()
     run_js_syntax()
     run_smoke()
     run_empty_state()
