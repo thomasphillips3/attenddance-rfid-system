@@ -3263,9 +3263,20 @@ def apply_late_fees():
 
     students = Student.query.filter_by(is_active=True).all()
     balances = calc_balance_bulk([s.id for s in students])
+    month_start = date.today().replace(day=1)
     applied = 0
+    skipped = 0
     for s in students:
         if balances[s.id]['balance'] <= min_balance:
+            continue
+        # Idempotency: never stack a second late fee on a student in the same
+        # calendar month. Without this, a double-click or a refresh that re-POSTs
+        # charges every over-threshold family twice.
+        already = Transaction.query.filter_by(
+            student_id=s.id, type='charge', category='late fee',
+        ).filter(Transaction.transaction_date >= month_start).first()
+        if already:
+            skipped += 1
             continue
         db.session.add(Transaction(
             student_id=s.id, type='charge', amount=amount, category='late fee',
@@ -3274,9 +3285,13 @@ def apply_late_fees():
         ))
         applied += 1
     AuditLog.record(current_user.id, 'late_fee.apply',
-                    f'Applied ${amount:.2f} late fee to {applied} students (balance > ${min_balance:.2f})')
+                    f'Applied ${amount:.2f} late fee to {applied} students '
+                    f'({skipped} already charged this month; balance > ${min_balance:.2f})')
     db.session.commit()
-    return jsonify({'message': f'Applied ${amount:.2f} late fee to {applied} students', 'count': applied})
+    msg = f'Applied ${amount:.2f} late fee to {applied} students'
+    if skipped:
+        msg += f' ({skipped} already had one this month — skipped)'
+    return jsonify({'message': msg, 'count': applied, 'skipped': skipped})
 
 
 # ── Payment plans ───────────────────────────────────────────────────

@@ -84,5 +84,10 @@ Severity counts: **2 P0, 3 P1, 5 P2, 3 P3** (this pass; billing/bug/parity depth
 - **P1-1 Square overcharge — FIXED.** Invoice line items now sum to the net balance.
 - Added `tests/smoke_audit.py` (boot + IDOR + write-guard + no-arg smoke) as the regression seed.
 
+### Iteration 2 — DONE (verified by `tests/test_billing.py`, 11/11 pass)
+- **Late-fee double-application — FIXED.** `apply_late_fees` had no idempotency guard; an admin double-click / refresh-repost applied a *second* late fee to every over-threshold family. Now skips any student already charged a late fee this calendar month (matches the recurring-charge guard). Verified: second run charges 0, each student ends with exactly one fee.
+- **Billing correctness verified (no change needed):** `allocate_family_payment` loses/invents no pennies across exact/partial/overpayment/odd-cent inputs and caps each child at their balance (money is `Numeric(10,2)` at rest; the `float()` casts in helpers are a smell but safe given 2-decimal values). `confirm_pending_payment` blocks re-confirm (`status != 'pending'`). Square webhook is idempotent (`if rec.paid_at`) and HMAC-verified when keyed.
+- **New P2 logged:** Square webhook records the *full* invoice amount on a `PARTIALLY_PAID` event and then sets `paid_at`, so the later `PAID` event is ignored — over-counts the payment and drops the remainder. Needs a product call on partial-payment semantics; Square isn't active yet so it's not urgent.
+
 ### Remaining for next iterations
-- P1-2 autopay/cards-on-file (biggest parity build), P1-3 CSRF, P2-2 prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P3s. Deeper billing (family allocation rounding, late-fee/pending double-record idempotency) and full parity matrix still to expand.
+- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), P1-3 CSRF (medium refactor, touches every POST), P2-2 prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
