@@ -1887,6 +1887,28 @@ def get_messages():
     })
 
 
+def _send_message_blast(app, message_id, emails, subject, body):
+    """Background worker for a message blast. Runs off the request thread: a
+    whole-studio blast ('all' recipients) is one SMTP round-trip per family and
+    would exceed the 120s gunicorn worker timeout if sent inline (the same reason
+    balance reminders are threaded). The Message row is saved as unsent before
+    this starts and flipped to sent here on success."""
+    with app.app_context():
+        from app import email as email_service
+        try:
+            email_service.send_email(emails, subject, body)
+            m = Message.query.get(message_id)
+            if m:
+                m.sent = True
+                m.sent_at = datetime.utcnow()
+                db.session.commit()
+            logger.info("Message blast %s sent to %d recipient(s)", message_id, len(emails))
+        except Exception:
+            # Left as sent=False so the messages history shows it didn't go out;
+            # the saved recipient list stays on the row for a manual retry.
+            logger.exception("Message blast %s background send failed", message_id)
+
+
 @bp.route('/messages', methods=['POST'])
 @login_required
 def send_message():
@@ -1914,36 +1936,28 @@ def send_message():
         recipient_count=len(emails),
         recipient_emails=', '.join(sorted(emails)),
         created_by=current_user.id,
+        sent=False,
     )
-
-    from app import email as email_service
-    if email_service.is_configured():
-        try:
-            email_service.send_email(emails, subject, body)
-            msg.sent = True
-            msg.sent_at = datetime.utcnow()
-        except Exception as e:
-            # Surfaced to the admin (with a copy-these-emails fallback) AND logged,
-            # so a recurring "blasts aren't sending" SMTP problem is diagnosable.
-            logger.exception("Message blast SMTP send failed (message %s)", msg.id)
-            msg.sent = False
-            db.session.add(msg)
-            db.session.commit()
-            return jsonify({
-                'error': f'SMTP send failed: {e}',
-                'message_id': msg.id,
-                'recipient_emails': sorted(emails),
-                'saved': True,
-            }), 500
-    else:
-        msg.sent = False
-
     db.session.add(msg)
     db.session.commit()
 
-    if msg.sent:
-        return jsonify({'message': f'Email sent to {len(emails)} recipient(s)', 'message_id': msg.id}), 201
+    from app import email as email_service
+    if email_service.is_configured():
+        # Send in a background thread and return immediately. Sending inline would
+        # blow the 120s gunicorn timeout on a whole-studio blast and 502 the
+        # request mid-send (partial delivery, sent-state lost). The row is saved
+        # as unsent above and marked sent by the worker.
+        app = current_app._get_current_object()
+        threading.Thread(target=_send_message_blast,
+                         args=(app, msg.id, sorted(emails), subject, body),
+                         daemon=True).start()
+        return jsonify({
+            'message': f'Sending to {len(emails)} recipient(s)…',
+            'message_id': msg.id,
+            'queued': len(emails),
+        }), 201
 
+    # SMTP not configured — hand the admin the addresses to send manually.
     reply_to = current_app.config.get('MAIL_REPLY_TO', '')
     return jsonify({
         'message': 'Message saved (SMTP not configured — copy emails below to send manually)',

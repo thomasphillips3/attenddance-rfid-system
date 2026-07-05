@@ -1299,6 +1299,39 @@ def run_reminder_non_blocking():
            elapsed < 1.0, f"took {elapsed:.2f}s — sending appears to block the boot/request thread", "P1")
 
 
+def run_message_blast_non_blocking():
+    """A message blast must background its SMTP send. A whole-studio 'all' blast
+    is one SMTP round-trip per family; sent inline it would exceed the 120s
+    gunicorn worker timeout and 502 mid-send (partial delivery, sent-state lost).
+    Arm a slow sender and assert the POST returns fast with a queued count — not a
+    synchronous 'sent' and not the not-configured copy-paste fallback."""
+    import time
+    from app import email as email_service
+    app.config["MAIL_SERVER"] = "smtp.example.com"
+    orig = email_service.send_email
+
+    def slow_send(*a, **k):
+        time.sleep(2)
+        return 1
+
+    email_service.send_email = slow_send
+    try:
+        with app.test_client() as c:
+            login(c, "admin", "admin123")
+            t0 = time.monotonic()
+            r = c.post("/api/messages", json={"subject": "Fall kickoff",
+                                              "body": "Welcome back!", "recipient_type": "all"})
+            elapsed = time.monotonic() - t0
+            d = r.get_json() or {}
+    finally:
+        email_service.send_email = orig
+        app.config["MAIL_SERVER"] = None
+    record(f"Message blast backgrounds its send (returned in {elapsed:.2f}s, queued={d.get('queued')})",
+           r.status_code == 201 and elapsed < 1.0 and d.get("queued", 0) >= 1
+           and "recipient_emails" not in d,
+           f"status={r.status_code} elapsed={elapsed:.2f}s body={str(d)[:100]}", "P1")
+
+
 def run_manual_reminders_non_blocking():
     """The manual 'remind everyone who owes' endpoint must background its sends —
     sent inline, a large studio × (email + 15s SMS) would exceed the 120s worker
@@ -3344,6 +3377,7 @@ def main():
     run_waiver_signing(ids)
     run_attendance(ids)
     run_message_blast(ids)
+    run_message_blast_non_blocking()
     run_full_mutation_fuzz()
     run_update_fuzz()
     run_get_queryparam_fuzz(ids)
