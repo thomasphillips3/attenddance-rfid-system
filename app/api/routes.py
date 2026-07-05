@@ -1113,15 +1113,11 @@ def get_balances():
     return jsonify({'balances': balances})
 
 
-@bp.route('/reports/aging', methods=['GET'])
-@login_required
-def aging_report():
-    """Accounts-receivable aging: per-student unpaid balance bucketed by how
-    overdue each charge is (0-30 / 31-60 / 61-90 / 90+ days). Admin-only — it
-    exposes every family's debt, and the nav gates it behind is_admin."""
-    err = _admin_only()
-    if err:
-        return err
+def _compute_aging():
+    """Shared A/R aging computation for both the JSON report and the CSV export
+    so the two can never drift. Returns (rows, totals, as_of): per-student unpaid
+    balance bucketed by how overdue each charge is (0-30 / 31-60 / 61-90 / 90+),
+    owe-most first, amounts as 2dp strings."""
     students = Student.query.filter_by(is_active=True).all()
     # Include WITHDRAWN students who still owe: a deactivated student's unpaid
     # balance must stay visible so the studio can collect it, not silently vanish
@@ -1156,10 +1152,22 @@ def aging_report():
         })
     # Owe-most first.
     rows.sort(key=lambda r: float(r['total']), reverse=True)
+    return rows, totals, date.today().isoformat()
+
+
+@bp.route('/reports/aging', methods=['GET'])
+@login_required
+def aging_report():
+    """Accounts-receivable aging (JSON). Admin-only — it exposes every family's
+    debt, and the nav gates it behind is_admin."""
+    err = _admin_only()
+    if err:
+        return err
+    rows, totals, as_of = _compute_aging()
     return jsonify({
         'rows': rows,
         'totals': {k: f'{totals[k]:.2f}' for k in totals},
-        'as_of': date.today().isoformat(),
+        'as_of': as_of,
         'count': len(rows),
     })
 
@@ -1246,6 +1254,29 @@ def export_transactions_csv():
         t.description or '',
     ] for t in txns)
     return _csv_response(f'transactions-{date.today().isoformat()}.csv', header, rows)
+
+
+@bp.route('/reports/aging.csv', methods=['GET'])
+@login_required
+def export_aging_csv():
+    """A/R aging export so the owner can work accounts offline or hand it to the
+    accountant. Admin-only — same debt exposure as the on-screen aging report."""
+    err = _admin_only()
+    if err:
+        return err
+    rows, totals, as_of = _compute_aging()
+    header = ['Student', 'Family', 'Status', 'Current (0-30)', '31-60', '61-90', '90+', 'Total']
+    body = [[
+        r['student_name'], r['family_name'] or '',
+        'Withdrawn' if r['withdrawn'] else 'Active',
+        r['current'], r['d31_60'], r['d61_90'], r['d90_plus'], r['total'],
+    ] for r in rows]
+    # Footer totals row so the export reconciles without re-summing by hand.
+    body.append(['TOTAL', '', '',
+                 f"{totals['current']:.2f}", f"{totals['d31_60']:.2f}",
+                 f"{totals['d61_90']:.2f}", f"{totals['d90_plus']:.2f}",
+                 f"{totals['total']:.2f}"])
+    return _csv_response(f'aging-{as_of}.csv', header, body)
 
 
 @bp.route('/admin/backup', methods=['GET'])

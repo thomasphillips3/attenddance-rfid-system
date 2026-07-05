@@ -345,7 +345,8 @@ def run_teacher_authz(ids):
                    r.status_code == 200, f"got {r.status_code} (over-locked)", "P2")
         # Must NOT reach admin-only financial/config/staff surfaces.
         admin_only = [
-            "/api/reports/revenue", "/api/reports/aging", "/api/settings/payments",
+            "/api/reports/revenue", "/api/reports/aging", "/api/reports/aging.csv",
+            "/api/settings/payments",
             "/api/staff", "/api/audit-log", "/api/admin/backup",
             "/api/analytics/retention", "/api/donations", "/api/registrations",
         ]
@@ -2029,11 +2030,14 @@ def run_csv_exports(ids):
         db.session.add(fam)
         db.session.flush()
         evil = Student(first_name='=HYPERLINK("http://evil.com","x")', last_name="Csv", family_id=fam.id)
-        db.session.add(evil)
+        # A student who genuinely OWES, so the aging CSV has a data row to check.
+        ower = Student(first_name="Owes", last_name="Agingcsv", family_id=fam.id)
+        db.session.add_all([evil, ower])
         db.session.flush()
         db.session.add_all([
             Transaction(student_id=evil.id, type="charge", amount=50, category="tuition", payment_method="n/a", description="c"),
             Transaction(student_id=evil.id, type="payment", amount=100, category="tuition", payment_method="cash", description="p"),
+            Transaction(student_id=ower.id, type="charge", amount=75, category="tuition", payment_method="n/a", description="owed"),
         ])
         db.session.commit()
     with app.test_client() as c:
@@ -2044,10 +2048,11 @@ def run_csv_exports(ids):
                "'=HYPERLINK" in row, f"unescaped formula in: {row[:80]}", "P2")
         record("CSV export keeps a negative balance as a number (not quoted)",
                "-50.00" in row and "'-50" not in row, f"row={row[:80]}", "P3")
-    # Parent blocked.
+    # Parent blocked (aging.csv exposes every family's debt — must be locked down).
     with app.test_client() as c:
         login(c, "parent_a", "pw")
-        for path in ("/api/reports/students.csv", "/api/reports/transactions.csv"):
+        for path in ("/api/reports/students.csv", "/api/reports/transactions.csv",
+                     "/api/reports/aging.csv"):
             r = c.get(path)
             record(f"Parent blocked from {path} -> {r.status_code}",
                    r.status_code in (401, 403), f"got {r.status_code}", "P0")
@@ -2071,6 +2076,21 @@ def run_csv_exports(ids):
         ok = (rev and isinstance(rev.get("monthly"), list) and len(rev["monthly"]) == 12
               and "totals" in rev and "collected_this_year" in rev["totals"])
         record("Revenue report returns 12 months + totals", ok, str(rev)[:80], "P2")
+        # A/R aging CSV: right header, an owing student's row, and a TOTAL footer
+        # that reconciles — so the owner can work accounts offline.
+        ra = c.get("/api/reports/aging.csv")
+        atext = ra.get_data(as_text=True)
+        alines = atext.splitlines()
+        header_ok = ra.status_code == 200 and alines and alines[0].startswith(
+            "Student,Family,Status,Current (0-30),31-60,61-90,90+,Total")
+        record(f"Aging CSV export well-formed -> {ra.status_code}", header_ok,
+               f"status={ra.status_code} head={alines[0][:50]!r}" if alines else "empty", "P2")
+        record("Aging CSV lists an owing student and a TOTAL footer",
+               "Owes Agingcsv" in atext and any(l.startswith("TOTAL,") for l in alines),
+               f"owing_present={'Owes Agingcsv' in atext} footer={[l for l in alines if l.startswith('TOTAL')]}", "P2")
+        record("Aging CSV has attachment disposition",
+               "attachment" in ra.headers.get("Content-Disposition", ""),
+               ra.headers.get("Content-Disposition", "<none>"), "P3")
 
 
 def run_statements(ids):

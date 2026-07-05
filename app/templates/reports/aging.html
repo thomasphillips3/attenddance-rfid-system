@@ -11,7 +11,10 @@
     </div>
     <div class="text-right">
         <div id="as-of" class="text-xs text-ink-3"></div>
-        <a href="{{ url_for('main.transactions') }}" class="inline-flex items-center gap-2 mt-2 px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2"><i class="fas fa-arrow-left" aria-hidden="true"></i>Payments</a>
+        <div class="flex items-center gap-2 mt-2 justify-end">
+            <a href="{{ url_for('api.export_aging_csv') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2"><i class="fas fa-file-csv" aria-hidden="true"></i>Export CSV</a>
+            <a href="{{ url_for('main.transactions') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2"><i class="fas fa-arrow-left" aria-hidden="true"></i>Payments</a>
+        </div>
     </div>
 </div>
 
