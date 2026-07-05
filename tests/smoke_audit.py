@@ -663,6 +663,29 @@ def run_deactivation_revokes_session():
                f"got {r.status_code} (200 = still had access)", "P2")
 
 
+def run_open_redirect_guard():
+    """Login's ?next= must only redirect same-site. A bare netloc check misses
+    browser-normalised cross-origin forms (//evil, /\\evil, https:evil, ////evil),
+    which enable phishing via a crafted login link. Malicious targets must fall
+    back to the dashboard; safe relative paths must be honored."""
+    malicious = ["https://evil.com", "//evil.com", "/\\evil.com", "https:evil.com",
+                 "\\/evil.com", "////evil.com", "http://evil.com", "javascript:alert(1)"]
+    with app.test_client() as c:
+        for v in malicious:
+            r = c.post(f"/auth/login?next={v}",
+                       data={"username": "admin", "password": "admin123"}, follow_redirects=False)
+            loc = r.headers.get("Location", "")
+            c.get("/auth/logout")
+            offsite = "evil.com" in loc.replace("\\", "/").lower() or loc.startswith("javascript")
+            record(f"Open-redirect blocked for next={v!r} -> {loc!r}", not offsite,
+                   f"redirected off-site to {loc}", "P1")
+    with app.test_client() as c:
+        r = c.post("/auth/login?next=/students",
+                   data={"username": "admin", "password": "admin123"}, follow_redirects=False)
+        record(f"Safe relative next is honored -> {r.headers.get('Location')!r}",
+               r.headers.get("Location") == "/students", f"got {r.headers.get('Location')}", "P2")
+
+
 def run_login_throttle():
     """Login must throttle brute-force: after several failures for one account, a
     cooldown kicks in (even a correct password is blocked until it passes), the
@@ -2180,6 +2203,7 @@ def main():
     run_deactivation_revokes_session()
     run_password_reset()
     run_login_throttle()
+    run_open_redirect_guard()
     run_login_by_email()
     run_registration_flow()
     run_amount_validation(ids)

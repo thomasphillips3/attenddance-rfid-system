@@ -7,7 +7,7 @@ from datetime import datetime
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from app import db
 from app.auth import bp
@@ -25,6 +25,24 @@ _login_lock = threading.Lock()
 _LOGIN_MAX_FAILS = 8      # failures allowed within the window before cooldown
 _LOGIN_WINDOW = 900.0     # 15 min sliding window
 _LOGIN_COOLDOWN = 300.0   # 5 min lockout once the threshold is hit
+
+
+def _is_safe_next(target: str) -> bool:
+    """Only allow a same-site relative redirect target after login. A bare
+    `netloc == ''` check is NOT enough — browsers normalise `//evil.com`,
+    `/\\evil.com`, `\\/evil.com`, `////evil.com`, and `https:evil.com` into
+    cross-origin redirects (a phishing vector via a crafted `?next=` link). Resolve
+    the target against our own host and require the result to stay on our host."""
+    if not target:
+        return False
+    # Reject control chars / backslashes outright — they drive the normalisation tricks.
+    if any(c in target for c in '\\\t\n\r') or '\x00' in target:
+        return False
+    host = urlparse(request.host_url)  # e.g. http://localhost/
+    resolved = urlparse(urljoin(request.host_url, target))
+    return (resolved.scheme in ('', 'http', 'https')
+            and resolved.netloc == host.netloc
+            and target.startswith('/') and not target.startswith('//'))
 
 
 def _login_lockout_remaining(key: str) -> int:
@@ -111,7 +129,7 @@ def login():
         db.session.commit()
 
         next_page = request.args.get('next')
-        if not next_page or urlparse(next_page).netloc != '':
+        if not _is_safe_next(next_page):
             if user.is_parent:
                 next_page = url_for('main.parent_dashboard')
             else:
