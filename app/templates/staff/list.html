@@ -137,9 +137,9 @@ function renderStaff(staff) {
             </td>
             <td class="px-5 py-3.5 whitespace-nowrap text-sm text-ink-3 tabular-nums">${s.last_login ? new Date(s.last_login).toLocaleDateString() : 'Never'}</td>
             <td class="px-5 py-3.5 whitespace-nowrap text-right text-sm font-medium">
-                <button data-id="${s.id}" class="edit-btn text-primary-600 hover:text-primary-700 mr-3" title="Edit"><i class="fas fa-edit"></i></button>
+                <button aria-label="Edit staff" data-id="${s.id}" class="edit-btn text-primary-600 hover:text-primary-700 mr-3" title="Edit"><i class="fas fa-edit"></i></button>
                 ${s.is_active
-                    ? `<button data-id="${s.id}" data-name="${esc(s.full_name)}" class="delete-btn text-danger hover:opacity-80" title="Deactivate"><i class="fas fa-user-slash"></i></button>`
+                    ? `<button aria-label="Deactivate staff" data-id="${s.id}" data-name="${esc(s.full_name)}" class="delete-btn text-danger hover:opacity-80" title="Deactivate"><i class="fas fa-user-slash"></i></button>`
                     : '<span class="text-xs text-ink-3">Inactive</span>'}
             </td>
         </tr>

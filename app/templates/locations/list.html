@@ -111,8 +111,8 @@ function renderLocations(locations) {
                         </div>
                     </div>
                     <div class="flex space-x-2">
-                        <button data-id="${loc.id}" class="edit-btn text-primary-600 hover:text-primary-800" title="Edit"><i class="fas fa-edit"></i></button>
-                        <button data-id="${loc.id}" data-name="${esc(loc.name)}" class="delete-btn text-danger hover:opacity-70" title="Deactivate"><i class="fas fa-trash"></i></button>
+                        <button aria-label="Edit location" data-id="${loc.id}" class="edit-btn text-primary-600 hover:text-primary-800" title="Edit"><i class="fas fa-edit"></i></button>
+                        <button aria-label="Deactivate location" data-id="${loc.id}" data-name="${esc(loc.name)}" class="delete-btn text-danger hover:opacity-70" title="Deactivate"><i class="fas fa-trash"></i></button>
                     </div>
                 </div>
                 <div class="mt-4 space-y-1">

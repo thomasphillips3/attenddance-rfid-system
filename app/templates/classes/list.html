@@ -81,7 +81,7 @@
         <div class="relative bg-surface rounded-2xl shadow-pop max-w-lg w-full p-6">
             <div class="flex items-center justify-between mb-4">
                 <h3 id="enroll-modal-title" class="font-display text-2xl text-ink">Manage Students</h3>
-                <button onclick="closeEnrollModal()" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark"></i></button>
+                <button onclick="closeEnrollModal()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
             </div>
             <!-- Add students (batch) -->
             <div id="add-students-section" class="mb-4 hidden">
@@ -294,7 +294,7 @@ async function loadEnrollments() {
                         <p class="text-xs text-ink-3">Enrolled ${e.enrolled_date}</p>
                     </div>
                 </div>
-                <button data-enrollment-id="${e.enrollment_id}" class="unenroll-btn text-danger hover:opacity-70 text-sm"><i class="fas fa-xmark"></i></button>
+                <button aria-label="Remove from class" data-enrollment-id="${e.enrollment_id}" class="unenroll-btn text-danger hover:opacity-70 text-sm"><i class="fas fa-xmark"></i></button>
             </div>
         `).join('');
         el.querySelectorAll('.unenroll-btn').forEach(btn => {

@@ -440,7 +440,7 @@ function renderRecurring(rules) {
         <td class="px-5 py-3 text-sm font-bold text-ink text-right tabular-nums">$${parseFloat(r.amount).toFixed(2)}</td>
         <td class="px-5 py-3 text-sm text-ink-2">${ordinal(r.day_of_month)} of every month</td>
         <td class="px-5 py-3"><span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold bg-ok/10 text-ok">Active</span></td>
-        <td class="px-5 py-3 text-right"><button onclick="deleteRecurring(${r.id})" class="text-danger hover:opacity-70 text-sm"><i class="fas fa-trash"></i></button></td>
+        <td class="px-5 py-3 text-right"><button aria-label="Delete recurring charge" onclick="deleteRecurring(${r.id})" class="text-danger hover:opacity-70 text-sm"><i class="fas fa-trash"></i></button></td>
     </tr>`).join('');
 }
 function openRecurringModal() {

@@ -41,7 +41,7 @@ async function loadSkills(){
     if(!sk.length){el.innerHTML='<p class="text-ink-3">No skills defined yet.</p>';return;}
     el.innerHTML=sk.map(s=>`<div class="flex items-center justify-between border-b border-line last:border-0 py-1">
         <span class="text-ink-2">${esc(s.name)}${s.category?` <span class="text-xs text-ink-3">${esc(s.category)}</span>`:''}<span class="text-xs text-ink-3 ml-2">${s.achieved_count} earned</span></span>
-        <button onclick="delSkill(${s.id})" class="text-danger hover:opacity-70 text-xs">&times;</button></div>`).join('');
+        <button aria-label="Delete skill" onclick="delSkill(${s.id})" class="text-danger hover:opacity-70 text-xs">&times;</button></div>`).join('');
 }
 async function createSkill(){
     const name=prompt('Skill / level name (e.g. Pirouette, Level 2):');if(!name)return;

@@ -175,8 +175,8 @@ function renderStudents(students) {
                     : '<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-danger/10 text-danger">Inactive</span>'}
             </td>
             <td class="px-5 py-3.5 whitespace-nowrap text-right">
-                <button data-student-id="${s.id}" class="edit-btn text-primary-600 hover:text-primary-800 mr-3"><i class="fas fa-pen"></i></button>
-                <button data-student-id="${s.id}" data-student-name="${esc(s.full_name)}" class="delete-btn text-danger hover:opacity-70"><i class="fas fa-trash"></i></button>
+                <button aria-label="Edit student" data-student-id="${s.id}" class="edit-btn text-primary-600 hover:text-primary-800 mr-3"><i class="fas fa-pen"></i></button>
+                <button aria-label="Delete student" data-student-id="${s.id}" data-student-name="${esc(s.full_name)}" class="delete-btn text-danger hover:opacity-70"><i class="fas fa-trash"></i></button>
             </td>
         </tr>
     `).join('');

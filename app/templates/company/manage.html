@@ -134,7 +134,7 @@ async function loadMembers(gid){
     if(!m.length){el.innerHTML='<span class="text-ink-3">No members yet.</span>';return;}
     el.innerHTML = m.map(x=>`<span class="inline-flex items-center bg-gold-300/30 border border-gold-400 rounded-full px-2.5 py-1 mr-2 mb-2 text-xs font-bold">
         ${esc(x.student_name)} <span class="text-xs text-gold-ink ml-1">${esc(x.role)}</span>
-        <button onclick="removeMember(${x.id})" class="ml-2 text-danger hover:opacity-70">&times;</button></span>`).join('');
+        <button aria-label="Remove member" onclick="removeMember(${x.id})" class="ml-2 text-danger hover:opacity-70">&times;</button></span>`).join('');
 }
 function _show(id){document.getElementById(id).classList.remove('hidden');}
 function _hide(id){document.getElementById(id).classList.add('hidden');}
@@ -250,7 +250,7 @@ async function loadAssign(pid){
     const a=data.assignments||[];
     if(!a.length){el.innerHTML='<span class="text-ink-3">No dancers assigned.</span>';return;}
     el.innerHTML=a.map(x=>`<span class="inline-flex items-center bg-primary-50 border border-primary-200 rounded-full px-2.5 py-1 mr-2 mb-2 text-xs font-bold text-ink">${esc(x.student_name)}
-        <button onclick="removeAssign(${x.id},${pid})" class="ml-2 text-danger hover:opacity-70">&times;</button></span>`).join('');
+        <button aria-label="Remove assignment" onclick="removeAssign(${x.id},${pid})" class="ml-2 text-danger hover:opacity-70">&times;</button></span>`).join('');
 }
 async function openPerformanceModal(){
     for(const id of ['perf-title','perf-date','perf-call','perf-venue']) document.getElementById(id).value='';

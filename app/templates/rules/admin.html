@@ -75,7 +75,7 @@ function renderRules(rules) {
                 <span class="flex-shrink-0 w-8 h-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-sm font-bold mr-3">${i + 1}</span>
                 <p class="text-sm text-ink pt-1">${esc(r.text)}</p>
             </div>
-            <button onclick="deleteRule(${r.id})" class="ml-3 text-danger hover:opacity-80 flex-shrink-0"><i class="fas fa-trash"></i></button>
+            <button aria-label="Delete rule" onclick="deleteRule(${r.id})" class="ml-3 text-danger hover:opacity-80 flex-shrink-0"><i class="fas fa-trash"></i></button>
         </div>
     `).join('');
 }

@@ -265,8 +265,8 @@ function numberCard(n,i){
     return `<div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
         <div class="px-4 py-3 flex items-center gap-3">
             <div class="flex flex-col text-ink-3">
-                <button onclick="moveNumber(${i},-1)" ${i===0?'disabled class=opacity-30':''} title="Up"><i class="fas fa-chevron-up"></i></button>
-                <button onclick="moveNumber(${i},1)" ${i===NUMBERS.length-1?'disabled class=opacity-30':''} title="Down"><i class="fas fa-chevron-down"></i></button>
+                <button aria-label="Move up" onclick="moveNumber(${i},-1)" ${i===0?'disabled class=opacity-30':''} title="Up"><i class="fas fa-chevron-up"></i></button>
+                <button aria-label="Move down" onclick="moveNumber(${i},1)" ${i===NUMBERS.length-1?'disabled class=opacity-30':''} title="Down"><i class="fas fa-chevron-down"></i></button>
             </div>
             <div class="w-8 text-center font-bold text-ink-3 text-lg">${n.order_index}</div>
             <div class="flex-1 cursor-pointer" onclick="toggleEdit(${n.id})">
@@ -327,7 +327,7 @@ function numberForm(n){
 }
 function castChips(n){
     if(!n.cast||!n.cast.length) return '<span class="text-ink-3 text-sm">No dancers yet.</span>';
-    return n.cast.map(c=>`<span class="inline-flex items-center bg-primary-50 border border-primary-200 rounded-full px-3 py-1 mr-2 mb-2 text-sm font-bold">${esc(c.student_name)}${c.part?'<span class="text-xs text-primary-500 ml-1">'+esc(c.part)+'</span>':''}<button onclick="removeCast(${c.id},${n.id})" class="ml-2 text-danger hover:underline">&times;</button></span>`).join('');
+    return n.cast.map(c=>`<span class="inline-flex items-center bg-primary-50 border border-primary-200 rounded-full px-3 py-1 mr-2 mb-2 text-sm font-bold">${esc(c.student_name)}${c.part?'<span class="text-xs text-primary-500 ml-1">'+esc(c.part)+'</span>':''}<button aria-label="Remove from cast" onclick="removeCast(${c.id},${n.id})" class="ml-2 text-danger hover:underline">&times;</button></span>`).join('');
 }
 function toggleEdit(id){document.getElementById('edit-'+id).classList.toggle('hidden');}
 async function addNumber(){const title=prompt('Number title (e.g. "Twinkle Twinkle"):');if(!title)return;const r=await jpost(`/api/recitals/${RID}/numbers`,{title});msg(r.ok?'Number added':'Error',r.ok);if(r.ok)loadNumbers();}

@@ -94,7 +94,7 @@ async function loadCostumeRoster(cid){
                 <td class="py-1 pr-3 px-5"><input value="${esc(x.size||'')}" onchange="setSize(${x.id},this.value,${cid})" class="bg-surface border border-line-2 rounded-xl px-2 py-0.5 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" placeholder="size"></td>
                 <td class="py-1 text-center">${x.charged?'<span class="text-ok">✓</span>':'<span class="text-ink-3">—</span>'}</td>
                 <td class="py-1 text-center"><input type="checkbox" ${x.paid?'checked':''} onchange="setPaid(${x.id},this.checked,${cid})"></td>
-                <td class="py-1 text-right pr-5"><button onclick="removeCostumeAssign(${x.id},${cid})" class="text-danger hover:underline">&times;</button></td>
+                <td class="py-1 text-right pr-5"><button aria-label="Remove costume assignment" onclick="removeCostumeAssign(${x.id},${cid})" class="text-danger hover:underline">&times;</button></td>
             </tr>`;
         }).join('')}</tbody></table></div>`;
 }
@@ -145,7 +145,7 @@ async function loadTypes(pid){
     const data=await (await fetch(`/api/performances/${pid}/ticket-types`)).json();
     const types=data.ticket_types||[];
     el.innerHTML=types.length?types.map(t=>`<span class="inline-flex items-center bg-surface-2 text-ink-2 rounded-full px-3 py-1 mr-2 mb-1 text-xs font-bold">${esc(t.name)} — $${t.price}
-        <button onclick="delType(${t.id},${pid})" class="ml-2 text-danger hover:underline">&times;</button></span>`).join(''):'<span class="text-ink-3">No tiers yet.</span>';
+        <button aria-label="Delete ticket type" onclick="delType(${t.id},${pid})" class="ml-2 text-danger hover:underline">&times;</button></span>`).join(''):'<span class="text-ink-3">No tiers yet.</span>';
     // also fill the "record sale" form
     window['_types_'+pid]=types;
     renderSaleForm(pid);
@@ -177,7 +177,7 @@ async function loadOrders(pid){
         <td class="py-1 pr-3 text-ink-3">${esc(o.buyer)}</td>
         <td class="py-1 pr-3 text-right">$${o.amount}</td>
         <td class="py-1 pr-3 text-center"><button onclick="togglePaid(${o.id},${pid})" class="px-2.5 py-1 rounded-full text-xs font-bold ${o.paid?'bg-ok/10 text-ok':'bg-warn/10 text-warn'}">${o.paid?'Paid':'Unpaid'}</button></td>
-        <td class="py-1 text-right"><button onclick="delOrder(${o.id},${pid})" class="text-danger hover:underline">&times;</button></td>
+        <td class="py-1 text-right"><button aria-label="Delete order" onclick="delOrder(${o.id},${pid})" class="text-danger hover:underline">&times;</button></td>
     </tr>`).join('')}</tbody></table></div>`:'<span class="text-ink-3">No sales yet.</span>';
     el.innerHTML=saleForm+rows;
 }
