@@ -68,6 +68,8 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 
 - **[P2-6] Login page displayed working admin credentials — ✅ FIXED.** `auth/login.html` showed a "Demo Credentials: admin / admin123" block with one-click "Use" buttons — handed anyone the default admin login. Now gated behind `{% if config.DEBUG %}` (shown in dev, hidden in production). Verified: dev renders it, `DEBUG=False` doesn't. **Still recommended:** change the seeded admin password from `admin123` for production.
 
+- **[P2-7] Financial writes accepted unchecked amounts — ✅ FIXED.** `create_transaction` and `bulk_charge` (staff-only) passed `data['amount']` straight to the DB with no validation, so a typo could post a **negative** charge/payment (which silently corrupts a balance — a −$50 charge reads as a credit) or a non-numeric value (→ 500), and `bulk_charge` applied it to *every* enrolled student; `type` wasn't constrained to charge/payment, and a bad `transaction_date` 500'd. Now both use shared `_valid_amount` (numeric, >0, sane ceiling) + `_parse_txn_date` + a type whitelist. Verified (negative/non-numeric/absurd/bad-type all 400; valid charge 201). The untrusted parent paths (`claim_payment`, `create_donation`) were already validated.
+
 ## P3 — Polish
 
 - **[P3-1] 2 `<img>` tags lacked `alt` — ✅ FIXED** (Zelle QR preview + recital ad; 0 remain).
@@ -164,6 +166,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 
 ### Iteration 8 — DONE (verified live; smoke 39/39)
 - **Revenue report built** (`GET /api/reports/revenue` staff-only + `/reports/revenue` admin page + nav link): headline totals (collected this month/year/all-time, outstanding), a 12-month billed-vs-collected bar chart (Chart.js), and collected-by-category table. Verified live — tiles, chart, and category breakdown all render with real seeded data. **Management-reporting parity is now PRESENT** (revenue + aging + CSV export + retention analytics).
+
+### Iteration 9 — DONE (smoke 45/45, billing 16/16)
+- **Input validation on financial writes** (P2-7): `create_transaction` + `bulk_charge` now reject negative/non-numeric/absurd amounts, invalid `type`, and malformed dates via shared `_valid_amount`/`_parse_txn_date` helpers — closing a silent balance-corruption path. Audited the untrusted parent money paths (`claim_payment`, `create_donation`) — already validated. Added 6 validation regression checks.
 
 ### Remaining for next iterations
 - P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~50 staff-side `prompt()` flows → modals, per-page `aria-label`s, P3-4 Subresource Integrity on CDN scripts prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.

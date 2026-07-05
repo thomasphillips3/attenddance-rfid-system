@@ -181,6 +181,34 @@ def run_csrf():
                b'Cross-origin' not in resp.data, "blocked a no-Origin request", "P2")
 
 
+def run_amount_validation(ids):
+    """Financial write endpoints must reject bad amounts (negative = balance
+    corruption) and bad types, and accept a valid charge."""
+    sid = ids["child_a"]
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        bad = [
+            ({"student_id": sid, "type": "charge", "amount": -50, "category": "tuition"}, "negative amount"),
+            ({"student_id": sid, "type": "charge", "amount": "abc", "category": "tuition"}, "non-numeric amount"),
+            ({"student_id": sid, "type": "charge", "amount": 5_000_000, "category": "tuition"}, "absurd amount"),
+            ({"student_id": sid, "type": "wat", "amount": 10, "category": "tuition"}, "invalid type"),
+        ]
+        for body, desc in bad:
+            r = c.post("/api/transactions", json=body)
+            record(f"create_transaction rejects {desc} -> {r.status_code}",
+                   r.status_code == 400, f"got {r.status_code} (should reject)", "P2")
+        # bulk-charge negative rejected before touching any student
+        r = c.post("/api/transactions/bulk-charge",
+                   json={"class_id": 1, "amount": -10, "category": "tuition"})
+        record(f"bulk_charge rejects negative amount -> {r.status_code}",
+               r.status_code == 400, f"got {r.status_code}", "P2")
+        # a valid charge still works
+        r = c.post("/api/transactions",
+                   json={"student_id": sid, "type": "charge", "amount": 42.50, "category": "tuition"})
+        record(f"create_transaction accepts a valid charge -> {r.status_code}",
+               r.status_code == 201, f"got {r.status_code}", "P1")
+
+
 def run_csv_exports(ids):
     """CSV exports: staff get a well-formed CSV; parents are blocked."""
     # Parent blocked.
@@ -274,6 +302,7 @@ def main():
     ids = seed()
     run_idor(ids)
     run_csrf()
+    run_amount_validation(ids)
     run_csv_exports(ids)
     run_js_syntax()
     run_smoke()

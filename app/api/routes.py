@@ -116,6 +116,31 @@ def _require_family_access(family_id):
     return jsonify({'error': 'Not authorized for this family'}), 403
 
 
+def _valid_amount(raw):
+    """Coerce a money amount. Returns (value, None) or (None, (json, status)).
+    Rejects non-numeric, non-positive, and absurdly large values so a typo or
+    bad payload can't silently corrupt balances (a negative charge is a credit)."""
+    try:
+        amt = round(float(raw), 2)
+    except (TypeError, ValueError):
+        return None, (jsonify({'error': 'A valid amount is required'}), 400)
+    if amt <= 0:
+        return None, (jsonify({'error': 'Amount must be greater than zero'}), 400)
+    if amt > 1_000_000:
+        return None, (jsonify({'error': 'Amount is unreasonably large'}), 400)
+    return amt, None
+
+
+def _parse_txn_date(raw):
+    """Parse an optional YYYY-MM-DD date. Returns (date, None) or (None, (json, status))."""
+    if not raw:
+        return date.today(), None
+    try:
+        return datetime.strptime(raw, '%Y-%m-%d').date(), None
+    except (TypeError, ValueError):
+        return None, (jsonify({'error': 'Invalid date — use YYYY-MM-DD'}), 400)
+
+
 # Endpoints a parent may invoke with a mutating method. EVERY other write is
 # staff-only. This is default-deny / fail-closed: a newly added write endpoint
 # is automatically parent-forbidden until explicitly allowlisted here. The
@@ -744,11 +769,20 @@ def create_transaction():
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     txn_type = data.get('type', 'payment')
-    for field in ('student_id', 'amount', 'category'):
+    if txn_type not in ('charge', 'payment'):
+        return jsonify({'error': "type must be 'charge' or 'payment'"}), 400
+    for field in ('student_id', 'category'):
         if not data.get(field):
             return jsonify({'error': f'{field} is required'}), 400
     if txn_type == 'payment' and not data.get('payment_method'):
         return jsonify({'error': 'payment_method is required for payments'}), 400
+
+    amount, err = _valid_amount(data.get('amount'))
+    if err:
+        return err
+    txn_date, err = _parse_txn_date(data.get('transaction_date'))
+    if err:
+        return err
 
     student = Student.query.get(data['student_id'])
     if not student:
@@ -758,14 +792,11 @@ def create_transaction():
         t = Transaction(
             student_id=student.id,
             type=txn_type,
-            amount=data['amount'],
+            amount=amount,
             category=data['category'],
             payment_method=data.get('payment_method') or 'n/a',
             description=data.get('description', '').strip() or None,
-            transaction_date=(
-                datetime.strptime(data['transaction_date'], '%Y-%m-%d').date()
-                if data.get('transaction_date') else date.today()
-            ),
+            transaction_date=txn_date,
             created_by=current_user.id,
         )
         db.session.add(t)
@@ -999,9 +1030,16 @@ def bulk_charge():
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
-    for field in ('class_id', 'amount', 'category'):
+    for field in ('class_id', 'category'):
         if not data.get(field):
             return jsonify({'error': f'{field} is required'}), 400
+
+    amount, err = _valid_amount(data.get('amount'))
+    if err:
+        return err
+    txn_date, err = _parse_txn_date(data.get('transaction_date'))
+    if err:
+        return err
 
     dance_class = DanceClass.query.get(data['class_id'])
     if not dance_class:
@@ -1011,16 +1049,12 @@ def bulk_charge():
     if not enrollments:
         return jsonify({'error': 'No students enrolled in this class'}), 400
 
-    txn_date = (
-        datetime.strptime(data['transaction_date'], '%Y-%m-%d').date()
-        if data.get('transaction_date') else date.today()
-    )
     charged = []
     for e in enrollments:
         t = Transaction(
             student_id=e.student_id,
             type='charge',
-            amount=data['amount'],
+            amount=amount,
             category=data['category'],
             payment_method='n/a',
             description=data.get('description', '').strip() or f'{dance_class.name} - {data["category"]}',
