@@ -1265,19 +1265,32 @@ def create_recurring_charge():
         if not data.get(field):
             return jsonify({'error': f'{field} is required'}), 400
 
-    dance_class = DanceClass.query.get(data['class_id'])
+    class_id, cerr = _valid_id(data.get('class_id'))
+    if cerr:
+        return cerr
+    dance_class = DanceClass.query.get(class_id)
     if not dance_class:
         return jsonify({'error': 'Class not found'}), 404
 
-    day = int(data.get('day_of_month', 1))
+    # Validate the amount the SAME way one-off charges are — this fires every
+    # month automatically, so a negative (silent monthly credit), non-numeric, or
+    # absurd value is worse here than anywhere else.
+    amount, aerr = _valid_amount(data.get('amount'))
+    if aerr:
+        return aerr
+
+    try:
+        day = int(data.get('day_of_month', 1))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'day_of_month must be 1-28'}), 400
     if day < 1 or day > 28:
         return jsonify({'error': 'day_of_month must be 1-28'}), 400
 
     rc = RecurringCharge(
         class_id=dance_class.id,
-        amount=data['amount'],
-        category=data['category'],
-        description=data.get('description', '').strip() or None,
+        amount=amount,
+        category=_clean_str(data['category']),
+        description=_clean_str(data.get('description')) or None,
         day_of_month=day,
         created_by=current_user.id,
     )

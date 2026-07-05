@@ -810,6 +810,29 @@ def run_amount_validation(ids):
         record(f"create_transaction accepts a valid charge -> {r.status_code}",
                r.status_code == 201, f"got {r.status_code}", "P1")
 
+        # Recurring charges fire automatically every month, so a bad amount is
+        # worse here than a one-off (a negative = a silent monthly credit). Must
+        # be validated the same way. Needs a real class to attach to.
+        with app.app_context():
+            from datetime import time as _t
+            from app.models import DanceClass, User as _U
+            adm = _U.query.filter_by(username="admin").first()
+            rcx = DanceClass(name="RC Class", day_of_week=0, start_time=_t(17, 0),
+                             end_time=_t(18, 0), instructor_id=adm.id)
+            db.session.add(rcx)
+            db.session.commit()
+            rc_cid = rcx.id
+        for body, want, label in [
+            ({"class_id": rc_cid, "amount": -50, "category": "tuition", "day_of_month": 1}, 400, "negative"),
+            ({"class_id": rc_cid, "amount": "abc", "category": "tuition", "day_of_month": 1}, 400, "non-numeric"),
+            ({"class_id": rc_cid, "amount": 9_999_999, "category": "tuition", "day_of_month": 1}, 400, "absurd"),
+            ({"class_id": rc_cid, "amount": 50, "category": "tuition", "day_of_month": "xyz"}, 400, "garbage day"),
+            ({"class_id": rc_cid, "amount": 75.50, "category": "tuition", "day_of_month": 15}, 201, "valid"),
+        ]:
+            rr = c.post("/api/recurring-charges", json=body)
+            record(f"recurring_charge {label} amount/day -> {rr.status_code}",
+                   rr.status_code == want and rr.status_code < 500, f"got {rr.status_code} (want {want})", "P2")
+
 
 def run_transaction_delete(ids):
     """An admin must be able to correct a mistake by deleting a posted charge or

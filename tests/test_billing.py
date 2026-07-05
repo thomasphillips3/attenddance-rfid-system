@@ -168,6 +168,39 @@ def test_recurring_charge_idempotent():
         record("recurring charges are the configured $50", amt_ok, "")
 
 
+def test_recurring_day_gating():
+    """A recurring charge must NOT fire before its day_of_month arrives — only
+    on/after the due day. The idempotency test uses day 1 (always past); this
+    checks the future-day gate, so families aren't billed early."""
+    from datetime import date as _date, time as _time
+    from app import _process_recurring_charges
+    from app.models import DanceClass, ClassEnrollment, RecurringCharge, Transaction, User
+
+    today = _date.today()
+    if today.day >= 28:  # can't set a future day (max is 28) late in the month
+        record("recurring day-gating (skipped near month end)", True)
+        return
+    future_day = today.day + 1  # > today.day and <= 28
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        s = Student(first_name="Gate", last_name="Test")
+        db.session.add(s)
+        db.session.flush()
+        dc = DanceClass(name="Gate Class", day_of_week=0, start_time=_time(17, 0),
+                        end_time=_time(18, 0), instructor_id=admin.id)
+        db.session.add(dc)
+        db.session.flush()
+        db.session.add(ClassEnrollment(student_id=s.id, class_id=dc.id))
+        rc = RecurringCharge(class_id=dc.id, amount=50, category="tuition", day_of_month=future_day)
+        db.session.add(rc)
+        db.session.commit()
+        rcid = rc.id
+        _process_recurring_charges()
+        n = Transaction.query.filter_by(recurring_charge_id=rcid).count()
+        record(f"future-dated charge (day {future_day}, today {today.day}) does NOT fire yet (got {n})",
+               n == 0, f"{n} != 0 — charged before the due day")
+
+
 def test_money_precision():
     """Summing many cent-level transactions must not drift (guards against a
     future switch away from Numeric columns, or float creeping into the sums)."""
@@ -195,6 +228,7 @@ def main():
     test_late_fee_idempotent(ids)
     test_aging()
     test_recurring_charge_idempotent()
+    test_recurring_day_gating()
     test_money_precision()
     fails = [r for r in results if not r[1]]
     print("\n" + "=" * 56)

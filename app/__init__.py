@@ -43,6 +43,7 @@ def _process_recurring_charges():
             class_id=rc.class_id, is_active=True
         ).all()
         charge_date = today.replace(day=due_day)
+        class_name = rc.dance_class.name if rc.dance_class else 'class'
         for e in enrollments:
             t = Transaction(
                 student_id=e.student_id,
@@ -50,7 +51,7 @@ def _process_recurring_charges():
                 amount=rc.amount,
                 category=rc.category,
                 payment_method='n/a',
-                description=rc.description or f'{rc.dance_class.name} - {rc.category}',
+                description=rc.description or f'{class_name} - {rc.category}',
                 transaction_date=charge_date,
                 recurring_charge_id=rc.id,
                 created_by=rc.created_by,
@@ -58,7 +59,7 @@ def _process_recurring_charges():
             db.session.add(t)
         logger.info(
             "Recurring charge #%d: charged %d students $%s for %s",
-            rc.id, len(enrollments), rc.amount, rc.dance_class.name,
+            rc.id, len(enrollments), rc.amount, class_name,
         )
 
     db.session.commit()
@@ -194,7 +195,13 @@ def create_app(config_name=None):
             db.session.commit()
             logger.info("Default admin user created (username: admin, password: admin123)")
 
-        _process_recurring_charges()
+        # Both run on every boot (Fly wakes/sleeps several times a day). Never let
+        # a single bad row take the whole app down at startup — log and continue.
+        try:
+            _process_recurring_charges()
+        except Exception:
+            db.session.rollback()
+            logger.exception("Recurring-charge processing failed at startup")
         try:
             _process_auto_reminders()
         except Exception:
