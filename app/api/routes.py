@@ -393,7 +393,7 @@ def assign_rfid(student_id):
         return err
     student = Student.query.get_or_404(student_id)
     data = request.get_json()
-    rfid_uid = data.get('rfid_uid', '').strip() if data else ''
+    rfid_uid = _clean_str(data.get('rfid_uid')) if data else ''
     if not rfid_uid:
         return jsonify({'error': 'RFID UID is required'}), 400
 
@@ -483,8 +483,8 @@ def create_class():
             end_time=datetime.strptime(data['end_time'], '%H:%M').time(),
             instructor_id=instructor_id,
             max_students=data.get('max_students', 20),
-            level=data.get('level', '').strip() or None,
-            age_group=data.get('age_group', '').strip() or None,
+            level=_clean_str(data.get('level')) or None,
+            age_group=_clean_str(data.get('age_group')) or None,
         )
         db.session.add(dance_class)
         db.session.commit()
@@ -707,7 +707,7 @@ def manual_checkin():
             class_id=class_id,
             check_in_time=datetime.utcnow(),
             check_in_method='manual',
-            notes=data.get('notes', '').strip() or None,
+            notes=_clean_str(data.get('notes')) or None,
             is_present=True,
         )
         db.session.add(att)
@@ -894,7 +894,7 @@ def create_transaction():
             amount=amount,
             category=data['category'],
             payment_method=data.get('payment_method') or 'n/a',
-            description=data.get('description', '').strip() or None,
+            description=_clean_str(data.get('description')) or None,
             transaction_date=txn_date,
             created_by=current_user.id,
         )
@@ -1217,7 +1217,7 @@ def bulk_charge():
             amount=amount,
             category=data['category'],
             payment_method='n/a',
-            description=data.get('description', '').strip() or f'{dance_class.name} - {data["category"]}',
+            description=_clean_str(data.get('description')) or f'{dance_class.name} - {data["category"]}',
             transaction_date=txn_date,
             created_by=current_user.id,
         )
@@ -1488,7 +1488,7 @@ def create_rule():
     if not data or not data.get('text'):
         return jsonify({'error': 'text is required'}), 400
     max_order = db.session.query(func.max(Rule.display_order)).scalar() or 0
-    r = Rule(text=data['text'].strip(), display_order=max_order + 1)
+    r = Rule(text=_clean_str(data['text']), display_order=max_order + 1)
     db.session.add(r)
     db.session.commit()
     return jsonify({'id': r.id, 'text': r.text, 'display_order': r.display_order}), 201
@@ -1500,7 +1500,7 @@ def update_rule(rule_id):
     r = Rule.query.get_or_404(rule_id)
     data = request.get_json()
     if data.get('text'):
-        r.text = data['text'].strip()
+        r.text = _clean_str(data['text'])
     if 'display_order' in data:
         r.display_order = int(data['display_order'])
     db.session.commit()
@@ -1830,9 +1830,9 @@ def create_staff():
         if not data.get(field):
             return jsonify({'error': f'{field} is required'}), 400
 
-    if User.query.filter_by(username=data['username'].strip()).first():
+    if User.query.filter_by(username=_clean_str(data['username'])).first():
         return jsonify({'error': 'Username already taken'}), 400
-    if User.query.filter_by(email=data['email'].strip()).first():
+    if User.query.filter_by(email=_clean_str(data['email'])).first():
         return jsonify({'error': 'Email already in use'}), 400
 
     role = data.get('role', 'teacher')
@@ -1840,11 +1840,11 @@ def create_staff():
         return jsonify({'error': 'Role must be admin or teacher'}), 400
 
     u = User(
-        username=data['username'].strip(),
-        email=data['email'].strip(),
-        first_name=data['first_name'].strip(),
-        last_name=data['last_name'].strip(),
-        phone=data.get('phone', '').strip() or None,
+        username=_clean_str(data['username']),
+        email=_clean_str(data['email']),
+        first_name=_clean_str(data['first_name']),
+        last_name=_clean_str(data['last_name']),
+        phone=_clean_str(data.get('phone')) or None,
         role=role,
         is_admin=(role == 'admin'),
         is_active=True,
@@ -1869,16 +1869,16 @@ def update_staff(user_id):
         return jsonify({'error': 'No data provided'}), 400
 
     if 'first_name' in data:
-        u.first_name = data['first_name'].strip()
+        u.first_name = _clean_str(data['first_name'])
     if 'last_name' in data:
-        u.last_name = data['last_name'].strip()
+        u.last_name = _clean_str(data['last_name'])
     if 'email' in data:
-        email = data['email'].strip()
+        email = _clean_str(data['email'])
         if email != u.email and User.query.filter_by(email=email).first():
             return jsonify({'error': 'Email already in use'}), 400
         u.email = email
     if 'phone' in data:
-        u.phone = data['phone'].strip() or None
+        u.phone = _clean_str(data['phone']) or None
     if 'role' in data:
         role = data['role']
         if role not in ('admin', 'teacher'):
@@ -2280,7 +2280,7 @@ def claim_payment():
     if not data:
         return jsonify({'error': 'No data provided'}), 400
 
-    method = (data.get('method') or '').strip().lower()
+    method = _clean_str(data.get('method')).lower()
     if method not in VALID_PAYMENT_METHODS:
         return jsonify({'error': f'Invalid payment method. One of: {", ".join(sorted(VALID_PAYMENT_METHODS))}'}), 400
 
@@ -2322,8 +2322,8 @@ def claim_payment():
         parent_id=current_user.id,
         amount=amount,
         method=method,
-        reference=(data.get('reference') or '').strip() or None,
-        note=(data.get('note') or '').strip() or None,
+        reference=_clean_str(data.get('reference')) or None,
+        note=_clean_str(data.get('note')) or None,
     )
     db.session.add(p)
     db.session.commit()
@@ -2425,7 +2425,7 @@ def confirm_pending_payment(pid):
     p.reviewed_by = current_user.id
     p.transaction_id = first_txn.id if first_txn else None
     if data.get('admin_note'):
-        p.admin_note = data['admin_note'].strip()
+        p.admin_note = _clean_str(data['admin_note'])
 
     AuditLog.record(current_user.id, 'payment.confirm',
                     f'Confirmed ${amount:.2f} {method_label} for {who}')
@@ -2446,7 +2446,7 @@ def reject_pending_payment(pid):
         return jsonify({'error': f'Already {p.status}'}), 400
     data = request.get_json(silent=True) or {}
     p.status = 'rejected'
-    p.admin_note = (data.get('admin_note') or '').strip() or None
+    p.admin_note = _clean_str(data.get('admin_note')) or None
     p.reviewed_at = datetime.utcnow()
     p.reviewed_by = current_user.id
     who = p.student.full_name if p.student else (p.family.name + ' (family)' if p.family else 'unknown')
@@ -2739,8 +2739,8 @@ def update_group(gid):
         return err
     g = PerformanceGroup.query.get_or_404(gid)
     data = request.get_json() or {}
-    if 'name' in data and data['name'].strip():
-        g.name = data['name'].strip()
+    if 'name' in data and _clean_str(data['name']):
+        g.name = _clean_str(data['name'])
     if 'description' in data:
         g.description = (data['description'] or '').strip() or None
     db.session.commit()
@@ -2843,11 +2843,11 @@ def create_audition():
         return jsonify({'error': 'title is required'}), 400
     a = Audition(
         group_id=_opt_int(data.get('group_id')),
-        title=data['title'].strip(),
+        title=_clean_str(data['title']),
         audition_date=(datetime.strptime(data['audition_date'], '%Y-%m-%d').date()
                        if data.get('audition_date') else None),
-        location_text=(data.get('location_text') or '').strip() or None,
-        description=(data.get('description') or '').strip() or None,
+        location_text=_clean_str(data.get('location_text')) or None,
+        description=_clean_str(data.get('description')) or None,
         is_open=bool(data.get('is_open', True)),
     )
     db.session.add(a)
@@ -2863,8 +2863,8 @@ def update_audition(aid):
         return err
     a = Audition.query.get_or_404(aid)
     data = request.get_json() or {}
-    if 'title' in data and data['title'].strip():
-        a.title = data['title'].strip()
+    if 'title' in data and _clean_str(data['title']):
+        a.title = _clean_str(data['title'])
     if 'group_id' in data:
         a.group_id = int(data['group_id']) if data['group_id'] else None
     if 'audition_date' in data:
@@ -2940,7 +2940,7 @@ def set_signup_status(sid):
         return err
     s = AuditionSignup.query.get_or_404(sid)
     data = request.get_json() or {}
-    status = (data.get('status') or '').strip()
+    status = _clean_str(data.get('status'))
     if status not in ('signed_up', 'accepted', 'declined', 'waitlist'):
         return jsonify({'error': 'Invalid status'}), 400
     s.status = status
@@ -2975,12 +2975,12 @@ def create_performance():
         return jsonify({'error': 'title is required'}), 400
     p = Performance(
         group_id=_opt_int(data.get('group_id')),
-        title=data['title'].strip(),
+        title=_clean_str(data['title']),
         performance_date=(datetime.strptime(data['performance_date'], '%Y-%m-%d').date()
                           if data.get('performance_date') else None),
-        call_time=(data.get('call_time') or '').strip() or None,
-        venue=(data.get('venue') or '').strip() or None,
-        description=(data.get('description') or '').strip() or None,
+        call_time=_clean_str(data.get('call_time')) or None,
+        venue=_clean_str(data.get('venue')) or None,
+        description=_clean_str(data.get('description')) or None,
     )
     db.session.add(p)
     db.session.commit()
@@ -2995,8 +2995,8 @@ def update_performance(pid):
         return err
     p = Performance.query.get_or_404(pid)
     data = request.get_json() or {}
-    if 'title' in data and data['title'].strip():
-        p.title = data['title'].strip()
+    if 'title' in data and _clean_str(data['title']):
+        p.title = _clean_str(data['title'])
     if 'group_id' in data:
         p.group_id = int(data['group_id']) if data['group_id'] else None
     if 'performance_date' in data:
@@ -3063,7 +3063,7 @@ def add_assignment(pid):
     if PerformanceAssignment.query.filter_by(performance_id=pid, student_id=student_id).first():
         return jsonify({'error': 'Already assigned'}), 400
     a = PerformanceAssignment(performance_id=pid, student_id=student_id,
-                              notes=(data.get('notes') or '').strip() or None)
+                              notes=_clean_str(data.get('notes')) or None)
     db.session.add(a)
     db.session.commit()
     return jsonify({'message': 'Assigned', 'id': a.id}), 201
@@ -3174,8 +3174,8 @@ def create_waiver_template():
     if not data.get('title') or not data.get('body'):
         return jsonify({'error': 'title and body are required'}), 400
     t = WaiverTemplate(
-        title=data['title'].strip(),
-        body=data['body'].strip(),
+        title=_clean_str(data['title']),
+        body=_clean_str(data['body']),
         allow_decline=bool(data.get('allow_decline', False)),
         display_order=int(data.get('display_order', 0)),
     )
@@ -3192,10 +3192,10 @@ def update_waiver_template(tid):
         return err
     t = WaiverTemplate.query.get_or_404(tid)
     data = request.get_json() or {}
-    if 'title' in data and data['title'].strip():
-        t.title = data['title'].strip()
-    if 'body' in data and data['body'].strip():
-        t.body = data['body'].strip()
+    if 'title' in data and _clean_str(data['title']):
+        t.title = _clean_str(data['title'])
+    if 'body' in data and _clean_str(data['body']):
+        t.body = _clean_str(data['body'])
     if 'allow_decline' in data:
         t.allow_decline = bool(data['allow_decline'])
     if 'display_order' in data:
@@ -3284,7 +3284,7 @@ def sign_waiver(student_id, template_id):
     Student.query.get_or_404(student_id)
     t = WaiverTemplate.query.get_or_404(template_id)
     data = request.get_json() or {}
-    signed_name = (data.get('signed_name') or '').strip()
+    signed_name = _clean_str(data.get('signed_name'))
     if not signed_name:
         return jsonify({'error': 'A typed signature (your name) is required'}), 400
     consent = bool(data.get('consent', True))
@@ -3350,12 +3350,12 @@ def create_costume():
     if not data.get('name'):
         return jsonify({'error': 'name is required'}), 400
     c = Costume(
-        name=data['name'].strip(),
+        name=_clean_str(data['name']),
         class_id=_opt_int(data.get('class_id')),
         group_id=_opt_int(data.get('group_id')),
-        vendor=(data.get('vendor') or '').strip() or None,
+        vendor=_clean_str(data.get('vendor')) or None,
         fee=data.get('fee') or 0,
-        notes=(data.get('notes') or '').strip() or None,
+        notes=_clean_str(data.get('notes')) or None,
     )
     db.session.add(c)
     db.session.commit()
@@ -3370,8 +3370,8 @@ def update_costume(cid):
         return err
     c = Costume.query.get_or_404(cid)
     data = request.get_json() or {}
-    if 'name' in data and data['name'].strip():
-        c.name = data['name'].strip()
+    if 'name' in data and _clean_str(data['name']):
+        c.name = _clean_str(data['name'])
     if 'vendor' in data:
         c.vendor = (data['vendor'] or '').strip() or None
     if 'fee' in data:
@@ -3454,7 +3454,7 @@ def add_costume_assignment(cid):
     if CostumeAssignment.query.filter_by(costume_id=cid, student_id=student_id).first():
         return jsonify({'error': 'Already assigned'}), 400
     a = CostumeAssignment(costume_id=cid, student_id=student_id,
-                          size=(data.get('size') or '').strip() or None)
+                          size=_clean_str(data.get('size')) or None)
     db.session.add(a)
     db.session.commit()
     return jsonify({'message': 'Assigned', 'id': a.id}), 201
@@ -3566,7 +3566,7 @@ def create_ticket_type(pid):
     data = request.get_json() or {}
     if not data.get('name'):
         return jsonify({'error': 'name is required'}), 400
-    t = TicketType(performance_id=pid, name=data['name'].strip(), price=data.get('price') or 0)
+    t = TicketType(performance_id=pid, name=_clean_str(data['name']), price=data.get('price') or 0)
     db.session.add(t)
     db.session.commit()
     return jsonify({'id': t.id, 'name': t.name, 'price': f'{float(t.price):.2f}'}), 201
@@ -3646,7 +3646,7 @@ def create_ticket_order(pid):
         amount=round(float(tt.price) * qty, 2),
         paid=paid,
         paid_at=datetime.utcnow() if paid else None,
-        note=(data.get('note') or '').strip() or None,
+        note=_clean_str(data.get('note')) or None,
     )
     db.session.add(o)
     db.session.commit()
@@ -3836,7 +3836,7 @@ def create_payment_plan(student_id):
     PaymentPlan.query.filter_by(student_id=student_id, is_active=True).update({'is_active': False})
 
     plan = PaymentPlan(student_id=student_id, installment_amount=amount, num_installments=num,
-                       day_of_month=day, note=(data.get('note') or '').strip() or None,
+                       day_of_month=day, note=_clean_str(data.get('note')) or None,
                        created_by=current_user.id)
     db.session.add(plan)
     db.session.flush()
@@ -3924,8 +3924,8 @@ def create_donation():
         donor_name=(data.get('donor_name') or (current_user.full_name if is_parent else '')).strip() or None,
         donor_email=(data.get('donor_email') or (current_user.email if is_parent else '')).strip() or None,
         amount=amount,
-        method=(data.get('method') or '').strip().lower() or None,
-        note=(data.get('note') or '').strip() or None,
+        method=_clean_str(data.get('method')).lower() or None,
+        note=_clean_str(data.get('note')) or None,
         status='pending' if is_parent else 'recorded',
         parent_id=current_user.id if is_parent else None,
         donation_date=date.today(),
@@ -4806,12 +4806,12 @@ def create_recital():
         return jsonify({'error': 'year must be a number'}), 400
     r = Recital(
         year=year,
-        title=data['title'].strip(),
-        theme=(data.get('theme') or '').strip() or None,
+        title=_clean_str(data['title']),
+        theme=_clean_str(data.get('theme')) or None,
         recital_date=(datetime.strptime(data['recital_date'], '%Y-%m-%d').date()
                       if data.get('recital_date') else None),
-        show_times=(data.get('show_times') or '').strip() or None,
-        venue=(data.get('venue') or '').strip() or None,
+        show_times=_clean_str(data.get('show_times')) or None,
+        venue=_clean_str(data.get('venue')) or None,
     )
     # First recital created becomes active automatically
     if Recital.query.count() == 0:
@@ -4830,8 +4830,8 @@ def update_recital(rid):
         return err
     r = Recital.query.get_or_404(rid)
     data = request.get_json() or {}
-    if 'title' in data and data['title'].strip():
-        r.title = data['title'].strip()
+    if 'title' in data and _clean_str(data['title']):
+        r.title = _clean_str(data['title'])
     if 'year' in data and data['year']:
         try:
             r.year = int(data['year'])
@@ -4964,11 +4964,11 @@ def create_recital_number(rid):
     n = RecitalNumber(
         recital_id=r.id,
         order_index=(last.order_index + 1) if last else 1,
-        title=data['title'].strip(),
+        title=_clean_str(data['title']),
         class_id=_opt_int(data.get('class_id')),
         group_id=_opt_int(data.get('group_id')),
-        style=(data.get('style') or '').strip() or None,
-        act=(data.get('act') or '').strip() or None,
+        style=_clean_str(data.get('style')) or None,
+        act=_clean_str(data.get('act')) or None,
     )
     db.session.add(n)
     db.session.commit()
@@ -5095,7 +5095,7 @@ def add_recital_cast(nid):
     student_id, serr = _resolve_student_id(data.get('student_id'))
     if serr:
         return serr
-    added = _add(student_id, (data.get('part') or '').strip() or None)
+    added = _add(student_id, _clean_str(data.get('part')) or None)
     if not added:
         return jsonify({'error': 'Dancer already in this number'}), 400
     db.session.commit()
@@ -5157,11 +5157,11 @@ def create_recital_award(rid):
     last = r.awards.order_by(RecitalAward.order_index.desc()).first()
     a = RecitalAward(
         recital_id=r.id,
-        title=data['title'].strip(),
-        category=(data.get('category') or '').strip() or None,
+        title=_clean_str(data['title']),
+        category=_clean_str(data.get('category')) or None,
         student_id=award_student_id,
-        recipient_text=(data.get('recipient_text') or '').strip() or None,
-        description=(data.get('description') or '').strip() or None,
+        recipient_text=_clean_str(data.get('recipient_text')) or None,
+        description=_clean_str(data.get('description')) or None,
         order_index=(last.order_index + 1) if last else 1,
     )
     db.session.add(a)
@@ -5177,8 +5177,8 @@ def update_recital_award(aid):
         return err
     a = RecitalAward.query.get_or_404(aid)
     data = request.get_json() or {}
-    if 'title' in data and data['title'].strip():
-        a.title = data['title'].strip()
+    if 'title' in data and _clean_str(data['title']):
+        a.title = _clean_str(data['title'])
     if 'category' in data:
         a.category = (data['category'] or '').strip() or None
     if 'student_id' in data:
@@ -5243,12 +5243,12 @@ def create_recital_ad(rid):
     last = r.ads.order_by(RecitalAd.order_index.desc()).first()
     a = RecitalAd(
         recital_id=r.id,
-        advertiser=data['advertiser'].strip(),
+        advertiser=_clean_str(data['advertiser']),
         size=size,
         price=data.get('price') or 0,
-        content=(data.get('content') or '').strip() or None,
-        contact_name=(data.get('contact_name') or '').strip() or None,
-        contact_email=(data.get('contact_email') or '').strip() or None,
+        content=_clean_str(data.get('content')) or None,
+        contact_name=_clean_str(data.get('contact_name')) or None,
+        contact_email=_clean_str(data.get('contact_email')) or None,
         student_id=ad_student_id,
         status=(data.get('status') or 'submitted').strip(),
         paid=bool(data.get('paid')),
@@ -5269,8 +5269,8 @@ def update_recital_ad(aid):
         return err
     a = RecitalAd.query.get_or_404(aid)
     data = request.get_json() or {}
-    if 'advertiser' in data and data['advertiser'].strip():
-        a.advertiser = data['advertiser'].strip()
+    if 'advertiser' in data and _clean_str(data['advertiser']):
+        a.advertiser = _clean_str(data['advertiser'])
     if 'size' in data and data['size'] in AD_SIZES:
         a.size = data['size']
     if 'price' in data:

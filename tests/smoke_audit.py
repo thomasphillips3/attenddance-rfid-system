@@ -1019,6 +1019,50 @@ def run_timeclock():
                f"got {rp.status_code}", "P1")
 
 
+def run_full_mutation_fuzz():
+    """Comprehensive robustness guarantee: fuzz EVERY /api POST/PUT/PATCH endpoint
+    with malformed payloads (no body, empty, garbage-typed) as admin, and assert
+    NONE returns 5xx. This is the systematic backstop behind the per-feature
+    robustness tests — it catches any endpoint (present or future) that would 500
+    on bad input (e.g. `.strip()` on a non-string). Skips a few with real side
+    effects (external calls, destructive to the shared test DB)."""
+    import re as _re
+    SKIP = {"/api/cron/run", "/api/webhooks/square", "/api/settings/payments/test-square",
+            "/api/settings/sms/test", "/api/seed-demo-parent", "/api/rfid/simulate",
+            "/api/auth/login", "/api/auth/logout", "/api/register",
+            "/api/students/424242/invite-parent", "/api/messages"}
+    with app.app_context():
+        routes = []
+        for r in app.url_map.iter_rules():
+            methods = r.methods - {"HEAD", "OPTIONS", "GET", "DELETE"}
+            if not (methods & {"POST", "PUT", "PATCH"}) or not str(r).startswith("/api/"):
+                continue
+            base = _re.sub(r"<[^>]*>", "424242", str(r))
+            if base in SKIP or str(r) in SKIP:
+                continue
+            routes.append((sorted(methods)[0], base))
+    payloads = [None, {}, {"amount": "x", "student_id": "x", "class_id": "x", "name": 123,
+                           "email": [], "student_ids": "nope", "date": "bad", "quantity": "lots",
+                           "day_of_month": "soon", "title": 123, "status": [], "consent": "maybe",
+                           "theme": 123, "role": [], "note": 99, "description": []}]
+    bad = []
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        for method, base in routes:
+            fn = getattr(c, method.lower())
+            for body in payloads:
+                try:
+                    r = fn(base, data="", content_type="application/json") if body is None else fn(base, json=body)
+                    if r.status_code >= 500:
+                        bad.append(f"{method} {base}->{r.status_code}")
+                        break
+                except Exception as e:  # noqa: BLE001
+                    bad.append(f"{method} {base}!{type(e).__name__}")
+                    break
+    record(f"Every mutation endpoint handles malformed input without 5xx ({len(routes)} fuzzed)",
+           not bad, f"5xx on: {bad[:12]}", "P2")
+
+
 def run_auto_reminders():
     """Auto-reminders email/SMS families with balances, and run on every boot +
     cron (the machine wakes/sleeps all day). They MUST fire at most once per
@@ -1910,6 +1954,7 @@ def main():
     run_waiver_signing(ids)
     run_attendance(ids)
     run_message_blast(ids)
+    run_full_mutation_fuzz()
     run_skills(ids)
     run_analytics(ids)
     run_leads()
