@@ -185,10 +185,10 @@ async function saveLocation(e) {
             loadLocations();
         } else {
             const d = await res.json();
-            alert(d.error || 'Error saving location');
+            toast(d.error || 'Error saving location', false);
         }
     } catch (err) {
-        alert('Network error');
+        toast('Network error', false);
     }
 }
 
@@ -197,8 +197,8 @@ async function deactivateLocation(id, name) {
     try {
         const res = await fetch(`/api/locations/${id}`, { method: 'DELETE' });
         if (res.ok) loadLocations();
-        else alert((await res.json()).error || 'Error');
-    } catch (err) { alert('Network error'); }
+        else toast((await res.json()).error || 'Error', false);
+    } catch (err) { toast('Network error', false); }
 }
 
 loadLocations();

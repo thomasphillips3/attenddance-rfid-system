@@ -279,6 +279,22 @@
         }, 5000);
     </script>
 
+    <!-- Global toast: a single styled notifier for every page (replaces raw
+         browser toast(, false)s). Pages that define their own toast()/msg() keep it. -->
+    <div id="global-toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] hidden max-w-[90vw] px-4 py-3 rounded-xl text-sm font-bold shadow-pop"></div>
+    <script>
+        window.toast = function (message, ok) {
+            if (ok === undefined) ok = true;
+            var t = document.getElementById('global-toast');
+            if (!t) { if (!ok) console.warn(message); return; }
+            t.textContent = message;
+            t.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] max-w-[90vw] px-4 py-3 rounded-xl text-sm font-bold shadow-pop ' +
+                (ok ? 'bg-ok text-white' : 'bg-danger text-white');
+            clearTimeout(window._toastTimer);
+            window._toastTimer = setTimeout(function () { t.classList.add('hidden'); }, 4000);
+        };
+    </script>
+
     {% block extra_js %}{% endblock %}
 </body>
 </html>

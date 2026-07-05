@@ -82,8 +82,8 @@ async function acknowledge(ruleId) {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ student_id: studentId, initials: initials }),
         });
-        if (res.ok) { loadRulesStatus(); } else { const d = await res.json(); alert(d.error || 'Error'); }
-    } catch (err) { alert('Network error'); }
+        if (res.ok) { loadRulesStatus(); } else { const d = await res.json(); toast(d.error || 'Error', false); }
+    } catch (err) { toast('Network error', false); }
 }
 
 loadRulesStatus();

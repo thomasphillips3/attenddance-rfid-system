@@ -109,8 +109,8 @@ async function saveRule(e) {
     e.preventDefault();
     try {
         const res = await fetch('/api/rules', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ text: document.getElementById('rule-text').value }) });
-        if (res.ok) { closeRuleModal(); loadRules(); loadAckStatus(); } else { const d = await res.json(); alert(d.error || 'Error'); }
-    } catch (err) { alert('Network error'); }
+        if (res.ok) { closeRuleModal(); loadRules(); loadAckStatus(); } else { const d = await res.json(); toast(d.error || 'Error', false); }
+    } catch (err) { toast('Network error', false); }
 }
 
 async function deleteRule(id) {

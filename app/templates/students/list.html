@@ -281,8 +281,8 @@ async function saveStudent(e) {
     const url = id ? `/api/students/${id}` : '/api/students';
     try {
         const res = await fetch(url, { method: id ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-        if (res.ok) { closeModal(); loadStudents(); } else { const d = await res.json(); alert(d.error || 'Error saving student'); }
-    } catch (err) { alert('Network error'); }
+        if (res.ok) { closeModal(); loadStudents(); } else { const d = await res.json(); toast(d.error || 'Error saving student', false); }
+    } catch (err) { toast('Network error', false); }
 }
 
 async function deleteStudent(id, name) {

@@ -203,7 +203,7 @@ async function saveStaff(e) {
     if (pw) body.password = pw;
 
     if (!id && !pw) {
-        alert('Password is required for new accounts');
+        toast('Password is required for new accounts', false);
         return;
     }
 
@@ -219,10 +219,10 @@ async function saveStaff(e) {
             loadStaff();
         } else {
             const d = await res.json();
-            alert(d.error || 'Error saving staff');
+            toast(d.error || 'Error saving staff', false);
         }
     } catch (err) {
-        alert('Network error');
+        toast('Network error', false);
     }
 }
 
@@ -234,10 +234,10 @@ async function deactivateStaff(id, name) {
             loadStaff();
         } else {
             const d = await res.json();
-            alert(d.error || 'Error deactivating staff');
+            toast(d.error || 'Error deactivating staff', false);
         }
     } catch (err) {
-        alert('Network error');
+        toast('Network error', false);
     }
 }
 

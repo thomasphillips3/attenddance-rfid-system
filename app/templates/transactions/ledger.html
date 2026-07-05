@@ -160,12 +160,12 @@ async function sendInvoice() {
             btn.innerHTML = '<i class="fas fa-check mr-2"></i>Invoice Sent';
             btn.className = btn.className.replace('bg-primary-500 hover:bg-primary-600', 'bg-ok');
         } else {
-            alert(data.error || 'Failed to send invoice');
+            toast(data.error || 'Failed to send invoice', false);
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-paper-plane mr-2"></i>Send Invoice';
         }
     } catch (err) {
-        alert('Network error');
+        toast('Network error', false);
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-paper-plane mr-2"></i>Send Invoice';
     }

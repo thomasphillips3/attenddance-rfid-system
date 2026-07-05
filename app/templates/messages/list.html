@@ -127,12 +127,12 @@ async function sendMessage(e) {
                 document.getElementById('email-list-box').value = data.recipient_emails.join(', ');
                 document.getElementById('email-modal').classList.remove('hidden');
             } else {
-                alert(data.message);
+                toast(data.message, true);
             }
             document.getElementById('compose-form').reset();
             loadHistory();
-        } else { alert(data.error || 'Error sending message'); }
-    } catch (err) { alert('Network error'); }
+        } else { toast(data.error || 'Error sending message', false); }
+    } catch (err) { toast('Network error', false); }
     btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane mr-2"></i>Send';
 }
 
@@ -140,7 +140,7 @@ function closeEmailModal() { document.getElementById('email-modal').classList.ad
 function copyEmails() {
     const box = document.getElementById('email-list-box');
     box.select(); document.execCommand('copy');
-    alert('Emails copied!');
+    toast('Emails copied!', false);
 }
 
 async function loadHistory() {

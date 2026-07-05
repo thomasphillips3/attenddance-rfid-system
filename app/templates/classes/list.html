@@ -177,8 +177,8 @@ async function saveClass(e) {
     };
     try {
         const res = await fetch('/api/classes', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-        if (res.ok) { closeModal(); loadClasses(); } else { const d = await res.json(); alert(d.error || 'Error saving class'); }
-    } catch (err) { alert('Network error'); }
+        if (res.ok) { closeModal(); loadClasses(); } else { const d = await res.json(); toast(d.error || 'Error saving class', false); }
+    } catch (err) { toast('Network error', false); }
 }
 
 async function loadLocations() {
@@ -223,7 +223,7 @@ async function loadWaitlist() {
 
 async function waitlistSelected() {
     const checked = [...document.querySelectorAll('.student-cb:checked')].map(cb => parseInt(cb.value));
-    if (!checked.length) { alert('Select at least one student'); return; }
+    if (!checked.length) { toast('Select at least one student', false); return; }
     for (const sid of checked) {
         await fetch(`/api/classes/${currentClassId}/waitlist`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -305,7 +305,7 @@ async function loadEnrollments() {
 
 async function enrollSelected() {
     const checked = [...document.querySelectorAll('.student-cb:checked')].map(cb => parseInt(cb.value));
-    if (!checked.length) { alert('Select at least one student'); return; }
+    if (!checked.length) { toast('Select at least one student', false); return; }
     try {
         const res = await fetch(`/api/classes/${currentClassId}/enroll`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -313,8 +313,8 @@ async function enrollSelected() {
         });
         const data = await res.json();
         if (res.ok) { toggleAddSection(false); loadEnrollments(); }
-        else { alert(data.error || 'Enrollment failed'); }
-    } catch (err) { alert('Network error'); }
+        else { toast(data.error || 'Enrollment failed', false); }
+    } catch (err) { toast('Network error', false); }
 }
 
 async function unenrollStudent(enrollmentId) {

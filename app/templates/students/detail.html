@@ -157,8 +157,8 @@ async function toggleActive() {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ is_active: !isActive }),
         });
-        if (res.ok) { location.reload(); } else { alert('Error updating status'); }
-    } catch (err) { alert('Network error'); }
+        if (res.ok) { location.reload(); } else { toast('Error updating status', false); }
+    } catch (err) { toast('Network error', false); }
 }
 </script>
 {% endblock %}

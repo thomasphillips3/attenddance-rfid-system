@@ -120,8 +120,8 @@ async function doCheckin(e) {
     try {
         const res = await fetch('/api/attendance/checkin', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
         const data = await res.json();
-        if (res.ok) { closeCheckinModal(); loadToday(); loadHistory(); alert(data.message); } else { alert(data.error || 'Check-in failed'); }
-    } catch (err) { alert('Network error'); }
+        if (res.ok) { closeCheckinModal(); loadToday(); loadHistory(); toast(data.message, true); } else { toast(data.error || 'Check-in failed', false); }
+    } catch (err) { toast('Network error', false); }
 }
 
 loadToday();

@@ -101,8 +101,8 @@ async function saveFamily(e) {
     };
     try {
         const res = await fetch('/api/families', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-        if (res.ok) { closeFamilyModal(); loadFamilies(); } else { const d = await res.json(); alert(d.error || 'Error'); }
-    } catch (err) { alert('Network error'); }
+        if (res.ok) { closeFamilyModal(); loadFamilies(); } else { const d = await res.json(); toast(d.error || 'Error', false); }
+    } catch (err) { toast('Network error', false); }
 }
 
 loadFamilies();
