@@ -1397,6 +1397,35 @@ def run_amount_validation(ids):
                    rr.status_code == want and rr.status_code < 500, f"got {rr.status_code} (want {want})", "P2")
 
 
+def run_recital_delete_cascade(ids):
+    """Deleting a recital must cascade to its children (numbers, cast, awards, ads)
+    — not orphan them. Guards the cascade='all, delete-orphan' config so a future
+    change can't silently leave orphaned recital data behind."""
+    from app.models import Recital, RecitalNumber, RecitalCast, RecitalAward, RecitalAd
+    with app.app_context():
+        rec = Recital(year=2031, title="Cascade Recital")
+        db.session.add(rec)
+        db.session.flush()
+        num = RecitalNumber(recital_id=rec.id, title="N", order_index=1)
+        db.session.add(num)
+        db.session.flush()
+        db.session.add_all([RecitalCast(number_id=num.id, student_id=ids["child_a"]),
+                            RecitalAward(recital_id=rec.id, title="Aw", order_index=1),
+                            RecitalAd(recital_id=rec.id, advertiser="Ad", order_index=1)])
+        db.session.commit()
+        rid, nid = rec.id, num.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        rd = c.delete(f"/api/recitals/{rid}")
+    with app.app_context():
+        orphans = (RecitalNumber.query.filter_by(recital_id=rid).count()
+                   + RecitalAward.query.filter_by(recital_id=rid).count()
+                   + RecitalAd.query.filter_by(recital_id=rid).count()
+                   + RecitalCast.query.filter_by(number_id=nid).count())
+    record(f"Delete recital cascades to all children (delete={rd.status_code}, {orphans} orphans)",
+           rd.status_code == 200 and orphans == 0, f"status={rd.status_code} orphans={orphans}", "P2")
+
+
 def run_recital_money(ids):
     """Recital-adjacent money: charging a costume fee must be idempotent (a
     double-click can't double-charge every dancer), and ticket-order totals must
@@ -2080,6 +2109,7 @@ def main():
     run_amount_validation(ids)
     run_payment_plans(ids)
     run_recital_money(ids)
+    run_recital_delete_cascade(ids)
     run_transaction_delete(ids)
     run_input_robustness(ids)
     run_parent_input_robustness(ids)
