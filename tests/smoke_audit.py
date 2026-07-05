@@ -1291,6 +1291,58 @@ def run_csv_exports(ids):
         record("Revenue report returns 12 months + totals", ok, str(rev)[:80], "P2")
 
 
+def run_statements(ids):
+    """Printable financial/tax documents (student + family statements, the
+    501(c)(3) giving statement, certificate, recital booklet) are Jinja-rendered,
+    not JSON, and must (a) render on edge data without 500, (b) 404 on a bad id,
+    and (c) get the money right — a giving statement is a tax document, so it MUST
+    filter donations to the requested year."""
+    from datetime import date as _date
+    from app.models import Student, Family, Transaction, Donation
+    with app.app_context():
+        empty_fam = Family(name="No-Kids Fam")
+        db.session.add(empty_fam)
+        db.session.flush()
+        fresh = Student(first_name="Fresh", last_name="NoTxns", family_id=empty_fam.id)
+        db.session.add(fresh)
+        db.session.flush()
+        # A donor with an in-year and a prior-year donation (the prior year must
+        # be excluded from a year-scoped giving statement).
+        db.session.add_all([
+            Donation(donor_name="Gv", donor_email="gv@x.com", amount=100, method="cash",
+                     status="recorded", donation_date=_date(2026, 2, 1)),
+            Donation(donor_name="Gv", donor_email="gv@x.com", amount=500, method="cash",
+                     status="recorded", donation_date=_date(2025, 2, 1)),
+        ])
+        db.session.commit()
+        fresh_id, efam_id = fresh.id, empty_fam.id
+    sid = ids["child_a"]
+    fid = ids["fam_a"]
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        for url, label in [
+            (f"/students/{sid}/statement", "student statement"),
+            (f"/students/{fresh_id}/statement", "fresh student statement (no txns)"),
+            (f"/families/{fid}/statement", "family statement"),
+            (f"/families/{efam_id}/statement", "empty family statement"),
+            (f"/students/{sid}/certificate", "certificate"),
+        ]:
+            r = c.get(url)
+            record(f"Document renders on edge data: {label} -> {r.status_code}",
+                   r.status_code == 200, f"got {r.status_code}", "P2")
+        for url, label in [
+            ("/students/999999/statement", "student"),
+            ("/families/999999/statement", "family"),
+        ]:
+            r = c.get(url)
+            record(f"Document 404s on nonexistent {label} -> {r.status_code}",
+                   r.status_code == 404, f"got {r.status_code}", "P3")
+        # Giving statement (tax doc): 2026 total = $100 only; the $500 from 2025 excluded.
+        h = c.get("/giving-statement?email=gv@x.com&year=2026").get_data(as_text=True)
+        record("Giving statement filters to the requested year (tax-critical)",
+               "100.00" in h and "500.00" not in h, "year filter wrong — tax document error", "P1")
+
+
 def run_xss_guard():
     """Static guard: user-controlled name/text fields must never be interpolated
     into a JS template literal without esc(). These fields come from public
@@ -1444,6 +1496,7 @@ def main():
     run_prod_security_config()
     run_backup(ids)
     run_csv_exports(ids)
+    run_statements(ids)
     run_xss_guard()
     run_js_syntax()
     run_smoke()
