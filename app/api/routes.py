@@ -1450,7 +1450,11 @@ def send_student_invoice(student_id):
         })
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        # Log the full failure server-side so a "Square invoices aren't sending"
+        # report is diagnosable; return the studio's usual clean Square detail
+        # (matches square_service.test_connection) rather than a raw traceback.
+        logger.exception("Square invoice failed for student %d", student_id)
+        return jsonify({'error': f'Could not send the invoice: {square_service._error_detail(e)}'}), 500
 
 
 # ── Parent invite endpoints ─────────────────────────────────────────
