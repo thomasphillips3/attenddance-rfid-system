@@ -5,6 +5,8 @@
 
 ---
 
+> **To actually launch:** follow [GO-LIVE.md](GO-LIVE.md) — the ordered runbook (required secrets → deploy → smoke test → optional client-side config).
+
 ## Verdict
 
 **Not production-ready as-is — but close, and the blockers are concentrated.** The feature breadth is genuinely impressive and the UI redesign is fully landed (0 legacy-style files remain). What stands between here and go-live is **two P0 security holes that are individually catastrophic for a system holding minors' PII and money**, one P1 billing defect, and a short list of parity/polish gaps. The P0s are both fixable in an afternoon; neither requires new features.
@@ -215,5 +217,8 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 17 — DONE (smoke 57/57)
 - **Accessibility: labeled every icon-only button app-wide** (~23 buttons across 12 templates — delete/edit/close/remove/move/copy) with `aria-label` + `aria-hidden` on the decorative icons. Screen-reader users now get names for all icon controls, not just the base shell. Verified: 0 unlabeled icon-only buttons; all templates compile; JS-heavy pages node-check clean. (A batch script mislabeled 2 text buttons — caught via a "label on a text-bearing button" scan and fixed.)
 
+### Iteration 18 — DONE
+- **Wrote the go-live runbook** ([GO-LIVE.md](GO-LIVE.md)): the ordered, executable launch sequence — required secrets (SECRET_KEY, admin password) → merge/deploy → post-deploy smoke test → optional client-side config (SMTP, Square, Zelle, Twilio, registration, cron), grounded in the app's actual config mechanisms. Turns the whole audit into an actionable launch plan. (Considered SRI/CDN hardening (P3-4) but left it: the Tailwind Play CDN can't take a stable SRI hash, and a real Tailwind build is a large refactor that would risk the design system — not worth it for a low-likelihood CDN-compromise risk.)
+
 ### Remaining for next iterations
-- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~30 remaining staff-side `prompt()` flows → modals (mostly off-season: recital, waivers, skills, makeups, donations-admin), P3-4 Subresource Integrity on CDN scripts prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
+- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~30 remaining staff-side `prompt()` flows → modals (spring-only: recital, waivers, skills, makeups, donations-admin), P3-4 SRI (deferred — see above) prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
