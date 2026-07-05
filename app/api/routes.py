@@ -392,6 +392,9 @@ def remove_rfid(student_id):
 @bp.route('/classes', methods=['GET'])
 @login_required
 def get_classes():
+    err = _staff_only()  # full class list (instructors, rosters) is staff-only
+    if err:
+        return err
     active_only = request.args.get('active', 'true').lower() == 'true'
     query = DanceClass.query
     if active_only:
@@ -1763,7 +1766,10 @@ def _location_to_dict(loc):
 @bp.route('/locations', methods=['GET'])
 @login_required
 def get_locations():
-    """Get all locations."""
+    """Get all locations (staff only — carries internal notes/phone)."""
+    err = _staff_only()
+    if err:
+        return err
     locations = Location.query.filter_by(is_active=True).order_by(Location.name).all()
     return jsonify({'locations': [_location_to_dict(loc) for loc in locations]})
 

@@ -107,6 +107,7 @@ def run_idor(ids):
             ("GET",    f"/api/students/{bid}/ledger",          "read other child's ledger"),
             ("GET",    f"/api/students/{bid}/skills",          "read other child's skills"),
             ("GET",    f"/api/students/{bid}/waivers",         "read other child's waivers"),
+            ("GET",    f"/api/students/{bid}/rules-status",    "read other child's rules status"),
             ("GET",    f"/api/students/{bid}/payment-plan",    "read other child's plan"),
             ("GET",    f"/api/families/{fbid}/ledger",         "read other family's ledger"),
         ]
@@ -116,24 +117,51 @@ def run_idor(ids):
             record(f"IDOR blocked: {desc} [{method} {path}] -> {resp.status_code}",
                    blocked, f"got {resp.status_code}, expected 401/403/404", "P0")
 
-        # Parent must not reach staff-only endpoints (reads).
+        # Parent must not reach staff-only endpoints (reads). Comprehensive sweep
+        # of the whole staff-only GET surface (not a spot-check) — every one of
+        # these leaks studio-wide or other-family data if it 200s for a parent.
         staff_only = [
-            ("GET", "/api/students"),          # full roster
-            ("GET", "/api/transactions"),      # all money
-            ("GET", "/api/users"),             # all accounts
-            ("GET", "/api/families"),          # all families
-            ("GET", "/api/messages"),          # all sent messages
-            ("GET", "/api/balances"),          # every family's balance
-            ("GET", "/api/attendance/today"),  # attendance
-            ("GET", "/api/dashboard/stats"),   # studio stats
-            ("GET", "/api/reports/aging"),     # A/R aging report
-            ("GET", "/api/reports/revenue"),   # revenue report
+            "/api/students",              # full roster
+            "/api/transactions",          # all money
+            "/api/staff",                 # all staff accounts
+            "/api/families",              # all families
+            "/api/messages",              # all sent messages
+            "/api/balances",              # every family's balance
+            "/api/attendance",            # attendance records
+            "/api/attendance/today",      # today's attendance
+            "/api/dashboard/stats",       # studio stats
+            "/api/reports/aging",         # A/R aging report
+            "/api/reports/revenue",       # revenue report
+            "/api/reports/students.csv",  # roster export
+            "/api/reports/transactions.csv",  # money export
+            "/api/leads",                 # sales pipeline (PII of prospects)
+            "/api/donations",             # all donations
+            "/api/locations",            # venues + internal notes/phone
+            "/api/classes",               # full class list (instructors, rosters)
+            "/api/skills",                # skill catalog
+            "/api/costumes",              # costume catalog
+            "/api/recurring-charges",     # every recurring charge
+            "/api/pending-payments",      # every family's reported payments
+            "/api/registrations",         # every enrollment request (PII)
+            "/api/audit-log",             # the full audit trail
+            "/api/analytics/retention",   # retention analytics
+            "/api/rfid/logs",             # every check-in
+            "/api/timeclock/report",      # staff payroll
+            "/api/waivers/compliance",    # every family's waiver status
+            "/api/settings/payments",     # payment config (may carry secrets)
         ]
-        for method, path in staff_only:
-            resp = c.open(path, method=method)
+        for path in staff_only:
+            resp = c.get(path)
             blocked = resp.status_code in (401, 403, 404)
-            record(f"Parent blocked from staff read [{method} {path}] -> {resp.status_code}",
+            record(f"Parent blocked from staff read [GET {path}] -> {resp.status_code}",
                    blocked, f"got {resp.status_code}", "P0")
+
+        # The nav-badge count endpoints intentionally 200 for parents but MUST
+        # return a safe stub (0), never the real studio count.
+        for path in ("/api/pending-payments/count", "/api/registrations/count"):
+            j = c.get(path).get_json() or {}
+            record(f"Count endpoint returns safe stub to parent [{path}] -> {j}",
+                   j.get("count") == 0, f"leaked real count: {j}", "P2")
 
         # Parent must not perform staff-only WRITES (fabricate money, email blasts).
         forbidden_writes = [

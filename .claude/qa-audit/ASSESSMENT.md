@@ -13,7 +13,7 @@
 
 **Where it started:** the first pass found **2 P0s that were individually catastrophic** for a system holding minors' PII and money — any logged-in parent could read every other family's child records and the entire studio ledger (broken access control), and anyone with the repo could forge an admin login (the `SECRET_KEY` was committed). Plus a fatal parent-portal JS bug (the whole portal's JavaScript was dead from a bad string escape), three auth-lifecycle P1s, and a list of parity and polish gaps.
 
-**Where it landed (45 commits on `fix/api-authorization-and-secret-key`):** both P0s fixed with a default-deny authorization model over the whole API; the fail-closed prod `SECRET_KEY` guard; the parent portal repaired and browser-verified; auth lifecycle hardened (username-or-email login, sibling-merge onboarding, password reset, deactivation enforcement); A/R aging + revenue reports and CSV exports added for Jackrabbit parity; server timezone pinned to Eastern so business dates are local; and the UI fully polished — 0 legacy-style files, 0 browser prompts, 0 browser alerts, mobile-verified, one unified toast. Guarded by **142 automated checks** (`tests/smoke_audit.py` 122/122, `tests/test_billing.py` 20/20) wired into CI, including a malformed-input robustness sweep over every write endpoint.
+**Where it landed (45 commits on `fix/api-authorization-and-secret-key`):** both P0s fixed with a default-deny authorization model over the whole API; the fail-closed prod `SECRET_KEY` guard; the parent portal repaired and browser-verified; auth lifecycle hardened (username-or-email login, sibling-merge onboarding, password reset, deactivation enforcement); A/R aging + revenue reports and CSV exports added for Jackrabbit parity; server timezone pinned to Eastern so business dates are local; and the UI fully polished — 0 legacy-style files, 0 browser prompts, 0 browser alerts, mobile-verified, one unified toast. Guarded by **163 automated checks** (`tests/smoke_audit.py` 143/143, `tests/test_billing.py` 20/20) wired into CI, including a malformed-input robustness sweep over every write endpoint and a full parent-authorization sweep over every staff-only GET endpoint.
 
 Severity counts — original pass: **2 P0, 3 P1, 5 P2, 3 P3.** Now: **all resolved** except **auto-pay** (a feature awaiting your go-ahead).
 
@@ -273,6 +273,14 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 
 ### Iteration 25 — DONE
 - **Scoped the one remaining item — auto-pay** ([AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)): decision-ready design so it can be greenlit/deferred. Grounded in the app's existing Square integration (customer helper + idempotent recurring scheduler already exist), it lays out the Cards-API/Web-Payments-SDK approach, `SavedCard` model, charge-on-schedule + failure handling, PCI (SAQ-A) posture, a ~3–4 day phased build, risks, and the recommendation to launch fall on manual and build auto-pay as the first post-launch project. This turns "what remains" into an actionable decision for the one open item.
+
+### Iteration 44 — DONE (smoke 143/143, billing 20/20)
+- **Swept the entire GET surface for parent data leaks (the P0 was IDOR — this is the systematic follow-up I hadn't done).** Enumerated all 73 `/api` GET endpoints, logged in as a parent, and hit every staff-only and cross-family one. Found **2 real leaks:**
+  - `GET /api/classes` — returned the **full class list (instructors, enrollment counts) to any parent**, no staff gate.
+  - `GET /api/locations` — returned **studio venues with internal notes/phone to any parent**, no staff gate.
+  Both are staff-only in usage (only staff pages fetch them; no parent/public template does). Gated both with `_staff_only()`. Severity P3 (studio-internal info disclosure, no other-family PII/money) — but exactly the default-deny principle the P0 fix established.
+- **Verified non-findings:** the two nav-badge count endpoints (`/api/pending-payments/count`, `/api/registrations/count`) 200 for parents but deliberately return a safe `{count: 0}` stub — not leaks.
+- **Locked in:** expanded `run_idor` from a 10-endpoint spot-check into a **comprehensive 28-endpoint staff-only GET sweep** + a safe-stub check on the count endpoints + a cross-family `rules-status` probe. The whole parent-visible GET surface is now a permanent regression guard.
 
 ### Iteration 43 — DONE (smoke 122/122, billing 20/20)
 - **Ran a malformed-input robustness sweep and it found real bugs.** Fuzzed the write endpoints with no-body / empty / garbage-typed / negative payloads. Found and fixed:
