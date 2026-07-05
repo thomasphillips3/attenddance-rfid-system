@@ -2808,6 +2808,47 @@ def run_recurring_charge_edit():
            f"amount={float(rc.amount)} day={rc.day_of_month} bad_amt={bad_amt.status_code} bad_day={bad_day.status_code}", "P1")
 
 
+def run_withdraw_frees_enrollment():
+    """Withdrawing a student must deactivate their enrollments (else they linger
+    on class rosters AND keep occupying a capacity spot a replacement can't take)
+    and clear their waitlist — but PRESERVE their balance (they may still owe)."""
+    from datetime import time as _time, date as _date
+    from app.models import (User, DanceClass, Student, Family, ClassEnrollment,
+                            WaitlistEntry, Transaction)
+    from app.helpers import calc_balance as _cb
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        fam = Family(name="Withdraw Cascade Fam", primary_email="wcc@x.com")
+        db.session.add(fam)
+        db.session.flush()
+        dc = DanceClass(name="WC Class", day_of_week=1, start_time=_time(16, 0),
+                        end_time=_time(17, 0), instructor_id=adm.id, max_students=5)
+        dc2 = DanceClass(name="WC Class 2", day_of_week=2, start_time=_time(16, 0),
+                         end_time=_time(17, 0), instructor_id=adm.id, max_students=5)
+        db.session.add_all([dc, dc2])
+        db.session.flush()
+        st = Student(first_name="Leaving", last_name="Kid", family_id=fam.id, is_active=True)
+        db.session.add(st)
+        db.session.flush()
+        db.session.add(ClassEnrollment(student_id=st.id, class_id=dc.id))
+        db.session.add(WaitlistEntry(class_id=dc2.id, student_id=st.id, status="waiting"))
+        db.session.add(Transaction(student_id=st.id, type="charge", amount=50,
+                                   category="tuition", payment_method="n/a",
+                                   description="c", transaction_date=_date.today()))
+        db.session.commit()
+        cid, sid = dc.id, st.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        c.delete(f"/api/students/{sid}")
+    with app.app_context():
+        enroll = ClassEnrollment.query.filter_by(class_id=cid, is_active=True).count()
+        wait = WaitlistEntry.query.filter_by(student_id=sid, status="waiting").count()
+        bal = _cb(sid)["balance"]
+    record(f"Withdrawing a student frees their spot + clears waitlist, keeps balance (enroll={enroll}, wait={wait}, bal={bal})",
+           enroll == 0 and wait == 0 and bal == 50.0,
+           f"enroll={enroll} wait={wait} bal={bal}", "P1")
+
+
 def run_withdrawn_student_balance():
     """A withdrawn (is_active=False) student who still owes must stay visible in
     the money views so the studio can collect — the balance can't vanish on
@@ -3191,6 +3232,7 @@ def main():
     run_registrations_pagination()
     run_registration_notify_throttle()
     run_withdrawn_student_balance()
+    run_withdraw_frees_enrollment()
     run_class_crud()
     run_class_capacity()
     run_recurring_charge_edit()

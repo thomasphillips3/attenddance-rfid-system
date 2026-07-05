@@ -381,9 +381,19 @@ def delete_student(student_id):
     err = _staff_only()
     if err:
         return err
+    from app.models import WaitlistEntry
     student = Student.query.get_or_404(student_id)
     student.is_active = False
     student.updated_at = datetime.utcnow()
+    # Withdrawing a student cascades to their class participation: deactivate
+    # enrollments (else they linger on rosters AND keep occupying a capacity spot
+    # a replacement can't take) and clear their waitlist entries. Financial records
+    # (their balance, ledger, pending payments) are LEFT INTACT — a withdrawn
+    # student may still owe, and that must stay collectible (see the A/R report).
+    ClassEnrollment.query.filter_by(student_id=student_id, is_active=True).update(
+        {'is_active': False}, synchronize_session=False)
+    WaitlistEntry.query.filter_by(student_id=student_id, status='waiting').update(
+        {'status': 'removed'}, synchronize_session=False)
     db.session.commit()
     return jsonify({'message': 'Student deactivated successfully'})
 
