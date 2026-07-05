@@ -2706,6 +2706,36 @@ def run_class_crud():
            f"class_active={cls.is_active} rc_active={rc.is_active} stopped={d2.get('recurring_charges_stopped')}", "P1")
 
 
+def run_recurring_charge_edit():
+    """An auto-billing rule must be editable (raise tuition / shift the billing
+    day mid-year) without delete+recreate. Verify PUT updates amount/day and
+    rejects a bad amount/day (it fires monthly, so a bad value is worst here)."""
+    from datetime import time as _time
+    from app.models import User, DanceClass, RecurringCharge
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        dc = DanceClass(name="RC Edit Class", day_of_week=2, start_time=_time(15, 0),
+                        end_time=_time(16, 0), instructor_id=adm.id)
+        db.session.add(dc)
+        db.session.flush()
+        rc = RecurringCharge(class_id=dc.id, amount=100, category="tuition",
+                             day_of_month=1, created_by=adm.id)
+        db.session.add(rc)
+        db.session.commit()
+        rid = rc.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        ok = c.put(f"/api/recurring-charges/{rid}", json={"amount": 110, "day_of_month": 15})
+        bad_amt = c.put(f"/api/recurring-charges/{rid}", json={"amount": "abc"})
+        bad_day = c.put(f"/api/recurring-charges/{rid}", json={"day_of_month": 45})
+    with app.app_context():
+        rc = RecurringCharge.query.get(rid)
+    record(f"Recurring-charge edit updates amount+day and validates -> {ok.status_code}",
+           ok.status_code == 200 and float(rc.amount) == 110.0 and rc.day_of_month == 15
+           and bad_amt.status_code == 400 and bad_day.status_code == 400,
+           f"amount={float(rc.amount)} day={rc.day_of_month} bad_amt={bad_amt.status_code} bad_day={bad_day.status_code}", "P1")
+
+
 def run_withdrawn_student_balance():
     """A withdrawn (is_active=False) student who still owes must stay visible in
     the money views so the studio can collect — the balance can't vanish on
@@ -3090,6 +3120,7 @@ def main():
     run_registration_notify_throttle()
     run_withdrawn_student_balance()
     run_class_crud()
+    run_recurring_charge_edit()
     run_page_route_authz(ids)
     run_admin_role_consistency()
     run_admin_identity_invariants()

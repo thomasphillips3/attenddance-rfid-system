@@ -230,6 +230,7 @@
             <h3 class="font-display text-2xl text-ink mb-4">Add Auto-Billing Rule</h3>
             <p class="text-sm text-ink-3 mb-4">Automatically charge all enrolled students in a class every month.</p>
             <form id="recurring-form" onsubmit="saveRecurring(event)">
+                <input type="hidden" id="recurring-id" value="">
                 <div class="grid grid-cols-2 gap-4">
                     <div class="col-span-2">
                         <label class="{{ lbl }}">Class *</label>
@@ -456,7 +457,9 @@ async function loadRecurring() {
         document.getElementById('recurring-table').innerHTML = '<tr><td colspan="6" class="px-5 py-4 text-center text-danger">Failed to load</td></tr>';
     }
 }
+let allRecurring = [];
 function renderRecurring(rules) {
+    allRecurring = rules || [];
     const tbody = document.getElementById('recurring-table');
     const active = rules.filter(r => r.is_active);
     if (!active.length) {
@@ -470,11 +473,29 @@ function renderRecurring(rules) {
         <td class="px-5 py-3 text-sm font-bold text-ink text-right tabular-nums">$${parseFloat(r.amount).toFixed(2)}</td>
         <td class="px-5 py-3 text-sm text-ink-2">${ordinal(r.day_of_month)} of every month</td>
         <td class="px-5 py-3"><span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold bg-ok/10 text-ok">Active</span></td>
-        <td class="px-5 py-3 text-right"><button aria-label="Delete recurring charge" onclick="deleteRecurring(${r.id})" class="text-danger hover:opacity-70 text-sm"><i class="fas fa-trash"></i></button></td>
+        <td class="px-5 py-3 text-right whitespace-nowrap">
+            <button aria-label="Edit recurring charge" onclick="openEditRecurring(${r.id})" class="text-primary-600 hover:text-primary-800 text-sm mr-3"><i class="fas fa-pen"></i></button>
+            <button aria-label="Delete recurring charge" onclick="deleteRecurring(${r.id})" class="text-danger hover:opacity-70 text-sm"><i class="fas fa-trash"></i></button>
+        </td>
     </tr>`).join('');
 }
 function openRecurringModal() {
     document.getElementById('recurring-form').reset();
+    document.getElementById('recurring-id').value = '';
+    document.getElementById('rc-class').disabled = false;
+    document.getElementById('recurring-modal').classList.remove('hidden');
+}
+function openEditRecurring(id) {
+    const r = allRecurring.find(x => x.id === id);
+    if (!r) return;
+    document.getElementById('recurring-form').reset();
+    document.getElementById('recurring-id').value = r.id;
+    document.getElementById('rc-class').value = r.class_id;
+    document.getElementById('rc-class').disabled = true;  // a rule can't move classes
+    document.getElementById('rc-amount').value = parseFloat(r.amount).toFixed(2);
+    document.getElementById('rc-day').value = r.day_of_month;
+    document.getElementById('rc-category').value = r.category;
+    document.getElementById('rc-description').value = r.description || '';
     document.getElementById('recurring-modal').classList.remove('hidden');
 }
 function closeRecurringModal() { document.getElementById('recurring-modal').classList.add('hidden'); }
@@ -485,15 +506,17 @@ async function saveRecurring(e) {
     const btn = e.target.querySelector('button[type="submit"]');
     if (btn.disabled) return;
     btn.disabled = true;
+    const id = document.getElementById('recurring-id').value;
     const body = {
-        class_id: parseInt(document.getElementById('rc-class').value),
         amount: document.getElementById('rc-amount').value,
         day_of_month: parseInt(document.getElementById('rc-day').value),
         category: document.getElementById('rc-category').value,
         description: document.getElementById('rc-description').value,
     };
+    if (!id) body.class_id = parseInt(document.getElementById('rc-class').value);  // class is fixed on edit
     try {
-        const res = await fetch('/api/recurring-charges', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        const res = await fetch(id ? `/api/recurring-charges/${id}` : '/api/recurring-charges',
+            { method: id ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
         if (res.ok) { closeRecurringModal(); loadRecurring(); } else { const d = await res.json(); toast(d.error || 'Error', false); }
     } catch (err) { toast('Network error', false); }
     finally { btn.disabled = false; }

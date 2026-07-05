@@ -1468,6 +1468,41 @@ def create_recurring_charge():
     return jsonify(recurring_to_dict(rc)), 201
 
 
+@bp.route('/recurring-charges/<int:rc_id>', methods=['PUT', 'PATCH'])
+@login_required
+def update_recurring_charge(rc_id):
+    """Edit an auto-billing rule — the studio raises tuition or shifts the billing
+    day mid-year without having to delete and recreate (which risks a gap)."""
+    rc = RecurringCharge.query.get_or_404(rc_id)
+    data = request.get_json() or {}
+    if data.get('amount') is not None:
+        # Same validation as one-off charges — this fires monthly, so a negative
+        # (silent monthly credit) / non-numeric / absurd value is worst here.
+        amount, aerr = _valid_amount(data.get('amount'))
+        if aerr:
+            return aerr
+        rc.amount = amount
+    if data.get('category') is not None:
+        cat = _clean_str(data['category'])
+        if not cat:
+            return jsonify({'error': 'category cannot be empty'}), 400
+        rc.category = cat
+    if 'description' in data:
+        rc.description = _clean_str(data.get('description')) or None
+    if data.get('day_of_month') is not None:
+        try:
+            day = int(data['day_of_month'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'day_of_month must be 1-28'}), 400
+        if day < 1 or day > 28:
+            return jsonify({'error': 'day_of_month must be 1-28'}), 400
+        rc.day_of_month = day
+    db.session.commit()
+    return jsonify({'message': 'Auto-billing rule updated', 'id': rc.id,
+                    'amount': f'{float(rc.amount):.2f}', 'day_of_month': rc.day_of_month,
+                    'category': rc.category})
+
+
 @bp.route('/recurring-charges/<int:rc_id>', methods=['DELETE'])
 @login_required
 def delete_recurring_charge(rc_id):
