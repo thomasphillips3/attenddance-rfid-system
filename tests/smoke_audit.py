@@ -190,6 +190,61 @@ def run_idor(ids):
                    not_locked, f"got 403 — guard over-locked the portal", "P1")
 
 
+def run_prod_security_config():
+    """Guard the production security posture from regression: (1) the fail-closed
+    SECRET_KEY guard refuses a missing/default key but boots on a strong one, and
+    (2) both the session and the 'remember me' cookies get Secure + HttpOnly +
+    SameSite in production. The remember cookie is a long-lived credential, so it
+    must be hardened like the session cookie.
+
+    SECRET_KEY is read at config-import time, so this must run in fresh
+    subprocesses with the env set before import — an in-process test can't change
+    the frozen value (and would give a false result)."""
+    import subprocess
+
+    def _boot(secret_key):
+        """Boot production in a clean interpreter with the given SECRET_KEY.
+        Returns (rc, stdout). rc != 0 means the fail-closed guard refused."""
+        snippet = (
+            "import os, json\n"
+            "from app import create_app\n"
+            "app = create_app('production')\n"
+            "keys = ['SESSION_COOKIE_SECURE','SESSION_COOKIE_HTTPONLY','SESSION_COOKIE_SAMESITE',"
+            "'REMEMBER_COOKIE_SECURE','REMEMBER_COOKIE_HTTPONLY','REMEMBER_COOKIE_SAMESITE']\n"
+            "print(json.dumps({k: app.config.get(k) for k in keys}))\n"
+        )
+        env = dict(os.environ)
+        env["SECRET_KEY"] = secret_key
+        env["RFID_ENABLED"] = "false"
+        env["DATABASE_URL"] = f"sqlite:///{tempfile.NamedTemporaryFile(suffix='.db').name}"
+        p = subprocess.run([sys.executable, "-c", snippet], capture_output=True,
+                           text=True, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           env=env, timeout=60)
+        return p.returncode, p.stdout.strip()
+
+    # Default key must be refused (fail closed).
+    rc, _ = _boot("dev-secret-key-change-in-production-12345")
+    record("Prod refuses a default SECRET_KEY (fail closed)", rc != 0,
+           "prod booted with the known default key", "P0")
+
+    # A strong key must be accepted, so the studio can actually deploy.
+    import secrets as _secrets
+    rc, out = _boot(_secrets.token_hex(32))
+    record("Prod boots with a strong SECRET_KEY", rc == 0,
+           f"guard too strict, rejected a real key (rc={rc})", "P0")
+    if rc == 0 and out:
+        import json as _json
+        cfg = _json.loads(out.splitlines()[-1])
+        want = {
+            "SESSION_COOKIE_SECURE": True, "SESSION_COOKIE_HTTPONLY": True,
+            "SESSION_COOKIE_SAMESITE": "Lax", "REMEMBER_COOKIE_SECURE": True,
+            "REMEMBER_COOKIE_HTTPONLY": True, "REMEMBER_COOKIE_SAMESITE": "Lax",
+        }
+        for k, exp in want.items():
+            record(f"Prod cookie hardening: {k} == {exp!r} (got {cfg.get(k)!r})",
+                   cfg.get(k) == exp, f"got {cfg.get(k)!r}", "P2")
+
+
 def run_csrf():
     """Cross-origin writes must be blocked; same-origin writes must pass through."""
     with app.test_client() as c:
@@ -942,6 +997,7 @@ def main():
     run_input_robustness(ids)
     run_parent_input_robustness(ids)
     run_parent_write_authz(ids)
+    run_prod_security_config()
     run_csv_exports(ids)
     run_xss_guard()
     run_js_syntax()
