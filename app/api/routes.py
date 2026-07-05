@@ -1607,11 +1607,12 @@ def send_message():
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
-    for field in ('subject', 'body', 'recipient_type'):
-        if not data.get(field):
-            return jsonify({'error': f'{field} is required'}), 400
+    subject = _clean_str(data.get('subject'))
+    body = _clean_str(data.get('body'))
+    rtype = _clean_str(data.get('recipient_type'))
+    if not subject or not body or not rtype:
+        return jsonify({'error': 'subject, body, and recipient_type are required'}), 400
 
-    rtype = data['recipient_type']
     emails = _resolve_recipient_emails(rtype, data.get('recipient_filter'))
     if isinstance(emails, tuple):
         return emails  # error response
@@ -1620,8 +1621,8 @@ def send_message():
         return jsonify({'error': 'No email addresses found for selected recipients'}), 400
 
     msg = Message(
-        subject=data['subject'].strip(),
-        body=data['body'].strip(),
+        subject=subject,
+        body=body,
         recipient_type=rtype,
         recipient_filter=str(data.get('recipient_filter', '')),
         recipient_count=len(emails),
@@ -1632,7 +1633,7 @@ def send_message():
     from app import email as email_service
     if email_service.is_configured():
         try:
-            email_service.send_email(emails, data['subject'].strip(), data['body'].strip())
+            email_service.send_email(emails, subject, body)
             msg.sent = True
             msg.sent_at = datetime.utcnow()
         except Exception as e:

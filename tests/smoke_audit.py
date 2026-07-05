@@ -838,7 +838,7 @@ def run_auto_reminders():
         Setting.set("reminders_auto_enabled", "0")  # leave disabled for other tests
 
 
-def run_message_blast():
+def run_message_blast(ids):
     """Message blasts: validated, resolve recipients, degrade gracefully when
     SMTP isn't configured (save + return emails), and parents can't send."""
     with app.test_client() as c:
@@ -858,6 +858,30 @@ def run_message_blast():
                                           "recipient_type": "class", "recipient_filter": "abc"})
         record(f"Blast rejects bad class filter (no 500) -> {r.status_code}",
                r.status_code == 400, f"got {r.status_code}", "P2")
+        # non-string subject must not 500 (coerced/rejected)
+        r = c.post("/api/messages", json={"subject": 123, "body": "y", "recipient_type": "all"})
+        record(f"Blast handles a non-string subject (no 500) -> {r.status_code}",
+               r.status_code < 500, f"got {r.status_code}", "P2")
+        # Class targeting: only the enrolled class's parent, deduped, not other families.
+        from datetime import time as _t
+        from app.models import DanceClass, ClassEnrollment, User as _U
+        with app.app_context():
+            adm = _U.query.filter_by(username="admin").first()
+            mc = DanceClass(name="Blast Class", day_of_week=0, start_time=_t(17, 0),
+                            end_time=_t(18, 0), instructor_id=adm.id)
+            db.session.add(mc)
+            db.session.flush()
+            db.session.add(ClassEnrollment(student_id=ids["child_a"], class_id=mc.id))
+            db.session.commit()
+            mcid = mc.id
+        r = c.post("/api/messages", json={"subject": "Class note", "body": "hi",
+                                          "recipient_type": "class", "recipient_filter": mcid})
+        d = r.get_json() or {}
+        emails = d.get("recipient_emails", "")
+        record(f"Class blast targets only the enrolled family -> {r.status_code}, count={d.get('recipient_count')}",
+               r.status_code == 201 and d.get("recipient_count") == 1
+               and "alpha-parent@x.com" in str(emails) and "beta-parent@x.com" not in str(emails),
+               f"emails={emails}", "P2")
     # parent cannot send a blast (write-guard)
     with app.test_client() as c:
         login(c, "parent_a", "pw")
@@ -1627,7 +1651,7 @@ def main():
     run_teacher_authz(ids)
     run_waiver_signing(ids)
     run_attendance(ids)
-    run_message_blast()
+    run_message_blast(ids)
     run_analytics(ids)
     run_leads()
     run_timeclock()
