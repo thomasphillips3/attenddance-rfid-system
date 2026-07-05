@@ -292,9 +292,9 @@ def attendance_to_dict(attendance) -> dict:
     return {
         'id': attendance.id,
         'student_id': attendance.student_id,
-        'student_name': attendance.student.full_name,
+        'student_name': attendance.student.full_name if attendance.student else None,
         'class_id': attendance.class_id,
-        'class_name': attendance.dance_class.name,
+        'class_name': attendance.dance_class.name if attendance.dance_class else None,
         'check_in_time': attendance.check_in_time.isoformat(),
         'check_out_time': attendance.check_out_time.isoformat() if attendance.check_out_time else None,
         'check_in_method': attendance.check_in_method,
@@ -309,7 +309,7 @@ def transaction_to_dict(t) -> dict:
     return {
         'id': t.id,
         'student_id': t.student_id,
-        'student_name': t.student.full_name,
+        'student_name': t.student.full_name if t.student else None,
         'type': t.type,
         'amount': str(t.amount),
         'category': t.category,
@@ -325,7 +325,7 @@ def recurring_to_dict(rc) -> dict:
     return {
         'id': rc.id,
         'class_id': rc.class_id,
-        'class_name': rc.dance_class.name,
+        'class_name': rc.dance_class.name if rc.dance_class else None,
         'amount': str(rc.amount),
         'category': rc.category,
         'description': rc.description,

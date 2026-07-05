@@ -1002,6 +1002,50 @@ def run_backup(ids):
                r.status_code in (401, 403), f"got {r.status_code}", "P0")
 
 
+def run_orphan_render_guard(ids):
+    """Belt-and-suspenders for the whole dead-page bug class: even if an orphan
+    row exists (e.g. left in prod by the old buggy create endpoints, before they
+    were fixed), the roster serializers must null-guard the relationship so the
+    list still renders instead of 500-ing. Inject orphan rows directly (bypassing
+    the now-fixed endpoints) and assert every affected list GET returns 200."""
+    from datetime import time as _time
+    from app.models import (MakeupClass, WaitlistEntry, CompanyMembership,
+                            PerformanceGroup, Attendance, Transaction, DanceClass)
+    GHOST = 987654  # a student id that does not exist
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        g = PerformanceGroup(name="Ghost Co")
+        db.session.add(g)
+        db.session.flush()
+        dc = DanceClass(name="Ghost Class", day_of_week=0, start_time=_time(17, 0),
+                        end_time=_time(18, 0), instructor_id=admin.id)
+        db.session.add(dc)
+        db.session.flush()
+        db.session.add_all([
+            MakeupClass(student_id=GHOST, status='requested'),
+            WaitlistEntry(class_id=dc.id, student_id=GHOST, status='waiting'),
+            CompanyMembership(group_id=g.id, student_id=GHOST),
+            Attendance(student_id=GHOST, class_id=dc.id),
+            Transaction(student_id=GHOST, type='charge', amount=10, category='tuition',
+                        payment_method='n/a', description='ghost'),
+        ])
+        db.session.commit()
+        gid, cid = g.id, dc.id
+
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        for label, url in [
+            ("makeups", "/api/makeups"),
+            ("waitlist", f"/api/classes/{cid}/waitlist"),
+            ("group members", f"/api/performance/groups/{gid}/members"),
+            ("attendance", "/api/attendance"),
+            ("transactions", "/api/transactions"),
+        ]:
+            r = c.get(url)
+            record(f"Roster renders with an orphan row: {label} -> {r.status_code}",
+                   r.status_code == 200, f"got {r.status_code} (dead-page on orphan data)", "P2")
+
+
 def run_class_render_guard(ids):
     """The class list is a core, high-traffic page. A class whose instructor is
     missing (a bad instructor_id at create, or a user removed later) must not
@@ -1257,6 +1301,7 @@ def main():
     run_parent_write_authz(ids)
     run_class_render_guard(ids)
     run_orphan_guard(ids)
+    run_orphan_render_guard(ids)
     run_prod_security_config()
     run_backup(ids)
     run_csv_exports(ids)

@@ -2741,7 +2741,7 @@ def list_group_members(gid):
     return jsonify({'members': [{
         'id': m.id,
         'student_id': m.student_id,
-        'student_name': m.student.full_name,
+        'student_name': m.student.full_name if m.student else None,
         'role': m.role,
         'joined_date': m.joined_date.isoformat() if m.joined_date else None,
     } for m in members]})
@@ -2873,7 +2873,7 @@ def list_audition_signups(aid):
     return jsonify({'signups': [{
         'id': s.id,
         'student_id': s.student_id,
-        'student_name': s.student.full_name,
+        'student_name': s.student.full_name if s.student else None,
         'status': s.status,
         'notes': s.notes,
         'created_at': s.created_at.isoformat(),
@@ -3005,7 +3005,7 @@ def list_assignments(pid):
     return jsonify({'assignments': [{
         'id': a.id,
         'student_id': a.student_id,
-        'student_name': a.student.full_name,
+        'student_name': a.student.full_name if a.student else None,
         'notes': a.notes,
     } for a in p.assignments.all()]})
 
@@ -3069,7 +3069,7 @@ def my_company():
     group_ids = {m.group_id for m in memberships}
     members_out = [{
         'student_id': m.student_id,
-        'student_name': m.student.full_name,
+        'student_name': m.student.full_name if m.student else None,
         'group_name': m.group.name,
         'role': m.role,
     } for m in memberships]
@@ -3499,7 +3499,7 @@ def my_costumes():
     rows = (CostumeAssignment.query
             .filter(CostumeAssignment.student_id.in_(student_ids)).all())
     out = [{
-        'student_name': a.student.full_name,
+        'student_name': a.student.full_name if a.student else None,
         'costume_name': a.costume.name,
         'size': a.size,
         'fee': f'{float(a.costume.fee):.2f}',
@@ -3739,7 +3739,7 @@ def _plan_to_dict(p):
     return {
         'id': p.id,
         'student_id': p.student_id,
-        'student_name': p.student.full_name,
+        'student_name': p.student.full_name if p.student else None,
         'installment_amount': f'{float(p.installment_amount):.2f}',
         'num_installments': p.num_installments,
         'day_of_month': p.day_of_month,
@@ -4109,7 +4109,7 @@ def get_waitlist(class_id):
     rows = (WaitlistEntry.query.filter_by(class_id=class_id, status='waiting')
             .order_by(WaitlistEntry.created_at).all())
     return jsonify({'waitlist': [{
-        'id': w.id, 'student_id': w.student_id, 'student_name': w.student.full_name,
+        'id': w.id, 'student_id': w.student_id, 'student_name': w.student.full_name if w.student else None,
         'position': i + 1, 'created_at': w.created_at.isoformat(),
     } for i, w in enumerate(rows)]})
 
@@ -4265,7 +4265,7 @@ def _makeup_to_dict(m):
     return {
         'id': m.id,
         'student_id': m.student_id,
-        'student_name': m.student.full_name,
+        'student_name': m.student.full_name if m.student else None,
         'missed_class': m.missed_class.name if m.missed_class else None,
         'missed_date': m.missed_date.isoformat() if m.missed_date else None,
         'makeup_class': m.makeup_class.name if m.makeup_class else None,
@@ -4653,7 +4653,7 @@ def _number_to_dict(n, with_cast=True):
     if with_cast:
         rows = [{
             'id': c.id, 'student_id': c.student_id,
-            'student_name': c.student.full_name, 'part': c.part,
+            'student_name': c.student.full_name if c.student else None, 'part': c.part,
         } for c in cast]
         rows.sort(key=lambda x: (x['part'] or '￿', x['student_name']))
         d['cast'] = rows
@@ -5320,7 +5320,7 @@ def my_recital():
     numbers = r.numbers.order_by(RecitalNumber.order_index).all()
     program, my_count = [], 0
     for n in numbers:
-        mine = [{'student_name': c.student.full_name, 'part': c.part}
+        mine = [{'student_name': c.student.full_name if c.student else None, 'part': c.part}
                 for c in n.cast.all() if c.student_id in student_ids]
         if mine:
             my_count += 1
