@@ -3216,8 +3216,15 @@ def waiver_compliance():
     for t in templates:
         signed = {s.student_id: s for s in t.signatures.all()}
         unsigned = [{'student_id': s.id, 'student_name': s.full_name} for s in students if s.id not in signed]
-        declined = [{'student_id': sid, 'student_name': Student.query.get(sid).full_name}
-                    for sid, sig in signed.items() if not sig.consent]
+        # Guard the student deref: a signature whose student was removed would
+        # otherwise 500 this staff page (same orphan-safety as the rosters).
+        declined = []
+        for sid, sig in signed.items():
+            if sig.consent:
+                continue
+            st = sig.student if sig.student is not None else Student.query.get(sid)
+            declined.append({'student_id': sid,
+                             'student_name': st.full_name if st else '(removed student)'})
         out.append({
             'id': t.id,
             'title': t.title,

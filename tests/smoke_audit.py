@@ -599,6 +599,27 @@ def run_waiver_signing(ids):
         record(f"Can decline an opt-out form -> {r.status_code}", r.status_code == 200,
                f"got {r.status_code}", "P2")
 
+    # Staff compliance view: the mandatory waiver is signed, the opt-out is
+    # declined, and both are counted. Then inject an orphan signature (student
+    # removed) and confirm the page still renders instead of 500-ing.
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        comp = (c.get("/api/waivers/compliance").get_json() or {}).get("compliance", [])
+        by_id = {t["id"]: t for t in comp}
+        mrow, orow = by_id.get(mid, {}), by_id.get(oid, {})
+        record("Compliance: mandatory shows a signature, opt-out shows a decline",
+               mrow.get("signed_count", 0) >= 1 and len(orow.get("declined", [])) >= 1,
+               f"mandatory={mrow.get('signed_count')} declined={len(orow.get('declined', []))}", "P2")
+        with app.app_context():
+            from app.models import WaiverSignature, User as _U
+            adm = _U.query.filter_by(username="admin").first()
+            db.session.add(WaiverSignature(template_id=oid, student_id=987654, parent_id=adm.id,
+                                           signed_name="Ghost", consent=False))
+            db.session.commit()
+        rc = c.get("/api/waivers/compliance")
+        record(f"Compliance renders with an orphan signature -> {rc.status_code}",
+               rc.status_code == 200, f"got {rc.status_code} (orphan deref 500)", "P2")
+
 
 def run_attendance(ids):
     """Taking attendance — the most-used fall feature. Mark present persists,
