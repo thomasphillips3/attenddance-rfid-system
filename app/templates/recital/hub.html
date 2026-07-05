@@ -152,6 +152,48 @@ const CLASSES  = [{% for c in classes %}{id:{{ c.id }}, name:"{{ c.name|e }}"},{
 const GROUPS   = [{% for g in groups %}{id:{{ g.id }}, name:"{{ g.name|e }}"},{% endfor %}];
 const IS_ADMIN = {{ 'true' if current_user.is_admin else 'false' }};
 </script>
+
+{% set rlbl = "block text-sm font-medium text-ink-2 mb-1" %}
+{% set rfld = "block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
+<!-- New recital modal -->
+<div id="recital-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="closeRecitalModal()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="font-display text-2xl text-ink">Start a new year</h3>
+                <button onclick="closeRecitalModal()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div><label class="{{ rlbl }}" for="rc-title">Recital title *</label><input id="rc-title" class="{{ rfld }}" placeholder='e.g. Once Upon a Dream'></div>
+                <div><label class="{{ rlbl }}" for="rc-year">Year</label><input id="rc-year" type="number" class="{{ rfld }}"></div>
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+                <button onclick="closeRecitalModal()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="submitRecital()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Create</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add number modal -->
+<div id="number-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="closeNumberModal()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="font-display text-2xl text-ink">Add a number</h3>
+                <button onclick="closeNumberModal()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <div><label class="{{ rlbl }}" for="num-title">Number title *</label><input id="num-title" class="{{ rfld }}" placeholder='e.g. Twinkle Twinkle'></div>
+            <p class="mt-2 text-xs text-ink-3">You can add music, choreography, and cast after it's created.</p>
+            <div class="mt-5 flex justify-end gap-2">
+                <button onclick="closeNumberModal()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="submitNumber()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Add number</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -226,12 +268,20 @@ async function saveOverview(){
     });
     msg(r.ok?'Saved':'Error saving',r.ok); if(r.ok) loadRecitals(RID);
 }
-async function newRecital(){
-    const title=prompt('Recital title (e.g. "Once Upon a Dream"):'); if(!title)return;
-    const year=prompt('Year:', new Date().getFullYear())||new Date().getFullYear();
+function newRecital(){
+    document.getElementById('rc-title').value='';
+    document.getElementById('rc-year').value=new Date().getFullYear();
+    document.getElementById('recital-modal').classList.remove('hidden');
+    document.getElementById('rc-title').focus();
+}
+function closeRecitalModal(){document.getElementById('recital-modal').classList.add('hidden');}
+async function submitRecital(){
+    const title=document.getElementById('rc-title').value.trim();
+    if(!title){msg('A recital title is required',false);return;}
+    const year=document.getElementById('rc-year').value||new Date().getFullYear();
     const r=await jpost('/api/recitals',{title,year});
     const d=await r.json();
-    if(r.ok){msg('Recital created',true);RID=d.id;loadRecitals(d.id);}else msg(d.error||'Error',false);
+    if(r.ok){closeRecitalModal();msg('Recital created',true);RID=d.id;loadRecitals(d.id);}else msg(d.error||'Error',false);
 }
 async function activateRecital(){const r=await jpost(`/api/recitals/${RID}/activate`);msg(r.ok?'Set as active':'Error',r.ok);if(r.ok)loadRecitals(RID);}
 async function deleteRecital(){if(!confirm('Delete this recital and everything in it (numbers, awards, ads)?'))return;const r=await jdel(`/api/recitals/${RID}`);if(r.ok){RID=null;msg('Deleted',true);loadRecitals();}else msg('Error',false);}
@@ -330,7 +380,9 @@ function castChips(n){
     return n.cast.map(c=>`<span class="inline-flex items-center bg-primary-50 border border-primary-200 rounded-full px-3 py-1 mr-2 mb-2 text-sm font-bold">${esc(c.student_name)}${c.part?'<span class="text-xs text-primary-500 ml-1">'+esc(c.part)+'</span>':''}<button aria-label="Remove from cast" onclick="removeCast(${c.id},${n.id})" class="ml-2 text-danger hover:underline">&times;</button></span>`).join('');
 }
 function toggleEdit(id){document.getElementById('edit-'+id).classList.toggle('hidden');}
-async function addNumber(){const title=prompt('Number title (e.g. "Twinkle Twinkle"):');if(!title)return;const r=await jpost(`/api/recitals/${RID}/numbers`,{title});msg(r.ok?'Number added':'Error',r.ok);if(r.ok)loadNumbers();}
+function addNumber(){document.getElementById('num-title').value='';document.getElementById('number-modal').classList.remove('hidden');document.getElementById('num-title').focus();}
+function closeNumberModal(){document.getElementById('number-modal').classList.add('hidden');}
+async function submitNumber(){const title=document.getElementById('num-title').value.trim();if(!title){msg('A number title is required',false);return;}const r=await jpost(`/api/recitals/${RID}/numbers`,{title});if(r.ok)closeNumberModal();msg(r.ok?'Number added':'Error',r.ok);if(r.ok)loadNumbers();}
 async function saveNumber(id){
     const g=f=>{const e=document.getElementById(`n-${f}-${id}`);return e?e.value:'';};
     const perf=g('performer'); let class_id='',group_id='';
