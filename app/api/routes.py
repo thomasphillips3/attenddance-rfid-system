@@ -143,6 +143,17 @@ def _valid_amount(raw):
     return amt, None
 
 
+def _opt_int(raw):
+    """Coerce an optional FK id to a positive int, or None if absent/un-parseable.
+    For links whose render path already null-guards the relationship (group_id,
+    class_id on costumes/recital numbers), so a garbage id drops the link instead
+    of 500-ing the create request."""
+    if not raw:
+        return None
+    v, err = _valid_id(raw)
+    return v if not err else None
+
+
 def _resolve_student_id(raw, required=True):
     """Validate that a student id is a positive int referring to a real student.
     Returns (id_or_None, None) on success or (None, (json, status)) on error.
@@ -438,15 +449,31 @@ def create_class():
         if field not in data:
             return jsonify({'error': f'{field} is required'}), 400
 
+    # Validate the optional location + instructor references (default instructor
+    # = the current user) so a bad id can't 500 or create a class whose bad
+    # instructor_id then dead-pages the whole class list.
+    location_id = None
+    if data.get('location_id'):
+        location_id, lerr = _valid_id(data.get('location_id'))
+        if lerr:
+            return lerr
+        if Location.query.get(location_id) is None:
+            return jsonify({'error': 'location not found'}), 404
+    instructor_id, ierr = _valid_id(data.get('instructor_id', current_user.id))
+    if ierr:
+        return ierr
+    if User.query.get(instructor_id) is None:
+        return jsonify({'error': 'instructor not found'}), 404
+
     try:
         dance_class = DanceClass(
-            name=data['name'].strip(),
-            description=data.get('description', '').strip() or None,
-            location_id=int(data['location_id']) if data.get('location_id') else None,
+            name=_clean_str(data['name']),
+            description=_clean_str(data.get('description')) or None,
+            location_id=location_id,
             day_of_week=int(data['day_of_week']),
             start_time=datetime.strptime(data['start_time'], '%H:%M').time(),
             end_time=datetime.strptime(data['end_time'], '%H:%M').time(),
-            instructor_id=int(data.get('instructor_id', current_user.id)),
+            instructor_id=instructor_id,
             max_students=data.get('max_students', 20),
             level=data.get('level', '').strip() or None,
             age_group=data.get('age_group', '').strip() or None,
@@ -2787,7 +2814,7 @@ def create_audition():
     if not data.get('title'):
         return jsonify({'error': 'title is required'}), 400
     a = Audition(
-        group_id=int(data['group_id']) if data.get('group_id') else None,
+        group_id=_opt_int(data.get('group_id')),
         title=data['title'].strip(),
         audition_date=(datetime.strptime(data['audition_date'], '%Y-%m-%d').date()
                        if data.get('audition_date') else None),
@@ -2919,7 +2946,7 @@ def create_performance():
     if not data.get('title'):
         return jsonify({'error': 'title is required'}), 400
     p = Performance(
-        group_id=int(data['group_id']) if data.get('group_id') else None,
+        group_id=_opt_int(data.get('group_id')),
         title=data['title'].strip(),
         performance_date=(datetime.strptime(data['performance_date'], '%Y-%m-%d').date()
                           if data.get('performance_date') else None),
@@ -3289,8 +3316,8 @@ def create_costume():
         return jsonify({'error': 'name is required'}), 400
     c = Costume(
         name=data['name'].strip(),
-        class_id=int(data['class_id']) if data.get('class_id') else None,
-        group_id=int(data['group_id']) if data.get('group_id') else None,
+        class_id=_opt_int(data.get('class_id')),
+        group_id=_opt_int(data.get('group_id')),
         vendor=(data.get('vendor') or '').strip() or None,
         fee=data.get('fee') or 0,
         notes=(data.get('notes') or '').strip() or None,
@@ -4864,8 +4891,8 @@ def create_recital_number(rid):
         recital_id=r.id,
         order_index=(last.order_index + 1) if last else 1,
         title=data['title'].strip(),
-        class_id=int(data['class_id']) if data.get('class_id') else None,
-        group_id=int(data['group_id']) if data.get('group_id') else None,
+        class_id=_opt_int(data.get('class_id')),
+        group_id=_opt_int(data.get('group_id')),
         style=(data.get('style') or '').strip() or None,
         act=(data.get('act') or '').strip() or None,
     )

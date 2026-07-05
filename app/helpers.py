@@ -277,7 +277,7 @@ def class_to_dict(dance_class) -> dict:
         'start_time': dance_class.start_time.strftime('%H:%M'),
         'end_time': dance_class.end_time.strftime('%H:%M'),
         'instructor_id': dance_class.instructor_id,
-        'instructor_name': dance_class.instructor.full_name,
+        'instructor_name': dance_class.instructor.full_name if dance_class.instructor else None,
         'max_students': dance_class.max_students,
         'enrolled_count': dance_class.enrolled_students_count,
         'level': dance_class.level,

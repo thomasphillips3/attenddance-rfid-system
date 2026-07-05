@@ -1002,6 +1002,40 @@ def run_backup(ids):
                r.status_code in (401, 403), f"got {r.status_code}", "P0")
 
 
+def run_class_render_guard(ids):
+    """The class list is a core, high-traffic page. A class whose instructor is
+    missing (a bad instructor_id at create, or a user removed later) must not
+    500 it — class_to_dict has to null-guard the instructor the way it already
+    guards the location. Also: create_class must reject a bad instructor/location
+    reference up front (400/404) rather than 500 or orphan."""
+    from datetime import time as _time
+    from app.models import DanceClass
+    base = {"name": "Guard", "day_of_week": 0, "start_time": "17:00", "end_time": "18:00"}
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r1 = c.post("/api/classes", json={**base, "instructor_id": "xyz"})
+        record(f"create_class rejects garbage instructor_id -> {r1.status_code}",
+               r1.status_code == 400, f"got {r1.status_code}", "P3")
+        r2 = c.post("/api/classes", json={**base, "instructor_id": 999999})
+        record(f"create_class rejects nonexistent instructor -> {r2.status_code}",
+               r2.status_code == 404, f"got {r2.status_code}", "P2")
+        r3 = c.post("/api/classes", json={**base, "location_id": 999999})
+        record(f"create_class rejects nonexistent location -> {r3.status_code}",
+               r3.status_code == 404, f"got {r3.status_code}", "P3")
+    # Simulate a class whose instructor row is gone (bypass the endpoint), then
+    # confirm the class list still renders (the serializer null-guard).
+    with app.app_context():
+        dc = DanceClass(name="Orphan Instr", day_of_week=0, start_time=_time(17, 0),
+                        end_time=_time(18, 0), instructor_id=999999)
+        db.session.add(dc)
+        db.session.commit()
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        rl = c.get("/api/classes")
+        record(f"Class list renders with a missing-instructor class -> {rl.status_code}",
+               rl.status_code == 200, f"got {rl.status_code} (dead-page regression)", "P2")
+
+
 def run_orphan_guard(ids):
     """Systematic guard against the recurring orphan-row bug: a create endpoint
     that stores a request-supplied student_id without checking it exists will
@@ -1221,6 +1255,7 @@ def main():
     run_input_robustness(ids)
     run_parent_input_robustness(ids)
     run_parent_write_authz(ids)
+    run_class_render_guard(ids)
     run_orphan_guard(ids)
     run_prod_security_config()
     run_backup(ids)
