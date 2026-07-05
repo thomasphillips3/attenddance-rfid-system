@@ -708,6 +708,37 @@ def run_attendance(ids):
                f"got {r.status_code}", "P0")
 
 
+def run_skills(ids):
+    """Skill tracking + certificate. The toggle must be clean (on/off, no dupes),
+    404 on bad ids, admin-only, and the certificate must render for a student who
+    has a skill."""
+    from app.models import StudentSkill
+    sid = ids["child_a"]
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        skid = (c.post("/api/skills", json={"name": "Leap", "category": "technique"}).get_json() or {}).get("id")
+        t1 = c.post(f"/api/students/{sid}/skills/{skid}/toggle").get_json() or {}
+        t2 = c.post(f"/api/students/{sid}/skills/{skid}/toggle").get_json() or {}
+        with app.app_context():
+            n = StudentSkill.query.filter_by(student_id=sid, skill_id=skid).count()
+        record(f"Skill toggle on/off is clean (on={t1.get('achieved')} off={t2.get('achieved')} rows={n})",
+               t1.get("achieved") is True and t2.get("achieved") is False and n == 0,
+               f"{t1}/{t2} rows={n}", "P2")
+        r404s = c.post(f"/api/students/999999/skills/{skid}/toggle").status_code
+        r404k = c.post(f"/api/students/{sid}/skills/999999/toggle").status_code
+        record(f"Skill toggle 404s on bad ids (student={r404s} skill={r404k})",
+               r404s == 404 and r404k == 404, f"{r404s}/{r404k}", "P3")
+        c.post(f"/api/students/{sid}/skills/{skid}/toggle")  # award it
+        rc = c.get(f"/students/{sid}/certificate")
+        record(f"Certificate renders for a student with a skill -> {rc.status_code}",
+               rc.status_code == 200, f"got {rc.status_code}", "P3")
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        rp = c.post(f"/api/students/{sid}/skills/1/toggle")
+        record(f"Parent cannot award skills -> {rp.status_code}", rp.status_code in (401, 403),
+               f"got {rp.status_code}", "P1")
+
+
 def run_analytics(ids):
     """Retention dashboard — the studio makes decisions on this, so the shape and
     the at-risk logic must be right: 12 enroll-months + 6 attendance-months, and a
@@ -1652,6 +1683,7 @@ def main():
     run_waiver_signing(ids)
     run_attendance(ids)
     run_message_blast(ids)
+    run_skills(ids)
     run_analytics(ids)
     run_leads()
     run_timeclock()
