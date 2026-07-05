@@ -2694,6 +2694,46 @@ def run_withdrawn_student_balance():
            f"bal_owe={bal_owe} settled_shown={bal_settled} age_owe={bool(age_owe)}", "P2")
 
 
+def run_page_route_authz(ids):
+    """The page routes (main blueprint) that render a specific student/class must
+    not leak to a parent who doesn't own that student — the API endpoints were
+    IDOR-guarded, but several *page* routes were @login_required only, leaking a
+    child's name (or a class roster) enumerable by URL id. Verify a parent is
+    redirected (not 200-with-data) from another student's ledger, rules-ack,
+    sign-waivers, and the staff-only take-attendance page — but still reaches
+    their OWN child's pages."""
+    from datetime import time as _time
+    from app.models import User, DanceClass, Student
+    other = ids["child_b"]   # parent_a does NOT own child_b
+    mine = ids["child_a"]     # parent_a owns child_a
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        dc = DanceClass(name="AuthzClass", day_of_week=3, start_time=_time(10, 0),
+                        end_time=_time(11, 0), instructor_id=admin.id)
+        db.session.add(dc)
+        db.session.commit()
+        cid = dc.id
+        other_name = Student.query.get(other).first_name
+
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        blocked = []
+        for path, marker in (
+            (f"/students/{other}/ledger", other_name),
+            (f"/rules/acknowledge/{other}", other_name),
+            (f"/students/{other}/sign-waivers", other_name),
+            (f"/take-attendance/{cid}", "AuthzClass"),
+        ):
+            r = c.get(path, follow_redirects=False)
+            body = r.get_data(as_text=True)
+            blocked.append(r.status_code in (301, 302) and marker not in body)
+        # own child still reachable
+        own = c.get(f"/rules/acknowledge/{mine}", follow_redirects=False)
+        record(f"Parent blocked from other/staff page routes ({sum(blocked)}/4), own child OK -> {own.status_code}",
+               all(blocked) and own.status_code == 200,
+               f"blocked={blocked} own={own.status_code}", "P1")
+
+
 def run_auth_form_labels():
     """Accessibility guard: every text/email/password field on the standalone auth
     forms (login, change/forgot/reset password) must have an accessible name — an
@@ -2997,6 +3037,7 @@ def main():
     run_registrations_pagination()
     run_registration_notify_throttle()
     run_withdrawn_student_balance()
+    run_page_route_authz(ids)
     run_admin_role_consistency()
     run_admin_identity_invariants()
     run_js_syntax()

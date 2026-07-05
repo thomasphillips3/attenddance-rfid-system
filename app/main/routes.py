@@ -165,7 +165,7 @@ def student_detail(student_id):
 
 
 @bp.route('/students/<int:student_id>/ledger')
-@login_required
+@staff_required
 def student_ledger(student_id):
     student = Student.query.get_or_404(student_id)
     return render_template('transactions/ledger.html', student=student)
@@ -203,6 +203,8 @@ def rules_admin():
 @login_required
 def acknowledge_rules(student_id):
     student = Student.query.get_or_404(student_id)
+    if not _parent_owns(student):  # a parent may only act on their own child
+        return redirect(url_for('main.parent_dashboard'))
     return render_template('rules/acknowledge.html', student=student)
 
 
@@ -222,7 +224,7 @@ def take_attendance():
 
 
 @bp.route('/take-attendance/<int:class_id>')
-@login_required
+@staff_required
 def take_attendance_class(class_id):
     """Card-based attendance for a class — prefetches all data in bulk."""
     dance_class = DanceClass.query.get_or_404(class_id)
@@ -540,4 +542,6 @@ def waivers_page():
 @login_required
 def sign_waivers_page(student_id):
     student = Student.query.get_or_404(student_id)
+    if not _parent_owns(student):  # a parent may only act on their own child
+        return redirect(url_for('main.parent_dashboard'))
     return render_template('waivers/sign.html', student=student)
