@@ -356,7 +356,7 @@ def update_student(student_id):
 
     # Check email uniqueness if changing
     if 'email' in data:
-        email = (data['email'] or '').strip() or None
+        email = _clean_str(data['email']) or None
         if email and email != student.email:
             if Student.query.filter_by(email=email).first():
                 return jsonify({'error': 'Email already exists'}), 400
@@ -1974,8 +1974,7 @@ def update_location(location_id):
 
     for field in ('name', 'address', 'city', 'state', 'zip_code', 'phone', 'notes'):
         if field in data:
-            val = data[field]
-            setattr(loc, field, val.strip() or None if val else None)
+            setattr(loc, field, _clean_str(data[field]) or None)
 
     db.session.commit()
     return jsonify(_location_to_dict(loc))
@@ -2742,7 +2741,7 @@ def update_group(gid):
     if 'name' in data and _clean_str(data['name']):
         g.name = _clean_str(data['name'])
     if 'description' in data:
-        g.description = (data['description'] or '').strip() or None
+        g.description = _clean_str(data['description']) or None
     db.session.commit()
     return jsonify(_group_to_dict(g))
 
@@ -2870,9 +2869,9 @@ def update_audition(aid):
     if 'audition_date' in data:
         a.audition_date = datetime.strptime(data['audition_date'], '%Y-%m-%d').date() if data['audition_date'] else None
     if 'location_text' in data:
-        a.location_text = (data['location_text'] or '').strip() or None
+        a.location_text = _clean_str(data['location_text']) or None
     if 'description' in data:
-        a.description = (data['description'] or '').strip() or None
+        a.description = _clean_str(data['description']) or None
     if 'is_open' in data:
         a.is_open = bool(data['is_open'])
     db.session.commit()
@@ -3002,11 +3001,11 @@ def update_performance(pid):
     if 'performance_date' in data:
         p.performance_date = datetime.strptime(data['performance_date'], '%Y-%m-%d').date() if data['performance_date'] else None
     if 'call_time' in data:
-        p.call_time = (data['call_time'] or '').strip() or None
+        p.call_time = _clean_str(data['call_time']) or None
     if 'venue' in data:
-        p.venue = (data['venue'] or '').strip() or None
+        p.venue = _clean_str(data['venue']) or None
     if 'description' in data:
-        p.description = (data['description'] or '').strip() or None
+        p.description = _clean_str(data['description']) or None
     db.session.commit()
     return jsonify(_performance_to_dict(p))
 
@@ -3373,15 +3372,18 @@ def update_costume(cid):
     if 'name' in data and _clean_str(data['name']):
         c.name = _clean_str(data['name'])
     if 'vendor' in data:
-        c.vendor = (data['vendor'] or '').strip() or None
+        c.vendor = _clean_str(data['vendor']) or None
     if 'fee' in data:
-        c.fee = data['fee'] or 0
+        try:  # 0 is valid (free costume); garbage keeps the old fee
+            c.fee = round(float(data['fee'] or 0), 2)
+        except (TypeError, ValueError):
+            pass
     if 'class_id' in data:
-        c.class_id = int(data['class_id']) if data['class_id'] else None
+        c.class_id = _opt_int(data['class_id'])
     if 'group_id' in data:
-        c.group_id = int(data['group_id']) if data['group_id'] else None
+        c.group_id = _opt_int(data['group_id'])
     if 'notes' in data:
-        c.notes = (data['notes'] or '').strip() or None
+        c.notes = _clean_str(data['notes']) or None
     db.session.commit()
     return jsonify(_costume_to_dict(c))
 
@@ -3469,7 +3471,7 @@ def update_costume_assignment(aid):
     a = CostumeAssignment.query.get_or_404(aid)
     data = request.get_json() or {}
     if 'size' in data:
-        a.size = (data['size'] or '').strip() or None
+        a.size = _clean_str(data['size']) or None
     if 'paid' in data:
         a.paid = bool(data['paid'])
         a.paid_at = datetime.utcnow() if a.paid else None
@@ -4412,7 +4414,7 @@ def update_makeup(mid):
     if 'makeup_date' in data:
         m.makeup_date = _parse_date(data['makeup_date'])
     if 'note' in data:
-        m.note = (data['note'] or '').strip() or None
+        m.note = _clean_str(data['note']) or None
     db.session.commit()
     return jsonify(_makeup_to_dict(m))
 
@@ -4838,20 +4840,20 @@ def update_recital(rid):
         except (TypeError, ValueError):
             return jsonify({'error': 'year must be a number'}), 400
     if 'theme' in data:
-        r.theme = (data['theme'] or '').strip() or None
+        r.theme = _clean_str(data['theme']) or None
     if 'recital_date' in data:
         r.recital_date = (datetime.strptime(data['recital_date'], '%Y-%m-%d').date()
                           if data['recital_date'] else None)
     if 'show_times' in data:
-        r.show_times = (data['show_times'] or '').strip() or None
+        r.show_times = _clean_str(data['show_times']) or None
     if 'venue' in data:
-        r.venue = (data['venue'] or '').strip() or None
+        r.venue = _clean_str(data['venue']) or None
     if 'director_note' in data:
-        r.director_note = (data['director_note'] or '').strip() or None
+        r.director_note = _clean_str(data['director_note']) or None
     if 'acknowledgments' in data:
-        r.acknowledgments = (data['acknowledgments'] or '').strip() or None
+        r.acknowledgments = _clean_str(data['acknowledgments']) or None
     if 'ad_pricing_note' in data:
-        r.ad_pricing_note = (data['ad_pricing_note'] or '').strip() or None
+        r.ad_pricing_note = _clean_str(data['ad_pricing_note']) or None
     if 'is_locked' in data:
         r.is_locked = bool(data['is_locked'])
     db.session.commit()
@@ -4992,14 +4994,14 @@ def update_recital_number(nid):
     data = request.get_json() or {}
     for field in NUMBER_TEXT_FIELDS:
         if field in data:
-            val = (data[field] or '').strip()
+            val = _clean_str(data[field])
             if field == 'title' and not val:
                 continue  # never blank the title
             setattr(n, field, val or None)
     if 'class_id' in data:
-        n.class_id = int(data['class_id']) if data['class_id'] else None
+        n.class_id = _opt_int(data['class_id'])
     if 'group_id' in data:
-        n.group_id = int(data['group_id']) if data['group_id'] else None
+        n.group_id = _opt_int(data['group_id'])
     if 'is_finale' in data:
         n.is_finale = bool(data['is_finale'])
     db.session.commit()
@@ -5111,7 +5113,7 @@ def update_recital_cast(cid):
     c = RecitalCast.query.get_or_404(cid)
     data = request.get_json() or {}
     if 'part' in data:
-        c.part = (data['part'] or '').strip() or None
+        c.part = _clean_str(data['part']) or None
     db.session.commit()
     return jsonify({'message': 'Updated'})
 
@@ -5180,13 +5182,13 @@ def update_recital_award(aid):
     if 'title' in data and _clean_str(data['title']):
         a.title = _clean_str(data['title'])
     if 'category' in data:
-        a.category = (data['category'] or '').strip() or None
+        a.category = _clean_str(data['category']) or None
     if 'student_id' in data:
         a.student_id = int(data['student_id']) if data['student_id'] else None
     if 'recipient_text' in data:
-        a.recipient_text = (data['recipient_text'] or '').strip() or None
+        a.recipient_text = _clean_str(data['recipient_text']) or None
     if 'description' in data:
-        a.description = (data['description'] or '').strip() or None
+        a.description = _clean_str(data['description']) or None
     if 'order_index' in data:
         try:
             a.order_index = int(data['order_index'])
@@ -5274,17 +5276,20 @@ def update_recital_ad(aid):
     if 'size' in data and data['size'] in AD_SIZES:
         a.size = data['size']
     if 'price' in data:
-        a.price = data['price'] or 0
+        try:
+            a.price = round(float(data['price'] or 0), 2)
+        except (TypeError, ValueError):
+            pass  # bad price keeps the old value (never let it reach the Numeric column)
     if 'content' in data:
-        a.content = (data['content'] or '').strip() or None
+        a.content = _clean_str(data['content']) or None
     if 'contact_name' in data:
-        a.contact_name = (data['contact_name'] or '').strip() or None
+        a.contact_name = _clean_str(data['contact_name']) or None
     if 'contact_email' in data:
-        a.contact_email = (data['contact_email'] or '').strip() or None
+        a.contact_email = _clean_str(data['contact_email']) or None
     if 'student_id' in data:
-        a.student_id = int(data['student_id']) if data['student_id'] else None
+        a.student_id = _opt_int(data['student_id'])
     if 'status' in data:
-        a.status = (data['status'] or 'submitted').strip()
+        a.status = _clean_str(data['status']) or 'submitted'
     if 'order_index' in data:
         try:
             a.order_index = int(data['order_index'])

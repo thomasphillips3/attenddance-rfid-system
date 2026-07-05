@@ -1055,6 +1055,70 @@ def run_get_queryparam_fuzz(ids):
            not bad, f"5xx on: {bad[:12]}", "P2")
 
 
+def run_update_fuzz():
+    """Fuzz every PUT/PATCH with VALID ids + garbage bodies. The mutation fuzz
+    uses bogus ids (404 before the update logic), so this is the only thing that
+    reaches update-endpoint field handling — a garbage body must never 5xx, and a
+    NOT NULL name field must never be blanked."""
+    import re as _re
+    from datetime import time as _t
+    from app.models import (User, Family, Student, DanceClass, Location, Lead, Skill,
+                            PerformanceGroup, Audition, Performance, Costume,
+                            WaiverTemplate, Rule, Recital, RecitalNumber, RecitalAward,
+                            RecitalAd, TicketType, RecitalCast, TicketOrder)
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        fa = Family(name="UF")
+        db.session.add(fa)
+        db.session.flush()
+        st = Student(first_name="Uf", last_name="Kid", family_id=fa.id)
+        db.session.add(st)
+        db.session.flush()
+        dc = DanceClass(name="UC", day_of_week=0, start_time=_t(17, 0), end_time=_t(18, 0), instructor_id=adm.id)
+        loc, lead, sk, g = Location(name="UL"), Lead(name="ULe"), Skill(name="USk"), PerformanceGroup(name="UG")
+        db.session.add_all([dc, loc, lead, sk, g])
+        db.session.flush()
+        aud, perf, cst = Audition(title="UA", group_id=g.id), Performance(title="UP", group_id=g.id), Costume(name="UCo", fee=10)
+        tmpl, rul, rec = WaiverTemplate(title="UW", body="."), Rule(text="UR", display_order=1), Recital(year=2029, title="URec")
+        db.session.add_all([aud, perf, cst, tmpl, rul, rec])
+        db.session.flush()
+        num = RecitalNumber(recital_id=rec.id, title="UN", order_index=1)
+        db.session.add(num)
+        db.session.flush()
+        aw, ad = RecitalAward(recital_id=rec.id, title="UAw", order_index=1), RecitalAd(recital_id=rec.id, advertiser="UAd", order_index=1)
+        ttp = TicketType(performance_id=perf.id, name="UGA", price=10)
+        db.session.add_all([aw, ad, ttp])
+        db.session.flush()
+        db.session.add_all([RecitalCast(number_id=num.id, student_id=st.id), TicketOrder(ticket_type_id=ttp.id, quantity=1, amount=10)])
+        db.session.commit()
+        idmap = {"student_id": st.id, "class_id": dc.id, "location_id": loc.id, "lid": lead.id,
+                 "gid": g.id, "aid": aud.id, "pid": perf.id, "cid": cst.id, "tid": tmpl.id,
+                 "rule_id": rul.id, "rid": rec.id, "nid": num.id, "user_id": adm.id, "sid": st.id}
+        puts = []
+        for r in app.url_map.iter_rules():
+            if not (r.methods & {"PUT", "PATCH"}) or not str(r).startswith("/api/"):
+                continue
+            url = str(r)
+            for k, v in idmap.items():
+                url = url.replace(f"<int:{k}>", str(v))
+            puts.append((sorted(r.methods & {"PUT", "PATCH"})[0], _re.sub(r"<[^>]*>", "424242", url)))
+    garbage = {"name": 123, "title": 123, "first_name": 99, "last_name": [], "email": 7, "phone": [],
+               "allergies": 9, "date_of_birth": "bad", "class_id": "nope", "group_id": [], "student_id": [],
+               "price": "free", "fee": "lots", "advertiser": 123, "vendor": 99, "content": [], "notes": 7,
+               "note": 99, "size": 123, "description": 5, "venue": [], "theme": 9, "status": [], "family_id": "x"}
+    bad = []
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        for method, url in puts:
+            try:
+                if getattr(c, method.lower())(url, json=garbage).status_code >= 500:
+                    bad.append(url)
+            except Exception as e:  # noqa: BLE001
+                bad.append(f"{url}!{type(e).__name__}")
+    record(f"Every update endpoint handles a garbage body without 5xx ({len(puts)} fuzzed)",
+           not bad, f"5xx on: {bad[:12]}", "P2")
+
+
 def run_full_mutation_fuzz():
     """Comprehensive robustness guarantee: fuzz EVERY /api POST/PUT/PATCH endpoint
     with malformed payloads (no body, empty, garbage-typed) as admin, and assert
@@ -1991,6 +2055,7 @@ def main():
     run_attendance(ids)
     run_message_blast(ids)
     run_full_mutation_fuzz()
+    run_update_fuzz()
     run_get_queryparam_fuzz(ids)
     run_skills(ids)
     run_analytics(ids)

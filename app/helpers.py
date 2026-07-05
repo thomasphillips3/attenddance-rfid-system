@@ -288,6 +288,13 @@ def class_to_dict(dance_class) -> dict:
     }
 
 
+def _clean_str(value):
+    """Coerce a JSON value to a trimmed string; None/non-scalar -> ''."""
+    if value is None or isinstance(value, (list, dict)):
+        return ''
+    return str(value).strip()
+
+
 def _utc_iso(dt):
     """ISO-8601 for a naive UTC datetime, marked with 'Z' so the browser's
     new Date() converts it to local time instead of misreading it as local
@@ -355,17 +362,27 @@ STUDENT_STRING_FIELDS = [
 
 
 def apply_student_fields(student, data: dict) -> None:
-    """Apply data dict fields to a Student instance. Strips strings, converts empties to None."""
+    """Apply data dict fields to a Student instance. Coerces to trimmed strings;
+    optional fields empty -> None, but the NOT NULL name fields are only updated to
+    a non-empty value (never blanked), and a bad date_of_birth is ignored."""
     from datetime import datetime
 
+    required = {'first_name', 'last_name'}  # NOT NULL columns
     for field in STUDENT_STRING_FIELDS:
         if field in data:
-            val = data[field]
-            setattr(student, field, val.strip() or None if val else None)
+            val = _clean_str(data[field])
+            if field in required:
+                if val:
+                    setattr(student, field, val)
+            else:
+                setattr(student, field, val or None)
 
     if 'date_of_birth' in data:
         dob = data['date_of_birth']
-        student.date_of_birth = datetime.strptime(dob, '%Y-%m-%d').date() if dob else None
+        try:
+            student.date_of_birth = datetime.strptime(dob, '%Y-%m-%d').date() if dob else None
+        except (TypeError, ValueError):
+            pass  # keep the existing DOB on a malformed value
 
     if 'family_id' in data:
         from app.models import Family
