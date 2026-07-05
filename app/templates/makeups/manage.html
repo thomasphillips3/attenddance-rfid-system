@@ -88,7 +88,6 @@ const STUDENTS=[{% for s in students %}{id:{{s.id}},name:"{{s.full_name|e}}"},{%
 const CLASSES=[{% for c in classes %}{id:{{c.id}},name:"{{c.name|e}}"},{% endfor %}];
 function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;m.className='mb-4 p-3 rounded-xl text-sm font-medium '+(ok?'bg-ok/10 text-ok':'bg-danger/10 text-danger');m.classList.remove('hidden');setTimeout(()=>m.classList.add('hidden'),3500);}
 function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function classOptions(){return CLASSES.map(c=>`${c.id}. ${c.name}`).join('\n');}
 
 async function load(){
     const status=document.getElementById('filter').value;

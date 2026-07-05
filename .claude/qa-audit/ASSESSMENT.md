@@ -263,6 +263,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 25 — DONE
 - **Scoped the one remaining item — auto-pay** ([AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)): decision-ready design so it can be greenlit/deferred. Grounded in the app's existing Square integration (customer helper + idempotent recurring scheduler already exist), it lays out the Cards-API/Web-Payments-SDK approach, `SavedCard` model, charge-on-schedule + failure handling, PCI (SAQ-A) posture, a ~3–4 day phased build, risks, and the recommendation to launch fall on manual and build auto-pay as the first post-launch project. This turns "what remains" into an actionable decision for the one open item.
 
+### Iteration 31 — DONE (smoke 67/67)
+- **Comprehensive XSS sweep — clean.** Extended the check beyond names to every user free-text field (note, description, body, title, allergies, venue, reference, memo, …) via a precise per-interpolation scan: **0 unescaped** across all templates. Removed a dead `classOptions()` helper (leftover from the makeup prompt→modal conversion) that held the last unescaped `${c.name}`. Broadened the CI `run_xss_guard` to the full field set so any future unescaped free-text interpolation trips it. The client-side rendering is now verifiably XSS-safe. (`status` and similar are server enums, not injectable — excluded.)
+
 ### Iteration 30 — DONE (smoke 67/67)
 - **Found + fixed stored XSS (P2-9)** in the aging report and time-clock report — user names rendered into `innerHTML` without `esc()`; student names come from public registration, so this reached admin sessions. Fixed both + added a static XSS regression guard. Swept all templates: no other unescaped user-name interpolations remain.
 

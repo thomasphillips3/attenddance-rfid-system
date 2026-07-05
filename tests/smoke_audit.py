@@ -403,9 +403,14 @@ def run_xss_guard():
     import re
     from pathlib import Path
 
-    # Fields that are always attacker-influenced free text.
+    # Fields that hold user-controlled free text (excludes server enums like
+    # `status`, ids, dates, and numeric fields, which aren't injectable).
     FIELDS = ("student_name", "family_name", "donor_name", "parent_name",
-              "full_name", "song_title", "choreographer")
+              "full_name", "instructor_name", "group_name", "costume_name",
+              "song_title", "song_artist", "choreographer", "note", "notes",
+              "description", "body", "title", "reference", "memo", "venue",
+              "location_text", "admin_note", "allergies", "special_needs",
+              "interest", "source", "props", "message", "subject")
     tdir = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / "app" / "templates"
     offenders = []
     for f in tdir.rglob("*.html"):
