@@ -978,6 +978,48 @@ def run_smoke():
                not errors, "; ".join(errors[:15]), "P1")
 
 
+def run_empty_state():
+    """Day-one check: a fresh studio (only the auto-seeded admin, NO families /
+    classes / transactions / recitals) must render every page and no-arg API GET
+    without a 500. Aggregation pages (analytics, reports, giving statement) are
+    the usual empty-data landmines (division by zero, empty-list indexing). Runs
+    in a subprocess against a throwaway DB because this suite's own app is already
+    seeded with two families."""
+    import subprocess
+    snippet = (
+        "import os, json\n"
+        "from app import create_app\n"
+        "app = create_app('development'); app.config['TESTING'] = True\n"
+        "with app.app_context():\n"
+        "    rules = sorted({r.rule for r in app.url_map.iter_rules()\n"
+        "        if 'GET' in r.methods and not r.arguments\n"
+        "        and not r.rule.startswith('/static') and 'logout' not in r.rule})\n"
+        "bad = []\n"
+        "with app.test_client() as c:\n"
+        "    c.post('/auth/login', data={'username':'admin','password':'admin123'}, follow_redirects=True)\n"
+        "    for path in rules:\n"
+        "        try:\n"
+        "            if c.get(path).status_code >= 500: bad.append(path)\n"
+        "        except Exception as e:\n"
+        "            bad.append(f'{path}!{type(e).__name__}')\n"
+        "print(json.dumps({'n': len(rules), 'bad': bad}))\n"
+    )
+    env = dict(os.environ)
+    env["RFID_ENABLED"] = "false"
+    env["DATABASE_URL"] = f"sqlite:///{tempfile.NamedTemporaryFile(suffix='.db').name}"
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        p = subprocess.run([sys.executable, "-c", snippet], capture_output=True,
+                           text=True, cwd=root, env=env, timeout=120)
+        import json as _json
+        out = _json.loads(p.stdout.strip().splitlines()[-1]) if p.stdout.strip() else {"n": 0, "bad": ["no output"]}
+        bad = out["bad"]
+        record(f"Fresh empty studio renders cleanly ({out['n']} routes, {len(bad)} failing)",
+               not bad, f"5xx on empty data: {bad[:15]}", "P1")
+    except Exception as e:  # noqa: BLE001
+        record("Fresh empty studio renders cleanly", False, f"probe failed: {e}", "P1")
+
+
 def main():
     ids = seed()
     run_idor(ids)
@@ -1002,6 +1044,7 @@ def main():
     run_xss_guard()
     run_js_syntax()
     run_smoke()
+    run_empty_state()
 
     fails = [r for r in results if not r[2]]
     p0 = [r for r in fails if r[0] == "P0"]
