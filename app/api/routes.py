@@ -927,9 +927,9 @@ def get_balances():
 @login_required
 def aging_report():
     """Accounts-receivable aging: per-student unpaid balance bucketed by how
-    overdue each charge is (0-30 / 31-60 / 61-90 / 90+ days). Staff-only —
-    this is the owner's tool for chasing unpaid tuition."""
-    err = _staff_only()
+    overdue each charge is (0-30 / 31-60 / 61-90 / 90+ days). Admin-only — it
+    exposes every family's debt, and the nav gates it behind is_admin."""
+    err = _admin_only()
     if err:
         return err
     students = Student.query.filter_by(is_active=True).all()
@@ -1110,8 +1110,9 @@ def _month_buckets(n):
 @login_required
 def revenue_report():
     """Money report for the owner: charged vs collected by month, collected by
-    category this year, and headline totals. Staff-only."""
-    err = _staff_only()
+    category this year, and headline totals. Admin-only — aggregate studio
+    financials; the nav gates it behind is_admin."""
+    err = _admin_only()
     if err:
         return err
 

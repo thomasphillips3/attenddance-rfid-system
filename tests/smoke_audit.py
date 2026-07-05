@@ -245,6 +245,38 @@ def run_prod_security_config():
                    cfg.get(k) == exp, f"got {cfg.get(k)!r}", "P2")
 
 
+def run_teacher_authz(ids):
+    """Teachers are staff-but-not-admin: they take attendance and see rosters,
+    but must NOT reach money reports / settings / staff / audit / backup (least
+    privilege). The nav hides those from teachers, but the API must enforce it —
+    a hidden link is not access control."""
+    with app.app_context():
+        from app.models import User
+        if not User.query.filter_by(username="teacher_t").first():
+            t = User(username="teacher_t", email="tt@x.com", role="teacher",
+                     first_name="Tea", last_name="Cher", is_active=True, is_admin=False)
+            t.set_password("pw")
+            db.session.add(t)
+            db.session.commit()
+    with app.test_client() as c:
+        login(c, "teacher_t", "pw")
+        # Can do their job: see class + student rosters.
+        for path in ("/api/classes", "/api/students"):
+            r = c.get(path)
+            record(f"Teacher CAN access roster {path} -> {r.status_code}",
+                   r.status_code == 200, f"got {r.status_code} (over-locked)", "P2")
+        # Must NOT reach admin-only financial/config/staff surfaces.
+        admin_only = [
+            "/api/reports/revenue", "/api/reports/aging", "/api/settings/payments",
+            "/api/staff", "/api/audit-log", "/api/admin/backup",
+            "/api/analytics/retention", "/api/donations", "/api/registrations",
+        ]
+        for path in admin_only:
+            r = c.get(path)
+            record(f"Teacher blocked from admin-only [{path}] -> {r.status_code}",
+                   r.status_code in (401, 403), f"got {r.status_code} — teacher reached admin data", "P1")
+
+
 def run_csrf():
     """Cross-origin writes must be blocked; same-origin writes must pass through."""
     with app.test_client() as c:
@@ -1493,6 +1525,7 @@ def main():
     ids = seed()
     run_idor(ids)
     run_csrf()
+    run_teacher_authz(ids)
     run_waiver_signing(ids)
     run_attendance(ids)
     run_message_blast()
