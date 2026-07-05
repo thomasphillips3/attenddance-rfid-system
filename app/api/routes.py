@@ -2180,7 +2180,11 @@ def get_payment_options():
             'memo': Setting.get('payments_zelle_memo') or DEFAULT_ZELLE_MEMO,
         })
     if Setting.get_bool('payments_cashapp_enabled'):
-        tag = Setting.get('payments_cashapp_tag', '').lstrip('$')
+        # A Cash App cashtag is alphanumeric/underscore; strip anything else so an
+        # admin-set value can't inject into the unescaped href/URL it renders into
+        # on the parent portal (defense-in-depth against an admin-account compromise).
+        import re as _re
+        tag = _re.sub(r'[^A-Za-z0-9_]', '', Setting.get('payments_cashapp_tag', '').lstrip('$'))[:20]
         options.append({
             'type': 'cashapp',
             'tag': f'${tag}' if tag else '',

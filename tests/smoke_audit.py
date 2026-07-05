@@ -1971,6 +1971,37 @@ def run_statements(ids):
                "100.00" in h and "500.00" not in h, "year filter wrong — tax document error", "P1")
 
 
+def run_cashtag_sanitize():
+    """The admin-set Cash App cashtag renders into an unescaped href/URL on the
+    parent portal — so it must be sanitized to alphanumeric/underscore at the
+    source, or a malicious (or compromised) admin could inject script into every
+    parent's page. Verify a hostile cashtag is stripped and a normal one survives."""
+    from app.models import Setting
+    with app.app_context():
+        Setting.set("payments_cashapp_enabled", "1")
+        Setting.set("payments_cashapp_tag", '$evil"><img src=x onerror=alert(1)>')
+        db.session.commit()
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        opts = (c.get("/api/payment-options").get_json() or {}).get("payment_options", [])
+        ca = next((o for o in opts if o.get("type") == "cashapp"), {})
+        blob = str(ca.get("cashtag", "")) + str(ca.get("url", ""))
+        record(f"Malicious cashtag is sanitized (served: {ca.get('cashtag')!r})",
+               all(ch not in blob for ch in ("<", ">", '"', "'", " ")), f"unsanitized: {blob}", "P2")
+    with app.app_context():
+        Setting.set("payments_cashapp_tag", "$MyStudio_2026")
+        db.session.commit()
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        opts = (c.get("/api/payment-options").get_json() or {}).get("payment_options", [])
+        ca = next((o for o in opts if o.get("type") == "cashapp"), {})
+        record(f"Valid cashtag preserved -> {ca.get('cashtag')}",
+               ca.get("cashtag") == "MyStudio_2026", f"got {ca.get('cashtag')}", "P3")
+    with app.app_context():
+        Setting.set("payments_cashapp_enabled", "0")  # leave disabled for other tests
+        db.session.commit()
+
+
 def run_xss_guard():
     """Static guard: user-controlled name/text fields must never be interpolated
     into a JS template literal without esc(). These fields come from public
@@ -2140,6 +2171,7 @@ def main():
     run_csv_exports(ids)
     run_statements(ids)
     run_xss_guard()
+    run_cashtag_sanitize()
     run_js_syntax()
     run_smoke()
     run_empty_state()
