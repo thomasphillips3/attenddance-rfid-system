@@ -1655,15 +1655,24 @@ def get_messages():
     err = _staff_only()
     if err:
         return err
-    msgs = Message.query.order_by(desc(Message.created_at)).limit(50).all()
-    return jsonify({'messages': [{
-        'id': m.id, 'subject': m.subject, 'body': m.body,
-        'recipient_type': m.recipient_type, 'recipient_filter': m.recipient_filter,
-        'recipient_count': m.recipient_count, 'recipient_emails': m.recipient_emails,
-        'sent': m.sent, 'sent_at': _utc_iso(m.sent_at),
-        'created_by': m.creator.full_name if m.creator else None,
-        'created_at': _utc_iso(m.created_at),
-    } for m in msgs]})
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 50, type=int), 100)
+    pagination = (Message.query.order_by(desc(Message.created_at))
+                  .paginate(page=page, per_page=per_page, error_out=False))
+    return jsonify({
+        'messages': [{
+            'id': m.id, 'subject': m.subject, 'body': m.body,
+            'recipient_type': m.recipient_type, 'recipient_filter': m.recipient_filter,
+            'recipient_count': m.recipient_count, 'recipient_emails': m.recipient_emails,
+            'sent': m.sent, 'sent_at': _utc_iso(m.sent_at),
+            'created_by': m.creator.full_name if m.creator else None,
+            'created_at': _utc_iso(m.created_at),
+        } for m in pagination.items],
+        'pagination': {
+            'page': page, 'pages': pagination.pages,
+            'per_page': per_page, 'total': pagination.total,
+        },
+    })
 
 
 @bp.route('/messages', methods=['POST'])

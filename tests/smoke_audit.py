@@ -2391,6 +2391,29 @@ def run_students_roster_complete():
                total >= 1 and len(got) == total, f"got {len(got)} != total {total}", "P2")
 
 
+def run_messages_pagination():
+    """The sent-message history now paginates (was capped at 50 with no way to
+    see older messages). Seed 60, and assert page 1 returns 50 with pages>=2 and
+    page 2 carries the overflow — so older blasts stay reachable."""
+    from app.models import Message
+    with app.app_context():
+        db.session.add_all([
+            Message(subject=f"blast {i}", body="b", recipient_type="all", sent=True)
+            for i in range(60)
+        ])
+        db.session.commit()
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        p1 = c.get("/api/messages?per_page=50&page=1").get_json() or {}
+        p2 = c.get("/api/messages?per_page=50&page=2").get_json() or {}
+        pg = p1.get("pagination", {})
+        record(f"Messages page 1 caps at 50 with pages>=2 (total={pg.get('total')})",
+               len(p1.get("messages", [])) == 50 and pg.get("total", 0) >= 60 and pg.get("pages", 0) >= 2,
+               str(pg), "P3")
+        record(f"Messages page 2 carries the overflow ({len(p2.get('messages', []))})",
+               len(p2.get("messages", [])) >= 10, str(p2.get("pagination")), "P3")
+
+
 def run_auth_form_labels():
     """Accessibility guard: every text/email/password field on the standalone auth
     forms (login, change/forgot/reset password) must have an accessible name — an
@@ -2686,6 +2709,7 @@ def main():
     run_auth_form_labels()
     run_transactions_pagination(ids)
     run_students_roster_complete()
+    run_messages_pagination()
     run_js_syntax()
     run_smoke()
     run_empty_state()
