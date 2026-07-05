@@ -377,6 +377,12 @@ function closeTxnModal() { document.getElementById('txn-modal').classList.add('h
 
 async function saveTransaction(e) {
     e.preventDefault();
+    // Guard against a double-click firing two POSTs before the first returns:
+    // a charge/payment has no natural idempotency key, so two clicks = two
+    // charges (double-billing) or two payments (double-credit).
+    const btn = e.target.querySelector('button[type="submit"]');
+    if (btn.disabled) return;
+    btn.disabled = true;
     const txnType = document.getElementById('txn-type').value;
     const body = {
         type: txnType,
@@ -391,6 +397,7 @@ async function saveTransaction(e) {
         const res = await fetch('/api/transactions', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
         if (res.ok) { closeTxnModal(); loadBalances(); loadTransactions(); } else { const d = await res.json(); toast(d.error || 'Error', false); }
     } catch (err) { toast('Network error', false); }
+    finally { btn.disabled = false; }
 }
 
 function openBulkModal() {
@@ -402,6 +409,10 @@ function closeBulkModal() { document.getElementById('bulk-modal').classList.add(
 
 async function saveBulkCharge(e) {
     e.preventDefault();
+    // A double-click would charge the entire class twice.
+    const btn = e.target.querySelector('button[type="submit"]');
+    if (btn.disabled) return;
+    btn.disabled = true;
     const body = {
         class_id: parseInt(document.getElementById('bulk-class').value),
         amount: document.getElementById('bulk-amount').value,
@@ -414,6 +425,7 @@ async function saveBulkCharge(e) {
         const d = await res.json();
         if (res.ok) { closeBulkModal(); loadBalances(); loadTransactions(); toast(d.message, true); } else { toast(d.error || 'Error', false); }
     } catch (err) { toast('Network error', false); }
+    finally { btn.disabled = false; }
 }
 
 // --- Recurring Charges ---
@@ -450,6 +462,11 @@ function openRecurringModal() {
 function closeRecurringModal() { document.getElementById('recurring-modal').classList.add('hidden'); }
 async function saveRecurring(e) {
     e.preventDefault();
+    // A double-click would create a duplicate auto-billing rule that then
+    // double-charges the class every month — the worst double-submit here.
+    const btn = e.target.querySelector('button[type="submit"]');
+    if (btn.disabled) return;
+    btn.disabled = true;
     const body = {
         class_id: parseInt(document.getElementById('rc-class').value),
         amount: document.getElementById('rc-amount').value,
@@ -461,6 +478,7 @@ async function saveRecurring(e) {
         const res = await fetch('/api/recurring-charges', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
         if (res.ok) { closeRecurringModal(); loadRecurring(); } else { const d = await res.json(); toast(d.error || 'Error', false); }
     } catch (err) { toast('Network error', false); }
+    finally { btn.disabled = false; }
 }
 async function deleteRecurring(id) {
     if (!confirm('Deactivate this auto-billing rule?')) return;

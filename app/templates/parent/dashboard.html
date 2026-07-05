@@ -314,7 +314,11 @@ function closePay() {
     document.getElementById('pay-modal').classList.add('hidden');
 }
 
+let claimInFlight = false;
 async function submitClaim(method) {
+    // A double-click (or tapping two method buttons quickly) would report the
+    // same payment twice, giving the admin duplicate pending payments to sort out.
+    if (claimInFlight) return;
     const amount = currentAmount();
     if (!amount) { toast('Enter a valid amount first', false); return; }
     const body = {
@@ -325,6 +329,7 @@ async function submitClaim(method) {
     if (payTarget.type === 'family') body.family_id = payTarget.id;
     else body.student_id = payTarget.id;
 
+    claimInFlight = true;
     try {
         const res = await fetch('/api/payments/claim', {
             method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
@@ -340,6 +345,7 @@ async function submitClaim(method) {
     } catch (err) {
         toast('Network error', false);
     }
+    finally { claimInFlight = false; }
 }
 
 // Re-render Cash App deep link when the amount changes
