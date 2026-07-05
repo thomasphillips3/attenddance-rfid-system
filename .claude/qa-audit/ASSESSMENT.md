@@ -276,6 +276,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 25 — DONE
 - **Scoped the one remaining item — auto-pay** ([AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)): decision-ready design so it can be greenlit/deferred. Grounded in the app's existing Square integration (customer helper + idempotent recurring scheduler already exist), it lays out the Cards-API/Web-Payments-SDK approach, `SavedCard` model, charge-on-schedule + failure handling, PCI (SAQ-A) posture, a ~3–4 day phased build, risks, and the recommendation to launch fall on manual and build auto-pay as the first post-launch project. This turns "what remains" into an actionable decision for the one open item.
 
+### Iteration 39 — DONE (mobile UX verification)
+- **Mobile UX pass on the phone-first parent portal** (families use their phones). Viewed the parent dashboard + a modal at 375px in the browser: cards stack, the action chips (Rules/Forms/Statement/Progress/Request makeup) wrap cleanly, the child card's balance/attendance sections read well, and the modals fit the mobile viewport with the dimmed overlay — **no horizontal overflow, no cramped/cut-off content**. The responsive design is solid; no fix needed. Confirms the "UX/UI polished" bar holds on the device parents actually use.
+
 ### Iteration 38 — DONE (billing 20/20)
 - **Regression-guarded recurring-charge idempotency** — the highest-stakes billing invariant. Auto-billing runs on every app boot, and Fly auto-sleeps/wakes several times a day, so a broken guard would **double-charge every family monthly**. Verified: a recurring charge bills each enrolled student exactly once, and a second run (simulating a Fly wake in the same month) charges nobody again, at the configured amount. Sound — no bug — but it now can't silently regress.
 
