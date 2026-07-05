@@ -79,6 +79,14 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 
 ---
 
+## Public self-registration (fall-enrollment path) — audited & verified
+
+The most-load-bearing untrusted flow for fall was reviewed end-to-end and comes back **sound**:
+- **Submit** (`POST /api/register`, public): gated by `registration_open`, requires parent name/email + ≥1 dancer, stores the payload as JSON. Hardened this pass: added email-format validation.
+- **No stored XSS:** the admin `/registrations` page escapes *every* attacker-controlled field (`parent_name`, email, phone, note, student names/allergies) via `esc()`.
+- **Approve** (`admin`): creates Family + Students + enrollments using only whitelisted fields (**no mass assignment** — a crafted `is_admin`/etc. is ignored), idempotent (`status != 'pending'` guard). Hardened this pass: enrollments now filter to **existing** class IDs so a class deleted between submit and approval can't create a dangling enrollment that 500s the roster later.
+- **Verified end-to-end** in the harness (closed→403, bad email→400, no dancers→400, valid→201, queued, approve creates 1 family + 2 students, re-approve→400) and in the browser (both the closed-state page and the live enrollment form render on-brand).
+
 ## Functional / reliability sweep — comes back clean
 
 **Client-side runtime layer — fully swept (iteration 6), clean after the P1-4 fix:**
@@ -169,6 +177,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 
 ### Iteration 9 — DONE (smoke 45/45, billing 16/16)
 - **Input validation on financial writes** (P2-7): `create_transaction` + `bulk_charge` now reject negative/non-numeric/absurd amounts, invalid `type`, and malformed dates via shared `_valid_amount`/`_parse_txn_date` helpers — closing a silent balance-corruption path. Audited the untrusted parent money paths (`claim_payment`, `create_donation`) — already validated. Added 6 validation regression checks.
+
+### Iteration 10 — DONE (smoke 53/53)
+- **Audited + verified the public self-registration flow** (the critical fall-enrollment path): confirmed no stored XSS (admin page escapes all fields), no mass assignment on approval, idempotent. Hardened: email-format validation on submit, and approval now filters to existing class IDs (prevents dangling enrollments that would 500 the roster). Added a full submit→queue→approve→create regression (7 checks).
 
 ### Remaining for next iterations
 - P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~50 staff-side `prompt()` flows → modals, per-page `aria-label`s, P3-4 Subresource Integrity on CDN scripts prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.

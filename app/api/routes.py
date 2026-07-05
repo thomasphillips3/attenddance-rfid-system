@@ -3736,6 +3736,8 @@ def submit_registration():
     students = data.get('students') or []
     if not parent_name or not parent_email:
         return jsonify({'error': 'Parent name and email are required'}), 400
+    if '@' not in parent_email or '.' not in parent_email.split('@')[-1]:
+        return jsonify({'error': 'Please enter a valid email address'}), 400
     students = [s for s in students if (s.get('first_name') or '').strip()]
     if not students:
         return jsonify({'error': 'Add at least one dancer'}), 400
@@ -3827,6 +3829,12 @@ def approve_registration(rid):
     db.session.flush()
 
     class_ids = [int(x) for x in (reg.class_ids or '').split(',') if x.isdigit()]
+    if class_ids:
+        # Only enroll in classes that still exist — a class deleted between
+        # submit and approval would otherwise leave a dangling enrollment that
+        # 500s when the roster later tries to read its class name.
+        existing = {c.id for c in DanceClass.query.filter(DanceClass.id.in_(class_ids)).all()}
+        class_ids = [cid for cid in class_ids if cid in existing]
     created = []
     for s in students:
         fn = (s.get('first_name') or '').strip()

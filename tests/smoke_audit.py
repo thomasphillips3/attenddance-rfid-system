@@ -181,6 +181,65 @@ def run_csrf():
                b'Cross-origin' not in resp.data, "blocked a no-Origin request", "P2")
 
 
+def run_registration_flow():
+    """Public self-registration: gated when closed, validated, and admin
+    approval actually creates a family + students. The key fall-enrollment path."""
+    from app.models import Setting, Family, Student, Registration
+
+    with app.app_context():
+        Setting.set("registration_open", "0")
+        db.session.commit()
+    with app.test_client() as pub:
+        r = pub.post("/api/register", json={"parent_name": "Jo", "parent_email": "jo@x.com",
+                                            "students": [{"first_name": "Kid"}]})
+        record(f"Registration blocked when closed -> {r.status_code}",
+               r.status_code == 403, f"got {r.status_code}", "P2")
+
+    with app.app_context():
+        Setting.set("registration_open", "1")
+        db.session.commit()
+    with app.test_client() as pub:
+        # bad email rejected
+        r = pub.post("/api/register", json={"parent_name": "Jo", "parent_email": "notanemail",
+                                            "students": [{"first_name": "Kid"}]})
+        record(f"Registration rejects bad email -> {r.status_code}", r.status_code == 400,
+               f"got {r.status_code}", "P3")
+        # no students rejected
+        r = pub.post("/api/register", json={"parent_name": "Jo", "parent_email": "jo@x.com", "students": []})
+        record(f"Registration rejects no dancers -> {r.status_code}", r.status_code == 400,
+               f"got {r.status_code}", "P3")
+        # valid submission
+        r = pub.post("/api/register", json={"parent_name": "Riverside Family", "parent_email": "riv@x.com",
+                                            "students": [{"first_name": "Ivy", "last_name": "River"},
+                                                         {"first_name": "Max"}]})
+        record(f"Valid registration accepted -> {r.status_code}", r.status_code == 201,
+               f"got {r.status_code}", "P1")
+
+    with app.app_context():
+        reg = Registration.query.filter_by(parent_email="riv@x.com", status="pending").first()
+        fam_before = Family.query.count()
+        stu_before = Student.query.count()
+        rid = reg.id if reg else None
+    record("Submitted registration is queued for admin", rid is not None, "not found", "P1")
+
+    if rid:
+        with app.test_client() as c:
+            login(c, "admin", "admin123")
+            r = c.post(f"/api/registrations/{rid}/approve")
+            record(f"Admin approve creates the family -> {r.status_code}",
+                   r.status_code == 200, f"got {r.status_code}: {r.get_data(as_text=True)[:80]}", "P1")
+        with app.app_context():
+            grew = Family.query.count() == fam_before + 1 and Student.query.count() == stu_before + 2
+            record("Approval created 1 family + 2 students", grew,
+                   f"fam {fam_before}->{Family.query.count()}, stu {stu_before}->{Student.query.count()}", "P1")
+            # idempotent: re-approve is rejected
+        with app.test_client() as c:
+            login(c, "admin", "admin123")
+            r = c.post(f"/api/registrations/{rid}/approve")
+            record(f"Re-approve is rejected (idempotent) -> {r.status_code}",
+                   r.status_code == 400, f"got {r.status_code}", "P2")
+
+
 def run_amount_validation(ids):
     """Financial write endpoints must reject bad amounts (negative = balance
     corruption) and bad types, and accept a valid charge."""
@@ -302,6 +361,7 @@ def main():
     ids = seed()
     run_idor(ids)
     run_csrf()
+    run_registration_flow()
     run_amount_validation(ids)
     run_csv_exports(ids)
     run_js_syntax()
