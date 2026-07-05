@@ -245,6 +245,51 @@ def run_prod_security_config():
                    cfg.get(k) == exp, f"got {cfg.get(k)!r}", "P2")
 
 
+def run_privilege_escalation(ids):
+    """No path to admin: a teacher can't reach staff-management, an admin can't
+    convert a parent account to admin via update_staff, and student updates whitelist
+    fields (no mass-assignment — a bad/nonexistent family_id can't 500 or orphan)."""
+    with app.app_context():
+        from app.models import User
+        if not User.query.filter_by(username="teacher_esc").first():
+            t = User(username="teacher_esc", email="tesc@x.com", role="teacher",
+                     first_name="Esc", last_name="Teacher", is_active=True, is_admin=False)
+            t.set_password("teacherpw")
+            db.session.add(t)
+            db.session.commit()
+        parent = User.query.filter_by(username="parent_a").first()
+        parent_id = parent.id
+    # Teacher cannot reach staff management (create/update staff).
+    with app.test_client() as c:
+        login(c, "teacher_esc", "teacherpw")
+        r1 = c.put(f"/api/staff/{parent_id}", json={"role": "admin"})
+        r2 = c.post("/api/staff", json={"username": "z", "email": "z@x.com", "first_name": "Z",
+                                        "last_name": "Q", "password": "securepw", "role": "admin"})
+        record(f"Teacher cannot update/create staff ({r1.status_code}/{r2.status_code})",
+               r1.status_code in (401, 403) and r2.status_code in (401, 403),
+               f"{r1.status_code}/{r2.status_code}", "P0")
+    # Admin cannot promote a PARENT to admin via update_staff (refuses non-staff).
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r3 = c.put(f"/api/staff/{parent_id}", json={"role": "admin"})
+        with app.app_context():
+            from app.models import User as _U
+            escalated = _U.query.get(parent_id).is_admin
+        record(f"Admin can't promote a parent to admin via update_staff -> {r3.status_code}",
+               r3.status_code == 400 and not escalated, f"status={r3.status_code} is_admin={escalated}", "P0")
+        # Student update whitelists fields: bad/nonexistent family_id neither 500s nor orphans.
+        sid = ids["child_a"]
+        with app.app_context():
+            orig_fam = Student.query.get(sid).family_id
+        rb = c.put(f"/api/students/{sid}", json={"family_id": "xyz"})
+        rn = c.put(f"/api/students/{sid}", json={"family_id": 999999})
+        with app.app_context():
+            fam_now = Student.query.get(sid).family_id
+        record(f"Student update: bad family_id no 500, no orphan ({rb.status_code}/{rn.status_code}, fam kept={fam_now == orig_fam})",
+               rb.status_code < 500 and rn.status_code < 500 and fam_now == orig_fam,
+               f"{rb.status_code}/{rn.status_code} fam {orig_fam}->{fam_now}", "P2")
+
+
 def run_teacher_authz(ids):
     """Teachers are staff-but-not-admin: they take attendance and see rosters,
     but must NOT reach money reports / settings / staff / audit / backup (least
@@ -1738,6 +1783,7 @@ def main():
     run_idor(ids)
     run_csrf()
     run_teacher_authz(ids)
+    run_privilege_escalation(ids)
     run_waiver_signing(ids)
     run_attendance(ids)
     run_message_blast(ids)

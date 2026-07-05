@@ -368,7 +368,19 @@ def apply_student_fields(student, data: dict) -> None:
         student.date_of_birth = datetime.strptime(dob, '%Y-%m-%d').date() if dob else None
 
     if 'family_id' in data:
-        student.family_id = int(data['family_id']) if data['family_id'] else None
+        from app.models import Family
+        raw = data['family_id']
+        if not raw:
+            student.family_id = None  # explicit un-assign
+        else:
+            try:
+                fid = int(raw)
+            except (TypeError, ValueError):
+                fid = None
+            # Only re-assign to a family that actually exists — never 500 on a bad
+            # value or orphan the student to a nonexistent family id.
+            if fid and Family.query.get(fid):
+                student.family_id = fid
 
     if 'is_active' in data:
         student.is_active = bool(data['is_active'])
