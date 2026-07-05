@@ -396,6 +396,26 @@ def run_csv_exports(ids):
         record("Revenue report returns 12 months + totals", ok, str(rev)[:80], "P2")
 
 
+def run_xss_guard():
+    """Static guard: user-controlled name/text fields must never be interpolated
+    into a JS template literal without esc(). These fields come from public
+    self-registration, so an unescaped one is stored XSS into a staff/admin view."""
+    import re
+    from pathlib import Path
+
+    # Fields that are always attacker-influenced free text.
+    FIELDS = ("student_name", "family_name", "donor_name", "parent_name",
+              "full_name", "song_title", "choreographer")
+    tdir = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / "app" / "templates"
+    offenders = []
+    for f in tdir.rglob("*.html"):
+        for m in re.finditer(r"\$\{\s*([A-Za-z_]\w*)\.(" + "|".join(FIELDS) + r")\s*\}", f.read_text()):
+            # `${x.student_name}` with no esc() around it
+            offenders.append(f"{f.relative_to(tdir)}: ${{{m.group(1)}.{m.group(2)}}}")
+    record(f"No user-name field rendered without esc() ({len(offenders)} found)",
+           not offenders, "; ".join(offenders[:8]), "P1")
+
+
 def run_js_syntax():
     """Node-check the inline <script> of JS-heavy pages. A rendered-JS syntax
     error (e.g. a bad string escape) silently kills a whole page's behavior and
@@ -464,6 +484,7 @@ def main():
     run_registration_flow()
     run_amount_validation(ids)
     run_csv_exports(ids)
+    run_xss_guard()
     run_js_syntax()
     run_smoke()
 

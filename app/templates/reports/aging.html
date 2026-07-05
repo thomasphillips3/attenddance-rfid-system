@@ -45,6 +45,7 @@
 
 <script>
 function money(v) { return '$' + Number(v).toFixed(2); }
+function esc(s) { return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function ageCell(v, danger) {
     const n = Number(v);
     const cls = n > 0 ? (danger ? 'text-danger font-bold' : 'text-ink') : 'text-ink-3';
@@ -70,8 +71,8 @@ async function load() {
     document.getElementById('table-wrap').classList.remove('hidden');
     document.getElementById('rows').innerHTML = d.rows.map(row => `
         <tr class="hover:bg-surface-2">
-            <td class="px-5 py-3 text-ink font-medium">${row.student_name}</td>
-            <td class="px-5 py-3 text-ink-2">${row.family_name || '—'}</td>
+            <td class="px-5 py-3 text-ink font-medium">${esc(row.student_name)}</td>
+            <td class="px-5 py-3 text-ink-2">${esc(row.family_name) || '—'}</td>
             ${ageCell(row.current, false)}
             ${ageCell(row.d31_60, false)}
             ${ageCell(row.d61_90, true)}

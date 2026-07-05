@@ -65,6 +65,8 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 
 ## P2 — Should fix
 
+- **[P2-9] Stored XSS: two staff/admin views rendered user names unescaped — ✅ FIXED.** A systematic sweep of `innerHTML` interpolations found two spots that injected user-controlled names without `esc()`: the **A/R aging report** (`student_name`/`family_name`) and the **time-clock payroll report** (staff `name`). Student names come from **public self-registration**, so a dancer registered as `<img src=x onerror=…>` would execute in the admin's session when they open the aging report — stored XSS from an untrusted source into an admin context. Both now `esc()` the fields. Added a static regression guard (`run_xss_guard`) that fails if any known user-name field is interpolated without escaping. (Every other view already escaped; the `confirm()` dialogs that also show names are safe — they render text, not HTML.)
+
 - **[P2-8] Server ran UTC → evening attendance/payments attributed to the next day — ✅ FIXED.** The `TIMEZONE='America/New_York'` config was **never used** (0 references), the code uses naive `date.today()` (35×) / `datetime.now()`, and no `TZ` was set in the container — so Fly ran **UTC**. For this Eastern studio with evening classes, an 8pm+ ET class's attendance and late-evening payments were dated the **next calendar day** (proven: a 9:30pm EDT moment on the 5th → `date.today()` = the 6th), and the take-attendance "today's classes" list flipped to tomorrow late in the evening. **Fix:** install `tzdata` and set `TZ=America/New_York` in the Dockerfile, so business dates (`date.today()`/`datetime.now()`) are local while `utcnow()` stays UTC for system/audit timestamps. Mechanism verified (UTC→wrong day, Eastern→correct). Keep the Dockerfile `TZ` in sync with config `TIMEZONE`.
 
 
@@ -260,6 +262,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 
 ### Iteration 25 — DONE
 - **Scoped the one remaining item — auto-pay** ([AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)): decision-ready design so it can be greenlit/deferred. Grounded in the app's existing Square integration (customer helper + idempotent recurring scheduler already exist), it lays out the Cards-API/Web-Payments-SDK approach, `SavedCard` model, charge-on-schedule + failure handling, PCI (SAQ-A) posture, a ~3–4 day phased build, risks, and the recommendation to launch fall on manual and build auto-pay as the first post-launch project. This turns "what remains" into an actionable decision for the one open item.
+
+### Iteration 30 — DONE (smoke 67/67)
+- **Found + fixed stored XSS (P2-9)** in the aging report and time-clock report — user names rendered into `innerHTML` without `esc()`; student names come from public registration, so this reached admin sessions. Fixed both + added a static XSS regression guard. Swept all templates: no other unescaped user-name interpolations remain.
 
 ### Iteration 29 — DONE (smoke 66/66)
 - **Fixed a parent-facing date off-by-one** (the display counterpart to P2-8). The parent payment-history table rendered `transaction_date` (a date-only string like `2026-07-05`) with bare `new Date(...)`, which JS parses as UTC midnight → **shows the previous day** in the family's Eastern browser. Changed to `new Date(t.transaction_date+'T00:00')` (local parse), matching the safe pattern every other date-only field already used. Swept all templates: this was the only date-only field displayed unsafely; staff views render the raw ISO string (unaffected).
