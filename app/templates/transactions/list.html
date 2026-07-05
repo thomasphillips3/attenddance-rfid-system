@@ -305,7 +305,7 @@ function renderBalances(balances) {
         const balClass = bal > 0 ? 'text-danger font-bold' : bal < 0 ? 'text-info' : 'text-ink';
         const balText = bal > 0 ? `$${bal.toFixed(2)} due` : bal < 0 ? `$${Math.abs(bal).toFixed(2)} credit` : 'Paid up';
         return `<tr class="border-b border-line last:border-0 hover:bg-surface-2">
-            <td class="px-5 py-3 text-sm font-bold text-ink">${esc(b.student_name)}</td>
+            <td class="px-5 py-3 text-sm font-bold text-ink">${esc(b.student_name)}${b.withdrawn?' <span class="ml-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-surface-2 text-ink-3 align-middle">Withdrawn</span>':''}</td>
             <td class="px-5 py-3 text-sm text-ink-2 text-right tabular-nums">$${parseFloat(b.total_charges).toFixed(2)}</td>
             <td class="px-5 py-3 text-sm text-ink-2 text-right tabular-nums">$${parseFloat(b.total_payments).toFixed(2)}</td>
             <td class="px-5 py-3 text-sm text-right tabular-nums ${balClass}">${balText}</td>

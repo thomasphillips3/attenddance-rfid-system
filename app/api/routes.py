@@ -962,6 +962,17 @@ def get_balances():
     if err:
         return err
     students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
+    # Include WITHDRAWN students who still owe so their debt stays visible in the
+    # main money view — a deactivated student's balance shouldn't disappear until
+    # it's settled. Only those with a positive balance (long-settled withdrawals
+    # don't clutter the roster).
+    inactive = Student.query.filter_by(is_active=False).order_by(Student.last_name, Student.first_name).all()
+    inactive_owing = []
+    if inactive:
+        inactive_bals = calc_balance_bulk([s.id for s in inactive])
+        inactive_owing = [s for s in inactive
+                          if inactive_bals.get(s.id, {}).get('balance', 0) > 0]
+    students = students + inactive_owing
     student_ids = [s.id for s in students]
     balances_map = calc_balance_bulk(student_ids)
 
@@ -971,6 +982,7 @@ def get_balances():
         balances.append({
             'student_id': s.id,
             'student_name': s.full_name,
+            'withdrawn': not s.is_active,
             'total_charges': f'{bal["total_charges"]:.2f}',
             'total_payments': f'{bal["total_payments"]:.2f}',
             'balance': f'{bal["balance"]:.2f}',
@@ -988,6 +1000,15 @@ def aging_report():
     if err:
         return err
     students = Student.query.filter_by(is_active=True).all()
+    # Include WITHDRAWN students who still owe: a deactivated student's unpaid
+    # balance must stay visible so the studio can collect it, not silently vanish
+    # from A/R. Only pull inactive students who actually have a balance (one bulk
+    # query) so long-settled withdrawals don't bloat the report.
+    inactive = Student.query.filter_by(is_active=False).all()
+    if inactive:
+        inactive_bals = calc_balance_bulk([s.id for s in inactive])
+        students += [s for s in inactive
+                     if inactive_bals.get(s.id, {}).get('balance', 0) > 0]
     sid_ids = [s.id for s in students]
     # One query for all transactions, grouped in memory (hundreds of rows).
     txns_by_student: dict[int, list] = {sid: [] for sid in sid_ids}
@@ -1007,6 +1028,7 @@ def aging_report():
             'student_id': s.id,
             'student_name': s.full_name,
             'family_name': s.family.name if s.family else None,
+            'withdrawn': not s.is_active,
             **{k: f'{ag[k]:.2f}' for k in ('current', 'd31_60', 'd61_90', 'd90_plus', 'total')},
         })
     # Owe-most first.

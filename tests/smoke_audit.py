@@ -2656,6 +2656,44 @@ def run_registration_notify_throttle():
            f"{calls[0]} notification emails for 5 rapid submits (want exactly 1); codes={codes}", "P2")
 
 
+def run_withdrawn_student_balance():
+    """A withdrawn (is_active=False) student who still owes must stay visible in
+    the money views so the studio can collect — the balance can't vanish on
+    deactivation. But a settled withdrawal must not clutter. Verify /api/balances
+    and /api/reports/aging include a withdrawn owing student (flagged) and exclude
+    a withdrawn settled one."""
+    from datetime import date as _date
+    from app.models import Student, Family, Transaction
+    with app.app_context():
+        fam = Family(name="Withdraw Fam", primary_email="wd@x.com")
+        db.session.add(fam)
+        db.session.flush()
+        owe = Student(first_name="Gone", last_name="Owes", family_id=fam.id, is_active=False)
+        settled = Student(first_name="Gone", last_name="Settled", family_id=fam.id, is_active=False)
+        db.session.add_all([owe, settled])
+        db.session.flush()
+        db.session.add_all([
+            Transaction(student_id=owe.id, type="charge", amount=77, category="tuition",
+                        payment_method="n/a", description="c", transaction_date=_date.today()),
+            Transaction(student_id=settled.id, type="charge", amount=40, category="tuition",
+                        payment_method="n/a", description="c", transaction_date=_date.today()),
+            Transaction(student_id=settled.id, type="payment", amount=40, category="tuition",
+                        payment_method="cash", description="p", transaction_date=_date.today()),
+        ])
+        db.session.commit()
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        bals = (c.get("/api/balances").get_json() or {}).get("balances", [])
+        aging = (c.get("/api/reports/aging").get_json() or {}).get("rows", [])
+    bal_owe = next((b for b in bals if b["student_name"] == "Gone Owes"), None)
+    bal_settled = any(b["student_name"] == "Gone Settled" for b in bals)
+    age_owe = next((r for r in aging if r["student_name"] == "Gone Owes"), None)
+    record("Withdrawn student who owes stays in balances + aging (flagged); settled doesn't",
+           bal_owe is not None and bal_owe.get("withdrawn") is True and not bal_settled
+           and age_owe is not None and age_owe.get("withdrawn") is True,
+           f"bal_owe={bal_owe} settled_shown={bal_settled} age_owe={bool(age_owe)}", "P2")
+
+
 def run_auth_form_labels():
     """Accessibility guard: every text/email/password field on the standalone auth
     forms (login, change/forgot/reset password) must have an accessible name — an
@@ -2958,6 +2996,7 @@ def main():
     run_messages_pagination()
     run_registrations_pagination()
     run_registration_notify_throttle()
+    run_withdrawn_student_balance()
     run_admin_role_consistency()
     run_admin_identity_invariants()
     run_js_syntax()
