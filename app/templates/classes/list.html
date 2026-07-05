@@ -238,6 +238,9 @@ async function promoteWait(id) {
     if (r.ok) { loadEnrollments(); loadWaitlist(); }
 }
 async function removeWait(id) {
+    // Confirm: re-adding puts them at the back of the waitlist, so an accidental
+    // remove loses their place in line.
+    if (!confirm('Remove this student from the waitlist? They lose their spot in line.')) return;
     const r = await fetch(`/api/waitlist/${id}`, { method: 'DELETE' });
     if (r.ok) loadWaitlist();
 }

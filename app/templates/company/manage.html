@@ -160,7 +160,7 @@ async function addMember(gid){
     const r = await jpost(`/api/performance/groups/${gid}/members`,{student_id:sid,role});
     if(r.ok){loadMembers(gid);loadGroups();}else msg((await r.json()).error||'Error',false);
 }
-async function removeMember(id){const r=await fetch(`/api/performance/members/${id}`,{method:'DELETE'});if(r.ok)loadGroups();}
+async function removeMember(id){if(!confirm('Remove this dancer from the group?'))return;const r=await fetch(`/api/performance/members/${id}`,{method:'DELETE'});if(r.ok)loadGroups();}
 
 /* ---- Auditions ---- */
 async function loadAuditions(){
