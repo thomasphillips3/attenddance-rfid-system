@@ -2634,10 +2634,33 @@ def _notify_student_balance(s, balance, email_ok, sms_ok):
     return used
 
 
+def _send_reminders_to(app, student_ids, email_ok, sms_ok):
+    """Background worker for the manual 'remind everyone who owes' action. Runs
+    off the request thread because a large studio × (email + up to a 15s SMS)
+    would exceed the 120s gunicorn worker timeout if sent inline."""
+    with app.app_context():
+        try:
+            students = Student.query.filter(Student.id.in_(student_ids)).all()
+            balances = calc_balance_bulk([s.id for s in students])
+            notified = 0
+            for s in students:
+                bal = balances[s.id]['balance']
+                if bal <= 0:
+                    continue
+                if _notify_student_balance(s, bal, email_ok, sms_ok):
+                    notified += 1
+            logger.info("Manual balance reminders sent: %d", notified)
+        except Exception:
+            logger.exception("Manual reminder background send failed")
+
+
 @bp.route('/balances/send-reminders', methods=['POST'])
 @login_required
 def send_balance_reminders():
-    """Send a balance reminder to every student who owes, via email and/or SMS."""
+    """Queue a balance reminder to every student who owes, via email and/or SMS.
+    The actual sending runs in a background thread — for a large studio, sending
+    inline (an email plus a 15s-timeout SMS per family) would blow the 120s
+    gunicorn worker timeout and 502 the request."""
     err = _admin_only()
     if err:
         return err
@@ -2650,19 +2673,15 @@ def send_balance_reminders():
 
     students = Student.query.filter_by(is_active=True).all()
     balances = calc_balance_bulk([s.id for s in students])
-    sent, skipped = 0, 0
-    for s in students:
-        if balances[s.id]['balance'] <= 0:
-            continue
-        used = _notify_student_balance(s, balances[s.id]['balance'], email_ok, sms_ok)
-        if used:
-            sent += 1
-        else:
-            skipped += 1
+    owing = [s.id for s in students if balances[s.id]['balance'] > 0]
 
-    AuditLog.record(current_user.id, 'reminders.send', f'Sent {sent} balance reminders ({skipped} skipped)')
+    AuditLog.record(current_user.id, 'reminders.send', f'Queued {len(owing)} balance reminders')
     db.session.commit()
-    return jsonify({'message': f'Sent {sent} reminder(s), skipped {skipped}', 'sent': sent, 'skipped': skipped})
+
+    app = current_app._get_current_object()
+    threading.Thread(target=_send_reminders_to, args=(app, owing, email_ok, sms_ok),
+                     daemon=True).start()
+    return jsonify({'message': f'Sending reminders to {len(owing)} family(ies)…', 'queued': len(owing)})
 
 
 @bp.route('/students/<int:student_id>/send-reminder', methods=['POST'])

@@ -1282,6 +1282,48 @@ def run_reminder_non_blocking():
            elapsed < 1.0, f"took {elapsed:.2f}s — sending appears to block the boot/request thread", "P1")
 
 
+def run_manual_reminders_non_blocking():
+    """The manual 'remind everyone who owes' endpoint must background its sends —
+    sent inline, a large studio × (email + 15s SMS) would exceed the 120s worker
+    timeout and 502. Arm a slow email sender, seed an owing student, and assert
+    the POST returns fast with a queued count."""
+    import time
+    from app import email as email_service
+    from app.models import Student, Family, Transaction
+    with app.app_context():
+        fam = Family(name="ManRem Fam", primary_email="manrem@x.com")
+        db.session.add(fam)
+        db.session.flush()
+        st = Student(first_name="Man", last_name="Rem", family_id=fam.id,
+                     is_active=True, parent_email="manrem@x.com")
+        db.session.add(st)
+        db.session.flush()
+        db.session.add(Transaction(student_id=st.id, type="charge", amount=88,
+                                   category="tuition", payment_method="n/a", description="c"))
+        db.session.commit()
+    app.config["MAIL_SERVER"] = "smtp.example.com"
+    orig = email_service.send_email
+
+    def slow_send(*a, **k):
+        time.sleep(2)
+        return 1
+
+    email_service.send_email = slow_send
+    try:
+        with app.test_client() as c:
+            login(c, "admin", "admin123")
+            t0 = time.monotonic()
+            r = c.post("/api/balances/send-reminders")
+            elapsed = time.monotonic() - t0
+            d = r.get_json() or {}
+    finally:
+        email_service.send_email = orig
+        app.config["MAIL_SERVER"] = None
+    record(f"Manual send-reminders backgrounds its sends (returned in {elapsed:.2f}s, queued={d.get('queued')})",
+           r.status_code == 200 and elapsed < 1.0 and d.get("queued", 0) >= 1,
+           f"status={r.status_code} elapsed={elapsed:.2f}s body={d}", "P1")
+
+
 def run_message_blast(ids):
     """Message blasts: validated, resolve recipients, degrade gracefully when
     SMTP isn't configured (save + return emails), and parents can't send."""
@@ -2732,6 +2774,7 @@ def main():
     run_timeclock()
     run_auto_reminders()
     run_reminder_non_blocking()
+    run_manual_reminders_non_blocking()
     run_multichild_invite_merge()
     run_invite_security()
     run_square_webhook(ids)
