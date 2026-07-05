@@ -713,6 +713,51 @@ def run_amount_validation(ids):
                r.status_code == 201, f"got {r.status_code}", "P1")
 
 
+def run_transaction_delete(ids):
+    """An admin must be able to correct a mistake by deleting a posted charge or
+    payment, and the balance must recompute. A parent must NOT be able to delete
+    a transaction (it would erase their own debt)."""
+    from app.helpers import calc_balance
+    sid = ids["child_a"]
+    # Admin posts a distinctive charge. (Separate, non-nested clients — nesting
+    # test_client() context managers bleeds the session between them.)
+    with app.app_context():
+        base = calc_balance(sid)["balance"]
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r = c.post("/api/transactions",
+                   json={"student_id": sid, "type": "charge", "amount": 123.45, "category": "tuition"})
+        tid = r.get_json().get("id")
+    with app.app_context():
+        after_charge = calc_balance(sid)["balance"]
+    record(f"charge raised balance by 123.45 ({base:.2f}->{after_charge:.2f})",
+           round(after_charge - base, 2) == 123.45, f"delta={after_charge-base}", "P2")
+
+    # Parent must NOT be able to delete a transaction (would erase their own debt).
+    with app.test_client() as pc:
+        login(pc, "parent_a", "pw")
+        rp = pc.delete(f"/api/transactions/{tid}")
+    record(f"Parent blocked from deleting a transaction -> {rp.status_code}",
+           rp.status_code in (401, 403), f"got {rp.status_code}", "P0")
+    with app.app_context():
+        still_there = calc_balance(sid)["balance"]
+    record("Parent's blocked delete did NOT change the balance",
+           round(still_there - after_charge, 2) == 0.0, f"bal moved to {still_there}", "P0")
+
+    # Admin deletes it; balance returns to baseline.
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        rd = c.delete(f"/api/transactions/{tid}")
+        r404 = c.delete("/api/transactions/999999")
+    with app.app_context():
+        after_delete = calc_balance(sid)["balance"]
+    record(f"Admin delete removes the charge; balance back to baseline ({after_delete:.2f})",
+           rd.status_code == 200 and round(after_delete - base, 2) == 0.0,
+           f"status={rd.status_code} bal={after_delete} base={base}", "P2")
+    record(f"Delete of a missing transaction -> {r404.status_code}",
+           r404.status_code == 404, f"got {r404.status_code}", "P3")
+
+
 def run_input_robustness(ids):
     """No write endpoint may 500 on malformed input. An unhandled exception
     (e.g. float() on a garbage string) is bad UX for the parent AND can leave a
@@ -1072,6 +1117,7 @@ def main():
     run_login_by_email()
     run_registration_flow()
     run_amount_validation(ids)
+    run_transaction_delete(ids)
     run_input_robustness(ids)
     run_parent_input_robustness(ids)
     run_parent_write_authz(ids)

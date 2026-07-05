@@ -1165,6 +1165,31 @@ def bulk_charge():
     return jsonify({'message': f'Charged {len(charged)} students', 'count': len(charged)}), 201
 
 
+@bp.route('/transactions/<int:tid>', methods=['DELETE'])
+@login_required
+def delete_transaction(tid):
+    """Delete a posted charge or payment (admin only) — the studio needs to fix
+    a fat-fingered amount, wrong student, or duplicate entry. Hard delete, but
+    audit-logged (the accountability trail) and any back-references from a
+    confirmed pending payment / Square invoice are cleared first so nothing is
+    left pointing at a deleted row."""
+    err = _admin_only()
+    if err:
+        return err
+    t = Transaction.query.get_or_404(tid)
+    detail = (f'{t.type} ${float(t.amount):.2f} {t.category} for '
+              f'{t.student.full_name if t.student else t.student_id} on {t.transaction_date}')
+    # Clear the two back-references that FK to transactions so nothing dangles.
+    PendingPayment.query.filter_by(transaction_id=t.id).update(
+        {'transaction_id': None}, synchronize_session=False)
+    CostumeAssignment.query.filter_by(transaction_id=t.id).update(
+        {'transaction_id': None}, synchronize_session=False)
+    db.session.delete(t)
+    AuditLog.record(current_user.id, 'transaction.delete', detail)
+    db.session.commit()
+    return jsonify({'message': 'Transaction deleted'})
+
+
 # ── Recurring charge endpoints ──────────────────────────────────────
 
 @bp.route('/recurring-charges', methods=['GET'])

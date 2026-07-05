@@ -48,10 +48,11 @@
                     <th class="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Charge</th>
                     <th class="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Payment</th>
                     <th class="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-[.06em] text-ink-3">Balance</th>
+                    {% if current_user.is_admin %}<th class="px-3 py-3 text-right text-[11px] font-bold uppercase tracking-[.06em] text-ink-3"><span class="sr-only">Actions</span></th>{% endif %}
                 </tr>
             </thead>
             <tbody id="ledger-table">
-                <tr><td colspan="6" class="px-5 py-8 text-center text-ink-3">Loading...</td></tr>
+                <tr><td colspan="7" class="px-5 py-8 text-center text-ink-3">Loading...</td></tr>
             </tbody>
         </table>
     </div>
@@ -84,14 +85,16 @@ async function loadLedger() {
         renderLedger(data.ledger);
         renderCategoryBreakdown(data.by_category || {});
     } catch (err) {
-        document.getElementById('ledger-table').innerHTML = '<tr><td colspan="6" class="px-5 py-8 text-center text-danger">Failed to load ledger</td></tr>';
+        document.getElementById('ledger-table').innerHTML = '<tr><td colspan="7" class="px-5 py-8 text-center text-danger">Failed to load ledger</td></tr>';
     }
 }
+
+const isAdmin = {{ 'true' if current_user.is_admin else 'false' }};
 
 function renderLedger(rows) {
     const tbody = document.getElementById('ledger-table');
     if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="px-5 py-8 text-center text-ink-3">No transactions yet.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="px-5 py-8 text-center text-ink-3">No transactions yet.</td></tr>';
         return;
     }
     tbody.innerHTML = rows.map(r => {
@@ -100,6 +103,9 @@ function renderLedger(rows) {
         const balClass = runBal > 0 ? 'text-danger font-semibold' : runBal < 0 ? 'text-info' : 'text-ink';
         const desc = r.description || r.category;
         const method = r.payment_method ? ' (' + (methodLabels[r.payment_method] || r.payment_method) + ')' : '';
+        const actionCell = isAdmin
+            ? `<td class="px-3 py-3.5 whitespace-nowrap text-right"><button aria-label="Delete this transaction" onclick="deleteTxn(${r.id}, '${esc(r.type)}', '${parseFloat(r.amount).toFixed(2)}')" class="text-ink-3 hover:text-danger text-sm"><i class="fas fa-trash"></i></button></td>`
+            : '';
         return `<tr class="border-b border-line last:border-0">
             <td class="px-5 py-3.5 whitespace-nowrap text-sm text-ink tabular-nums">${esc(r.transaction_date)}</td>
             <td class="px-5 py-3.5 text-sm text-ink-2">${esc(desc)}${isCharge ? '' : '<span class="text-ink-3 text-xs">' + esc(method) + '</span>'}</td>
@@ -107,8 +113,18 @@ function renderLedger(rows) {
             <td class="px-5 py-3.5 whitespace-nowrap text-sm text-right tabular-nums ${isCharge ? 'text-danger' : ''}">${isCharge ? '$' + parseFloat(r.amount).toFixed(2) : ''}</td>
             <td class="px-5 py-3.5 whitespace-nowrap text-sm text-right tabular-nums ${!isCharge ? 'text-ok' : ''}">${!isCharge ? '$' + parseFloat(r.amount).toFixed(2) : ''}</td>
             <td class="px-5 py-3.5 whitespace-nowrap text-sm text-right tabular-nums ${balClass}">$${runBal.toFixed(2)}</td>
+            ${actionCell}
         </tr>`;
     }).join('');
+}
+
+async function deleteTxn(id, type, amount) {
+    if (!confirm(`Delete this ${type} of $${amount}? This can't be undone.`)) return;
+    try {
+        const res = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+        if (res.ok) { toast('Transaction deleted', true); loadLedger(); }
+        else { const d = await res.json().catch(() => ({})); toast(d.error || 'Could not delete', false); }
+    } catch (err) { toast('Network error', false); }
 }
 
 function renderCategoryBreakdown(cats) {
