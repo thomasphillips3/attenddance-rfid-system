@@ -1702,6 +1702,9 @@ def send_message():
             msg.sent = True
             msg.sent_at = datetime.utcnow()
         except Exception as e:
+            # Surfaced to the admin (with a copy-these-emails fallback) AND logged,
+            # so a recurring "blasts aren't sending" SMTP problem is diagnosable.
+            logger.exception("Message blast SMTP send failed (message %s)", msg.id)
             msg.sent = False
             db.session.add(msg)
             db.session.commit()
