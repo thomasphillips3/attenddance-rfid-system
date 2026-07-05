@@ -52,7 +52,7 @@ Severity counts: **2 P0, 3 P1, 5 P2, 3 P3** (this pass; billing/bug/parity depth
 
 ## P2 — Should fix
 
-- **[P2-1] Recurring charges silently skip short months.** `app/__init__.py:29` skips a charge when `today.day < day_of_month`; a charge set to day 29/30/31 never fires in Feb (and 31 never fires in 30-day months) → missed tuition 1–5 months/yr with no error. Clamp `day_of_month` to the month's last day.
+- **[P2-1] Recurring charges silently skip short months — ✅ FIXED.** `_process_recurring_charges` skipped a charge when `today.day < day_of_month`, so a charge set for the 29th–31st never fired in Feb (and 31 never fired in any 30-day month) → missed tuition 1–5 months/yr with no error. Now clamps the due day to the month's last day (`min(day_of_month, monthrange)`), so it fires on the last day of short months. Math verified (Feb + day-31 → fires day 28). A date-frozen regression test needs `freezegun` (not yet a dep — see P3-3).
 - **[P2-2] 126 raw `prompt()/alert()/confirm()` calls** across ~20 templates for data entry and errors. `confirm()` on deletes is tolerable; `prompt()` for data entry (recital new-year, late fees, payment-plan create, donate, makeup-request) is unprofessional for a paying client. Replace the `prompt()` flows with real modals.
 - **[P2-3] Four parallel toast/flash systems** (base flash, parent `toast()`, recital `msg()`, pending `showMsg()`). Unify into one helper for consistent feedback.
 - **[P2-4] Zero `aria-label`s app-wide** — every icon-only button (hamburger, close X, chevrons, search, logout) is unnamed for screen readers. Add labels; it's cheap.
@@ -85,4 +85,4 @@ Severity counts: **2 P0, 3 P1, 5 P2, 3 P3** (this pass; billing/bug/parity depth
 - Added `tests/smoke_audit.py` (boot + IDOR + write-guard + no-arg smoke) as the regression seed.
 
 ### Remaining for next iterations
-- P1-2 autopay/cards-on-file (biggest parity build), P1-3 CSRF, P2-1 recurring short-month skip, P2-2 prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P3s. Deeper billing (family allocation rounding, late-fee/pending double-record idempotency) and full parity matrix still to expand.
+- P1-2 autopay/cards-on-file (biggest parity build), P1-3 CSRF, P2-2 prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P3s. Deeper billing (family allocation rounding, late-fee/pending double-record idempotency) and full parity matrix still to expand.

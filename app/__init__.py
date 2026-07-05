@@ -17,16 +17,22 @@ login_manager = LoginManager()
 
 def _process_recurring_charges():
     """Create charge transactions for any recurring charges due this month."""
+    import calendar
     from datetime import date
 
     from app.models import ClassEnrollment, RecurringCharge, Transaction
 
     today = date.today()
     month_start = today.replace(day=1)
+    last_day = calendar.monthrange(today.year, today.month)[1]
     actives = RecurringCharge.query.filter_by(is_active=True).all()
 
     for rc in actives:
-        if today.day < rc.day_of_month:
+        # Clamp the due day to the current month's length so a charge set for the
+        # 29th/30th/31st still fires (on the last day) in shorter months instead
+        # of being silently skipped — otherwise the studio loses that tuition.
+        due_day = min(rc.day_of_month, last_day)
+        if today.day < due_day:
             continue
         already = Transaction.query.filter_by(
             recurring_charge_id=rc.id,
@@ -36,7 +42,7 @@ def _process_recurring_charges():
         enrollments = ClassEnrollment.query.filter_by(
             class_id=rc.class_id, is_active=True
         ).all()
-        charge_date = today.replace(day=rc.day_of_month) if today.day >= rc.day_of_month else today
+        charge_date = today.replace(day=due_day)
         for e in enrollments:
             t = Transaction(
                 student_id=e.student_id,
