@@ -2242,6 +2242,54 @@ def run_registration_approve_race():
            f"new_families={new_fams} kids={kids} codes={sorted(codes)}", "P1")
 
 
+def run_attendance_race():
+    """Marking attendance is the app's core action and its most double-tap-prone
+    (teachers take it on community-center wifi). toggle_attendance is
+    check-then-act and Attendance has no natural unique key, so two concurrent
+    taps could create duplicate 'present' rows (inflating counts, breaking the
+    toggle). A functional unique index + graceful IntegrityError handling must
+    hold it to at most one row. Fire two simultaneous toggles and assert <= 1 row
+    with no 500."""
+    import threading
+    from datetime import time as _time
+    from app.models import User, DanceClass, ClassEnrollment, Attendance, Student, Family
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        fam = Family(name="Att Race Fam", primary_email="attrace@x.com")
+        db.session.add(fam)
+        db.session.flush()
+        st = Student(first_name="Tap", last_name="Race", family_id=fam.id, is_active=True)
+        dc = DanceClass(name="Race Class", day_of_week=2, start_time=_time(15, 0),
+                        end_time=_time(16, 0), instructor_id=admin.id)
+        db.session.add_all([st, dc])
+        db.session.flush()
+        db.session.add(ClassEnrollment(student_id=st.id, class_id=dc.id))
+        db.session.commit()
+        sid, cid = st.id, dc.id
+
+    barrier = threading.Barrier(2)
+    codes = []
+
+    def worker():
+        with app.test_client() as c:
+            login(c, "admin", "admin123")
+            barrier.wait()
+            codes.append(c.post("/api/attendance/toggle",
+                                json={"student_id": sid, "class_id": cid}).status_code)
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    with app.app_context():
+        n = Attendance.query.filter_by(student_id=sid, class_id=cid).count()
+    record("Concurrent double-tap never creates a duplicate attendance row",
+           n <= 1 and all(code < 500 for code in codes),
+           f"attendance_rows={n} codes={sorted(codes)}", "P1")
+
+
 def run_xss_guard():
     """Static guard: user-controlled name/text fields must never be interpolated
     into a JS template literal without esc(). These fields come from public
@@ -2417,6 +2465,7 @@ def main():
     run_email_header_injection()
     run_confirm_payment_race()
     run_registration_approve_race()
+    run_attendance_race()
     run_js_syntax()
     run_smoke()
     run_empty_state()

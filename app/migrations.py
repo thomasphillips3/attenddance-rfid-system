@@ -46,6 +46,22 @@ def _add_missing_columns(conn, inspector, table, columns):
             conn.execute(sqlalchemy.text(f'ALTER TABLE {table} ADD COLUMN {col} {coltype}'))
 
 
+def _enforce_attendance_uniqueness(conn):
+    """One attendance row per (student, class, day). The Attendance model has no
+    UniqueConstraint, so a concurrent double-tap could create duplicate 'present'
+    rows (inflating counts + breaking the toggle). De-dupe any existing dupes
+    (keep the earliest row) then add a functional unique index so the DB rejects
+    duplicates. Idempotent: the DELETE is a no-op on clean data and the index is
+    IF NOT EXISTS."""
+    conn.execute(sqlalchemy.text(
+        'DELETE FROM attendance WHERE id NOT IN ('
+        ' SELECT MIN(id) FROM attendance'
+        ' GROUP BY student_id, class_id, date(check_in_time))'))
+    conn.execute(sqlalchemy.text(
+        'CREATE UNIQUE INDEX IF NOT EXISTS ix_attendance_unique_day'
+        ' ON attendance(student_id, class_id, date(check_in_time))'))
+
+
 def run_migrations(db):
     with db.engine.connect() as conn:
         inspector = sqlalchemy.inspect(db.engine)
@@ -57,4 +73,6 @@ def run_migrations(db):
             _add_missing_columns(conn, inspector, 'classes', CLASS_COLUMNS)
         if 'performances' in inspector.get_table_names():
             _add_missing_columns(conn, inspector, 'performances', PERFORMANCE_COLUMNS)
+        if 'attendance' in inspector.get_table_names():
+            _enforce_attendance_uniqueness(conn)
         conn.commit()

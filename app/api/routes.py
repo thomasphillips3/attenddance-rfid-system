@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 from flask import current_app, jsonify, request, send_file
 from flask_login import current_user, login_required
 from sqlalchemy import desc, func
+from sqlalchemy.exc import IntegrityError
 
 from app import db, square_service
 from app.api import bp
@@ -616,7 +617,14 @@ def toggle_attendance():
         is_present=True,
     )
     db.session.add(att)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # A concurrent double-tap raced us to the unique (student, class, day)
+        # index. The other request already marked them present — treat this as a
+        # no-op success rather than a 500 or a duplicate row.
+        db.session.rollback()
+        return jsonify({'present': True, 'message': 'Already marked present'})
     return jsonify({'present': True, 'message': 'Marked present'}), 201
 
 
