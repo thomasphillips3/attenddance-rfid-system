@@ -190,6 +190,23 @@ def run_idor(ids):
                    not_locked, f"got 403 — guard over-locked the portal", "P1")
 
 
+def run_migration_idempotency():
+    """The boot ALTER-TABLE migrations run on EVERY app start, and Fly wakes/sleeps
+    the machine several times a day — so re-running them must be a no-op, never an
+    error (a non-idempotent migration would boot once then crash on the next wake)."""
+    from app.migrations import run_migrations
+    errs = []
+    with app.app_context():
+        for _ in range(3):  # simulate repeated Fly wakes on the already-migrated DB
+            try:
+                run_migrations(db)
+            except Exception as e:  # noqa: BLE001
+                errs.append(f"{type(e).__name__}: {e}")
+                break
+    record("Boot migrations are idempotent (safe to re-run every wake)",
+           not errs, f"re-run failed: {errs}", "P1")
+
+
 def run_prod_security_config():
     """Guard the production security posture from regression: (1) the fail-closed
     SECRET_KEY guard refuses a missing/default key but boots on a strong one, and
@@ -2118,6 +2135,7 @@ def main():
     run_orphan_guard(ids)
     run_orphan_render_guard(ids)
     run_prod_security_config()
+    run_migration_idempotency()
     run_backup(ids)
     run_csv_exports(ids)
     run_statements(ids)
