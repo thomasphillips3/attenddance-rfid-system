@@ -2671,6 +2671,41 @@ def run_registration_notify_throttle():
            f"{calls[0]} notification emails for 5 rapid submits (want exactly 1); codes={codes}", "P2")
 
 
+def run_class_crud():
+    """Classes must be editable and cancellable (Jackrabbit parity — the studio
+    adjusts schedules and cancels classes mid-season). Verify PUT updates fields,
+    and DELETE deactivates the class AND stops its recurring charge (otherwise
+    auto-billing keeps charging families for a cancelled class)."""
+    from datetime import time as _time
+    from app.models import User, DanceClass, RecurringCharge
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        dc = DanceClass(name="Tap 1", day_of_week=1, start_time=_time(16, 0),
+                        end_time=_time(17, 0), instructor_id=adm.id)
+        db.session.add(dc)
+        db.session.flush()
+        db.session.add(RecurringCharge(class_id=dc.id, amount=90, category="tuition",
+                                       day_of_month=1, created_by=adm.id))
+        db.session.commit()
+        cid = dc.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r = c.put(f"/api/classes/{cid}", json={"name": "Tap 1 (Advanced)", "start_time": "17:30"})
+        d = r.get_json() or {}
+        record(f"Class edit updates fields -> {r.status_code} ({d.get('name')}, {d.get('start_time')})",
+               r.status_code == 200 and d.get("name") == "Tap 1 (Advanced)" and d.get("start_time") == "17:30",
+               str(d), "P1")
+        r2 = c.delete(f"/api/classes/{cid}")
+        d2 = r2.get_json() or {}
+    with app.app_context():
+        cls = DanceClass.query.get(cid)
+        rc = RecurringCharge.query.filter_by(class_id=cid).first()
+    record(f"Cancelling a class deactivates it + stops recurring billing -> {r2.status_code}",
+           r2.status_code == 200 and cls.is_active is False and rc.is_active is False
+           and d2.get("recurring_charges_stopped") == 1,
+           f"class_active={cls.is_active} rc_active={rc.is_active} stopped={d2.get('recurring_charges_stopped')}", "P1")
+
+
 def run_withdrawn_student_balance():
     """A withdrawn (is_active=False) student who still owes must stay visible in
     the money views so the studio can collect — the balance can't vanish on
@@ -3054,6 +3089,7 @@ def main():
     run_registrations_pagination()
     run_registration_notify_throttle()
     run_withdrawn_student_balance()
+    run_class_crud()
     run_page_route_authz(ids)
     run_admin_role_consistency()
     run_admin_identity_invariants()

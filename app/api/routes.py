@@ -501,6 +501,79 @@ def create_class():
         return jsonify({'error': 'An internal error occurred'}), 500
 
 
+@bp.route('/classes/<int:class_id>', methods=['PUT', 'PATCH'])
+@login_required
+def update_class(class_id):
+    """Edit a class — the studio adjusts schedules/instructors/capacity mid-season."""
+    dc = DanceClass.query.get_or_404(class_id)
+    data = request.get_json() or {}
+    if data.get('name') is not None:
+        name = _clean_str(data['name'])
+        if not name:
+            return jsonify({'error': 'name cannot be empty'}), 400
+        dc.name = name
+    if 'description' in data:
+        dc.description = _clean_str(data.get('description')) or None
+    if data.get('location_id'):
+        loc_id, lerr = _valid_id(data.get('location_id'))
+        if lerr:
+            return lerr
+        if Location.query.get(loc_id) is None:
+            return jsonify({'error': 'location not found'}), 404
+        dc.location_id = loc_id
+    if data.get('instructor_id'):
+        inst_id, ierr = _valid_id(data.get('instructor_id'))
+        if ierr:
+            return ierr
+        if User.query.get(inst_id) is None:
+            return jsonify({'error': 'instructor not found'}), 404
+        dc.instructor_id = inst_id
+    if data.get('day_of_week') is not None:
+        try:
+            dc.day_of_week = int(data['day_of_week'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'invalid day_of_week'}), 400
+    for fld in ('start_time', 'end_time'):
+        if data.get(fld):
+            try:
+                setattr(dc, fld, datetime.strptime(data[fld], '%H:%M').time())
+            except (TypeError, ValueError):
+                return jsonify({'error': f'invalid {fld} (use HH:MM)'}), 400
+    if data.get('max_students') is not None:
+        try:
+            dc.max_students = int(data['max_students'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'invalid max_students'}), 400
+    if 'level' in data:
+        dc.level = _clean_str(data.get('level')) or None
+    if 'age_group' in data:
+        dc.age_group = _clean_str(data.get('age_group')) or None
+    try:
+        db.session.commit()
+        return jsonify(class_to_dict(dc))
+    except Exception:
+        db.session.rollback()
+        logger.exception("Failed to update class %d", class_id)
+        return jsonify({'error': 'An internal error occurred'}), 500
+
+
+@bp.route('/classes/<int:class_id>', methods=['DELETE'])
+@login_required
+def deactivate_class(class_id):
+    """Cancel a class (soft-delete). Also deactivates its recurring charges —
+    otherwise auto-billing keeps charging enrolled families for a class that no
+    longer runs."""
+    from app.models import RecurringCharge
+    dc = DanceClass.query.get_or_404(class_id)
+    dc.is_active = False
+    stopped = RecurringCharge.query.filter_by(class_id=class_id, is_active=True).update(
+        {'is_active': False}, synchronize_session=False)
+    AuditLog.record(current_user.id, 'class.deactivate',
+                    f'Cancelled class "{dc.name}" ({stopped} recurring charge(s) stopped)')
+    db.session.commit()
+    return jsonify({'message': f'{dc.name} cancelled', 'recurring_charges_stopped': stopped})
+
+
 # ── Enrollment endpoints ────────────────────────────────────────────
 
 @bp.route('/classes/<int:class_id>/enrollments', methods=['GET'])

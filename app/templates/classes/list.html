@@ -117,11 +117,13 @@
 <script>
 function esc(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
 
+let allClasses = [];
 async function loadClasses() {
     try {
         const res = await fetch('/api/classes');
         const data = await res.json();
-        renderClasses(data.classes);
+        allClasses = data.classes || [];
+        renderClasses(allClasses);
     } catch (err) {
         document.getElementById('classes-container').innerHTML = '<p class="text-danger col-span-full text-center py-8">Failed to load classes</p>';
     }
@@ -147,6 +149,10 @@ function renderClasses(classes) {
                 <button data-class-id="${cls.id}" data-class-name="${esc(cls.name)}" class="enroll-btn mt-4 w-full inline-flex justify-center items-center gap-2 px-3 py-2 rounded-xl border border-line-2 text-sm font-bold text-ink-2 hover:border-primary-300 hover:text-primary-700">
                     <i class="fas fa-user-plus"></i>Manage Students
                 </button>
+                <div class="mt-2 flex gap-2">
+                    <button onclick="openEditModal(${cls.id})" class="flex-1 inline-flex justify-center items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-ink-2 hover:bg-surface-2"><i class="fas fa-pen"></i>Edit</button>
+                    <button onclick="cancelClass(${cls.id}, ${JSON.stringify(cls.name)})" class="flex-1 inline-flex justify-center items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-danger hover:bg-danger/5"><i class="fas fa-ban"></i>Cancel Class</button>
+                </div>
             </div>
         </div>
     `).join('');
@@ -164,8 +170,27 @@ function openAddModal() {
 
 function closeModal() { document.getElementById('class-modal').classList.add('hidden'); }
 
+function openEditModal(id) {
+    const cls = allClasses.find(c => c.id === id);
+    if (!cls) return;
+    document.getElementById('modal-title').textContent = 'Edit Class';
+    document.getElementById('class-id').value = cls.id;
+    document.getElementById('class-name').value = cls.name || '';
+    document.getElementById('day-of-week').value = cls.day_of_week;
+    document.getElementById('start-time').value = cls.start_time || '';
+    document.getElementById('end-time').value = cls.end_time || '';
+    document.getElementById('level').value = cls.level || '';
+    document.getElementById('location-id').value = cls.location_id || '';
+    document.getElementById('max-students').value = cls.max_students || 20;
+    document.getElementById('class-modal').classList.remove('hidden');
+}
+
 async function saveClass(e) {
     e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    if (btn && btn.disabled) return;
+    if (btn) btn.disabled = true;
+    const id = document.getElementById('class-id').value;
     const body = {
         name: document.getElementById('class-name').value,
         day_of_week: parseInt(document.getElementById('day-of-week').value),
@@ -176,8 +201,20 @@ async function saveClass(e) {
         max_students: parseInt(document.getElementById('max-students').value) || 20,
     };
     try {
-        const res = await fetch('/api/classes', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        const res = await fetch(id ? `/api/classes/${id}` : '/api/classes',
+            { method: id ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
         if (res.ok) { closeModal(); loadClasses(); } else { const d = await res.json(); toast(d.error || 'Error saving class', false); }
+    } catch (err) { toast('Network error', false); }
+    finally { if (btn) btn.disabled = false; }
+}
+
+async function cancelClass(id, name) {
+    if (!confirm(`Cancel "${name}"? This deactivates the class and stops any auto-billing for it. Enrolled families keep their existing balances.`)) return;
+    try {
+        const res = await fetch(`/api/classes/${id}`, { method: 'DELETE' });
+        const d = await res.json();
+        if (res.ok) { loadClasses(); toast(d.message || 'Class cancelled', true); }
+        else { toast(d.error || 'Error', false); }
     } catch (err) { toast('Network error', false); }
 }
 
