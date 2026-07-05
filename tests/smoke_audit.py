@@ -158,6 +158,27 @@ def run_idor(ids):
                    not_locked, f"got 403 — guard over-locked the portal", "P1")
 
 
+def run_csrf():
+    """Cross-origin writes must be blocked; same-origin writes must pass through."""
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        # Foreign Origin on a state-changing request -> 403.
+        resp = c.post("/api/classes", json={},
+                      headers={"Origin": "https://evil.example.com"})
+        record(f"Cross-origin write blocked [Origin: evil] -> {resp.status_code}",
+               resp.status_code == 403, f"got {resp.status_code}, expected 403", "P1")
+        # Same-origin Origin -> not blocked by the CSRF guard (may 400 on body).
+        resp = c.post("/api/classes", json={},
+                      headers={"Origin": "http://localhost"})
+        record(f"Same-origin write not CSRF-blocked -> {resp.status_code}",
+               resp.status_code != 403 or b'Cross-origin' not in resp.data,
+               f"got 403 cross-origin on same-origin request", "P1")
+        # No Origin/Referer (e.g. server client) -> allowed through the guard.
+        resp = c.post("/api/classes", json={})
+        record(f"No-Origin write not CSRF-blocked -> {resp.status_code}",
+               b'Cross-origin' not in resp.data, "blocked a no-Origin request", "P2")
+
+
 def run_smoke():
     """As admin, GET every no-arg GET route; assert no 500s."""
     with app.test_client() as c:
@@ -182,6 +203,7 @@ def run_smoke():
 def main():
     ids = seed()
     run_idor(ids)
+    run_csrf()
     run_smoke()
 
     fails = [r for r in results if not r[2]]

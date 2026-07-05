@@ -44,9 +44,9 @@ Severity counts: **2 P0, 3 P1, 5 P2, 3 P3** (this pass; billing/bug/parity depth
 - **Evidence:** grep for autopay/card-on-file/subscription → **0 hits**. Recurring billing only creates *charge* ledger rows; actual collection is manual reconciliation ("I paid via Zelle/CashApp") or a one-off Square invoice a parent must click. Jackrabbit's headline is auto-charging saved cards on a schedule.
 - **Operational impact:** The studio *can* run fall on manual reconciliation (many small studios do), so this is not a hard blocker — but chasing unpaid tuition by hand is the biggest day-to-day tax vs Jackrabbit. Rank as the top post-launch build.
 
-### [P1-3] CSRF protection is disabled app-wide
-- **Where:** No `CSRFProtect` anywhere; `WTF_CSRF_ENABLED=False` only in test config; the app is session-cookie auth with many `fetch()` POSTs and HTML forms. Sole mitigation is `SESSION_COOKIE_SAMESITE='Lax'`, which blocks most cross-site POSTs but is not defense-in-depth and doesn't cover same-site injection or older browsers.
-- **Fix:** Add Flask-WTF `CSRFProtect`, emit a token in `base.html`, and send `X-CSRFToken` from the `fetch()` wrapper. Medium effort (touches every POST) — schedule deliberately, not a hot-fix.
+### [P1-3] CSRF protection was disabled app-wide — ✅ FIXED (Origin check)
+- **Was:** No `CSRFProtect`; 157 raw `fetch()` POSTs + HTML forms with only `SameSite=Lax` as mitigation.
+- **Fix applied:** an app-wide `before_request` (`_csrf_origin_guard`) rejects any POST/PUT/DELETE/PATCH whose `Origin` (or `Referer`) host differs from the request host — the pattern many JSON APIs use. Browsers always send `Origin` on cross-site state-changing requests, so this blocks classic CSRF with **zero changes to the 157 fetch calls** and no new dependency; the HMAC-verified webhook and token-verified cron endpoint are exempt. Verified: cross-origin write → 403, same-origin/no-Origin → pass. Combined with `SameSite=Lax` this is a solid production posture. (Token-based Flask-WTF remains an option for belt-and-suspenders, but would require patching all 157 fetches.)
 
 ---
 
@@ -90,4 +90,4 @@ Severity counts: **2 P0, 3 P1, 5 P2, 3 P3** (this pass; billing/bug/parity depth
 - **New P2 logged:** Square webhook records the *full* invoice amount on a `PARTIALLY_PAID` event and then sets `paid_at`, so the later `PAID` event is ignored — over-counts the payment and drops the remainder. Needs a product call on partial-payment semantics; Square isn't active yet so it's not urgent.
 
 ### Remaining for next iterations
-- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), P1-3 CSRF (medium refactor, touches every POST), P2-2 prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
+- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), P2-2 prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.

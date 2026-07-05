@@ -200,6 +200,29 @@ def create_app(config_name=None):
         except Exception:
             logger.exception("Auto-reminder processing failed at startup")
 
+    @app.before_request
+    def _csrf_origin_guard():
+        """CSRF defense-in-depth: reject any state-changing request whose Origin
+        (or, failing that, Referer) is a different host. Browsers always send
+        Origin on cross-site POST/PUT/DELETE, so this blocks the classic CSRF
+        without a token on any of the 157 fetch() calls. Pairs with
+        SESSION_COOKIE_SAMESITE='Lax'. Server-to-server endpoints authenticate
+        by HMAC/token (no browser Origin) and are exempt."""
+        from flask import request
+        from urllib.parse import urlparse
+
+        if request.method not in ('POST', 'PUT', 'DELETE', 'PATCH'):
+            return None
+        if request.endpoint in ('api.square_webhook', 'api.cron_run'):
+            return None
+        source = request.headers.get('Origin') or request.headers.get('Referer')
+        if source and urlparse(source).netloc != request.host:
+            from flask import jsonify
+            logger.warning("Blocked cross-origin %s to %s from %s",
+                           request.method, request.path, source)
+            return jsonify({'error': 'Cross-origin request blocked'}), 403
+        return None
+
     @app.errorhandler(404)
     def not_found_error(error):
         from flask import render_template
