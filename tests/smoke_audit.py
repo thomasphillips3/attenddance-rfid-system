@@ -225,6 +225,58 @@ def run_multichild_invite_merge():
                "leftover invites", "P2")
 
 
+def run_reconciliation(ids):
+    """The core fall tuition-collection flow: parent claims a payment -> admin
+    confirms -> a payment Transaction is created and the balance drops. Confirm
+    is idempotent; a parent can't confirm their own claim."""
+    from app.models import Transaction, PendingPayment
+    from app.helpers import calc_balance
+
+    sid = ids["child_a"]
+    with app.app_context():
+        db.session.add(Transaction(student_id=sid, type="charge", amount=100,
+                                   category="tuition", payment_method="n/a", description="fall tuition"))
+        db.session.commit()
+        start_bal = calc_balance(sid)["balance"]
+
+    # Parent claims a $60 Zelle payment
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        r = c.post("/api/payments/claim",
+                   json={"student_id": sid, "amount": 60, "method": "zelle", "reference": "abc123"})
+        record(f"Parent claims a payment -> {r.status_code}", r.status_code in (200, 201),
+               r.get_data(as_text=True)[:60], "P1")
+
+    with app.app_context():
+        pend = PendingPayment.query.filter_by(student_id=sid, status="pending").order_by(
+            PendingPayment.id.desc()).first()
+        pid = pend.id if pend else None
+    record("Claim created a pending payment", pid is not None, "", "P1")
+
+    if pid:
+        # A parent must NOT be able to confirm (admin-only)
+        with app.test_client() as c:
+            login(c, "parent_a", "pw")
+            r = c.post(f"/api/pending-payments/{pid}/confirm", json={})
+            record(f"Parent cannot confirm a payment -> {r.status_code}",
+                   r.status_code == 403, f"got {r.status_code}", "P0")
+        # Admin confirms -> creates the payment transaction, reduces balance
+        with app.test_client() as c:
+            login(c, "admin", "admin123")
+            r = c.post(f"/api/pending-payments/{pid}/confirm", json={"category": "tuition"})
+            record(f"Admin confirms the payment -> {r.status_code}", r.status_code == 200,
+                   r.get_data(as_text=True)[:60], "P1")
+            with app.app_context():
+                new_bal = calc_balance(sid)["balance"]
+                pay = Transaction.query.filter_by(student_id=sid, type="payment").count()
+            record(f"Balance dropped by $60 ({start_bal:.2f} -> {new_bal:.2f})",
+                   round(start_bal - new_bal, 2) == 60.0 and pay >= 1, "", "P1")
+            # double-confirm is rejected
+            r2 = c.post(f"/api/pending-payments/{pid}/confirm", json={})
+            record(f"Double-confirm rejected -> {r2.status_code}", r2.status_code == 400,
+                   f"got {r2.status_code}", "P1")
+
+
 def run_enrollment(ids):
     """Class enrollment (fall-critical): enroll a student, dedup a repeat,
     unenroll, and confirm counts. Parents can't enroll."""
@@ -662,6 +714,7 @@ def main():
     run_attendance(ids)
     run_message_blast()
     run_multichild_invite_merge()
+    run_reconciliation(ids)
     run_enrollment(ids)
     run_deactivation_revokes_session()
     run_password_reset()

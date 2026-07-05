@@ -276,6 +276,9 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 25 — DONE
 - **Scoped the one remaining item — auto-pay** ([AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)): decision-ready design so it can be greenlit/deferred. Grounded in the app's existing Square integration (customer helper + idempotent recurring scheduler already exist), it lays out the Cards-API/Web-Payments-SDK approach, `SavedCard` model, charge-on-schedule + failure handling, PCI (SAQ-A) posture, a ~3–4 day phased build, risks, and the recommendation to launch fall on manual and build auto-pay as the first post-launch project. This turns "what remains" into an actionable decision for the one open item.
 
+### Iteration 37 — DONE (smoke 95/95)
+- **Regression-guarded the core tuition-collection flow.** The pending-payment reconciliation (parent claims a payment → admin confirms → payment Transaction created + balance drops) is how the studio collects tuition manually all fall (no auto-pay). Verified end-to-end: claim creates a PendingPayment; a parent can't confirm (admin-only, 403); admin confirm creates the payment and drops the balance $100→$40; double-confirm is rejected (idempotent). Sound — no bug — but this money-critical flow had no coverage. Added 7 checks.
+
 ### Iteration 36 — DONE (smoke 89/89)
 - **Enrollment/waitlist lifecycle audit — sound; added coverage.** Traced the fall-critical class flow: enroll is **duplicate-safe** (active→skip, inactive→reactivate, no unique-constraint 500) and staff-gated via the write-guard; unenroll soft-removes; waitlist promotion is a deliberate manual admin action; `max_students` is a soft cap that drives the public "full" indicator + waitlist (staff can override — reasonable). No bug (unlike the auth seam). Added a 6-check enrollment regression (enroll → dedup → count → unenroll → parent-blocked) since this core flow had no coverage.
 
