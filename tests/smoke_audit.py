@@ -1234,6 +1234,54 @@ def run_auto_reminders():
         Setting.set("reminders_auto_enabled", "0")  # leave disabled for other tests
 
 
+def run_reminder_non_blocking():
+    """The auto-reminder send loop must run OFF the boot/request thread: it does
+    per-student network I/O (email + a 15s-timeout SMS each), so for a large
+    studio an inline run on a Fly wake would exceed the gunicorn worker timeout
+    and 502 on the reminder day. Arm a deliberately-slow email sender and assert
+    _process_auto_reminders returns fast — proving the sending is backgrounded."""
+    import time
+    from datetime import date as _date
+    from app import _process_auto_reminders
+    from app import email as email_service
+    from app.models import Setting, Student, Family, Transaction
+    with app.app_context():
+        fam = Family(name="Reminder Fam", primary_email="remfam@x.com")
+        db.session.add(fam)
+        db.session.flush()
+        st = Student(first_name="Rem", last_name="Kid", family_id=fam.id,
+                     is_active=True, parent_email="remfam@x.com")
+        db.session.add(st)
+        db.session.flush()
+        db.session.add(Transaction(student_id=st.id, type="charge", amount=99,
+                                   category="tuition", payment_method="n/a", description="c"))
+        Setting.set("reminders_auto_enabled", "1")
+        Setting.set("reminders_day_of_month", str(_date.today().day))
+        Setting.set("reminders_last_run", "")
+        Setting.set("reminders_min_balance", "0")
+        db.session.commit()
+    app.config["MAIL_SERVER"] = "smtp.example.com"  # is_configured() -> True
+    orig = email_service.send_email
+
+    def slow_send(*a, **k):
+        time.sleep(2)
+        return 1
+
+    email_service.send_email = slow_send
+    try:
+        with app.app_context():
+            t0 = time.monotonic()
+            _process_auto_reminders()
+            elapsed = time.monotonic() - t0
+    finally:
+        email_service.send_email = orig
+        app.config["MAIL_SERVER"] = None
+        with app.app_context():
+            Setting.set("reminders_auto_enabled", "0")
+    record(f"Auto-reminder sending is backgrounded (returned in {elapsed:.2f}s vs 2s send)",
+           elapsed < 1.0, f"took {elapsed:.2f}s — sending appears to block the boot/request thread", "P1")
+
+
 def run_message_blast(ids):
     """Message blasts: validated, resolve recipients, degrade gracefully when
     SMTP isn't configured (save + return emails), and parents can't send."""
@@ -2669,6 +2717,7 @@ def main():
     run_leads()
     run_timeclock()
     run_auto_reminders()
+    run_reminder_non_blocking()
     run_multichild_invite_merge()
     run_invite_security()
     run_square_webhook(ids)

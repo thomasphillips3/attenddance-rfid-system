@@ -2,8 +2,9 @@
 
 import logging
 import os
+import threading
 
-from flask import Flask
+from flask import Flask, current_app
 from flask_login import LoginManager
 from flask_sqlalchemy import SQLAlchemy
 
@@ -71,14 +72,18 @@ def _process_recurring_charges(today=None):
 
 
 def _process_auto_reminders():
-    """Send balance reminders if today matches the configured day and we haven't
-    already run this month. Driven by Settings (admin-configurable)."""
+    """Decide whether balance reminders are due this month; if so, mark the month
+    done (anti-spam) and hand the actual sending to a background thread.
+
+    The send loop does per-student network I/O (an email plus an SMS with up to a
+    15s timeout each). For a studio of any size that can run for minutes — which
+    must NEVER block app boot or the Fly-wake request that triggered it, or it
+    would exceed the gunicorn worker timeout and 502 on the reminder day. So the
+    gating + mark-done run synchronously (fast, no network) and only the sending
+    is backgrounded."""
     from datetime import date
 
-    from app import email as email_service
-    from app import sms as sms_service
-    from app.helpers import calc_balance_bulk
-    from app.models import Setting, Student
+    from app.models import Setting
 
     if not Setting.get_bool('reminders_auto_enabled'):
         return
@@ -93,48 +98,65 @@ def _process_auto_reminders():
     if Setting.get('reminders_last_run', '') == ym:
         return  # already ran this month
 
-    try:
-        min_bal = float(Setting.get('reminders_min_balance', '0') or 0)
-    except ValueError:
-        min_bal = 0.0
-    send_sms_too = Setting.get_bool('reminders_send_sms')
-
-    # Mark the month done BEFORE sending. Reminders are a best-effort monthly
-    # nudge, and the machine wakes/sleeps all day — if we marked done only at the
-    # end, a mid-loop kill (OOM) or an unhandled send error would re-run and
-    # re-notify families already reminded (spam). At-most-once beats guaranteed
-    # delivery here: the studio still sees unpaid balances on the aging report.
+    # Mark the month done BEFORE sending (Setting.set commits immediately). Reminders
+    # are a best-effort monthly nudge, and the machine wakes/sleeps all day — if we
+    # marked done only at the end, a mid-loop kill (OOM/sleep) or an unhandled send
+    # error would re-run and re-notify families already reminded (spam). At-most-once
+    # beats guaranteed delivery: the studio still sees unpaid balances on the aging
+    # report. Committing here also means the guard holds even if the send thread
+    # never finishes.
     Setting.set('reminders_last_run', ym)
 
-    students = Student.query.filter_by(is_active=True).all()
-    balances = calc_balance_bulk([s.id for s in students])
-    email_ok = email_service.is_configured()
-    sms_ok = send_sms_too and sms_service.is_configured()
-    sent = 0
-    for s in students:
-        bal = balances[s.id]['balance']
-        if bal <= max(0.0, min_bal):
-            continue
-        body = (f"Hi, this is a friendly reminder that {s.full_name} has a balance of "
-                f"${bal:.2f} with LaShelle's School of Dance. You can pay any time in the "
-                f"parent portal. Thank you!")
-        if email_ok:
-            to = s.parent_email or s.email
-            if to:
-                try:
-                    email_service.send_email(to, "Balance reminder — LaShelle's School of Dance", body)
-                    sent += 1
-                except Exception:
-                    logger.exception("Auto-reminder email failed for %s", s.full_name)
-        if sms_ok:
-            phone = s.parent_phone or (s.family.primary_phone if s.family else None) or s.phone
-            if phone:
-                try:  # a single SMS failure must not abort the whole run
-                    sms_service.send_sms(phone, body)
-                except Exception:
-                    logger.exception("Auto-reminder SMS failed for %s", s.full_name)
+    app = current_app._get_current_object()
+    threading.Thread(target=_send_balance_reminders, args=(app,), daemon=True).start()
 
-    logger.info("Auto-reminders processed: %d students notified", sent)
+
+def _send_balance_reminders(app):
+    """Background worker: email/SMS every active student over the balance
+    threshold. Best-effort and at-most-once (the month is already marked done).
+    Runs off the boot/request thread so a slow SMTP/Twilio can't block the app."""
+    from app import email as email_service
+    from app import sms as sms_service
+    from app.helpers import calc_balance_bulk
+    from app.models import Setting, Student
+
+    with app.app_context():
+        try:
+            try:
+                min_bal = float(Setting.get('reminders_min_balance', '0') or 0)
+            except ValueError:
+                min_bal = 0.0
+            send_sms_too = Setting.get_bool('reminders_send_sms')
+            students = Student.query.filter_by(is_active=True).all()
+            balances = calc_balance_bulk([s.id for s in students])
+            email_ok = email_service.is_configured()
+            sms_ok = send_sms_too and sms_service.is_configured()
+            sent = 0
+            for s in students:
+                bal = balances[s.id]['balance']
+                if bal <= max(0.0, min_bal):
+                    continue
+                body = (f"Hi, this is a friendly reminder that {s.full_name} has a balance of "
+                        f"${bal:.2f} with LaShelle's School of Dance. You can pay any time in the "
+                        f"parent portal. Thank you!")
+                if email_ok:
+                    to = s.parent_email or s.email
+                    if to:
+                        try:
+                            email_service.send_email(to, "Balance reminder — LaShelle's School of Dance", body)
+                            sent += 1
+                        except Exception:
+                            logger.exception("Auto-reminder email failed for %s", s.full_name)
+                if sms_ok:
+                    phone = s.parent_phone or (s.family.primary_phone if s.family else None) or s.phone
+                    if phone:
+                        try:  # a single SMS failure must not abort the whole run
+                            sms_service.send_sms(phone, body)
+                        except Exception:
+                            logger.exception("Auto-reminder SMS failed for %s", s.full_name)
+            logger.info("Auto-reminders processed: %d students notified", sent)
+        except Exception:
+            logger.exception("Auto-reminder background send failed")
 
 
 def create_app(config_name=None):
