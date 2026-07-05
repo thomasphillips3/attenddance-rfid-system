@@ -2336,6 +2336,41 @@ def run_late_fee_race():
            f"late_fee_charges={n} codes={sorted(codes)}", "P1")
 
 
+def run_transactions_pagination(ids):
+    """The payments page loads the transactions list at 100/page and now renders
+    Prev/Next controls off the API's pagination metadata. Guard that contract: with
+    120 transactions on a dedicated student, page 1 returns exactly 100 items with
+    pages=2/total=120, and page 2 returns the remaining 20 — so older transactions
+    stay reachable instead of being silently capped at the most recent 100."""
+    from datetime import date as _date
+    from app.models import Transaction, Student, Family
+    with app.app_context():
+        fam = Family(name="Pagination Fam", primary_email="pg@x.com")
+        db.session.add(fam)
+        db.session.flush()
+        st = Student(first_name="Page", last_name="Inator", family_id=fam.id, is_active=True)
+        db.session.add(st)
+        db.session.flush()
+        sid = st.id
+        db.session.add_all([
+            Transaction(student_id=sid, type="charge", amount=1, category="tuition",
+                        payment_method="n/a", description=f"pg{i}",
+                        transaction_date=_date.today())
+            for i in range(120)
+        ])
+        db.session.commit()
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        p1 = c.get(f"/api/transactions?per_page=100&page=1&student_id={sid}").get_json() or {}
+        p2 = c.get(f"/api/transactions?per_page=100&page=2&student_id={sid}").get_json() or {}
+        pg = p1.get("pagination", {})
+        record(f"Transactions page 1 returns 100 of {pg.get('total')} (pages={pg.get('pages')})",
+               len(p1.get("transactions", [])) == 100 and pg.get("total") == 120 and pg.get("pages") == 2,
+               str(pg), "P2")
+        record(f"Transactions page 2 returns the remaining 20 (got {len(p2.get('transactions', []))})",
+               len(p2.get("transactions", [])) == 20, str(p2.get("pagination")), "P2")
+
+
 def run_auth_form_labels():
     """Accessibility guard: every text/email/password field on the standalone auth
     forms (login, change/forgot/reset password) must have an accessible name — an
@@ -2629,6 +2664,7 @@ def main():
     run_global_search()
     run_dead_handler_guard()
     run_auth_form_labels()
+    run_transactions_pagination(ids)
     run_js_syntax()
     run_smoke()
     run_empty_state()

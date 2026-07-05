@@ -67,14 +67,14 @@
 <!-- Recent Transactions -->
 <h2 class="font-display text-xl text-ink mb-3">Recent Transactions</h2>
 <div class="mb-4 flex flex-wrap gap-3">
-    <select id="filter-category" onchange="loadTransactions()" class="bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+    <select id="filter-category" onchange="loadTransactions(1)" class="bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
         <option value="">All Categories</option>
         <option value="tuition">Tuition</option>
         <option value="costumes">Costumes</option>
         <option value="shoes">Shoes</option>
         <option value="other">Other</option>
     </select>
-    <select id="filter-student" onchange="loadTransactions()" class="bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+    <select id="filter-student" onchange="loadTransactions(1)" class="bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
         <option value="">All Students</option>
         {% for s in students %}
         <option value="{{ s.id }}">{{ s.full_name }}</option>
@@ -99,6 +99,7 @@
                 <tr><td colspan="7" class="px-5 py-4 text-center text-ink-3">Loading…</td></tr>
             </tbody>
         </table>
+        <div id="txn-pagination" class="flex items-center justify-between gap-3 px-5 py-3 border-t border-line"></div>
     </div>
 </div>
 
@@ -313,19 +314,36 @@ function renderBalances(balances) {
     }).join('');
 }
 
-async function loadTransactions() {
+let txnPage = 1;
+async function loadTransactions(page) {
+    if (page) txnPage = page;
     const category = document.getElementById('filter-category').value;
     const studentId = document.getElementById('filter-student').value;
-    let url = '/api/transactions?per_page=100';
+    let url = '/api/transactions?per_page=100&page=' + txnPage;
     if (category) url += '&category=' + encodeURIComponent(category);
     if (studentId) url += '&student_id=' + encodeURIComponent(studentId);
     try {
         const res = await fetch(url);
         const data = await res.json();
         renderTransactions(data.transactions);
+        renderTxnPagination(data.pagination);
     } catch (err) {
         document.getElementById('transactions-table').innerHTML = '<tr><td colspan="7" class="px-5 py-4 text-center text-danger">Failed to load</td></tr>';
     }
+}
+function renderTxnPagination(p) {
+    const el = document.getElementById('txn-pagination');
+    if (!el) return;
+    if (!p || p.pages <= 1) { el.innerHTML = ''; return; }
+    const start = (p.page - 1) * p.per_page + 1;
+    const end = Math.min(p.page * p.per_page, p.total);
+    const btn = 'px-3 py-1.5 rounded-lg border border-line-2 text-sm font-bold text-ink-2 hover:border-primary-300 disabled:opacity-40 disabled:cursor-not-allowed';
+    el.innerHTML = `<span class="text-sm text-ink-3">Showing ${start}–${end} of ${p.total}</span>
+        <div class="flex items-center gap-2">
+            <button class="${btn}" ${p.page <= 1 ? 'disabled' : ''} onclick="loadTransactions(${p.page - 1})">Prev</button>
+            <span class="px-1 text-sm text-ink-2">Page ${p.page} of ${p.pages}</span>
+            <button class="${btn}" ${p.page >= p.pages ? 'disabled' : ''} onclick="loadTransactions(${p.page + 1})">Next</button>
+        </div>`;
 }
 function renderTransactions(txns) {
     const tbody = document.getElementById('transactions-table');
