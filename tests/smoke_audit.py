@@ -2237,6 +2237,55 @@ def run_statements(ids):
                "100.00" in h and "500.00" not in h, "year filter wrong — tax document error", "P1")
 
 
+def run_statement_math():
+    """A year-end student statement is a tax document — the numbers must be
+    right, not just render. Verify `_statement_rows`: prior-year activity rolls
+    into the opening balance (not the in-year rows), Dec 31 is included, the next
+    year is excluded, and the running balance / totals are exact."""
+    from datetime import date as _date
+    from app.main.routes import _statement_rows
+    from app.models import Student, Family, Transaction
+
+    def _ch(sid, amt, d):
+        return Transaction(student_id=sid, type="charge", amount=amt, category="tuition",
+                           payment_method="n/a", description="c", transaction_date=d)
+
+    def _pay(sid, amt, d):
+        return Transaction(student_id=sid, type="payment", amount=amt, category="tuition",
+                           payment_method="cash", description="p", transaction_date=d)
+
+    with app.app_context():
+        fam = Family(name="Stmt Math Fam")
+        db.session.add(fam)
+        db.session.flush()
+        s = Student(first_name="Stmt", last_name="Math", family_id=fam.id, is_active=True)
+        db.session.add(s)
+        db.session.flush()
+        db.session.add_all([
+            _ch(s.id, 200, _date(2025, 6, 1)),    # prior year -> opening balance only
+            _ch(s.id, 100, _date(2026, 1, 15)),   # in year
+            _pay(s.id, 150, _date(2026, 3, 1)),   # in year
+            _ch(s.id, 50, _date(2026, 12, 31)),   # in year, last-day boundary (inclusive)
+            _ch(s.id, 999, _date(2027, 1, 1)),    # next year -> excluded
+        ])
+        db.session.commit()
+        sid = s.id
+        prior, rows, tc, tp = _statement_rows([sid], 2026)
+
+    ending = prior + tc - tp
+    checks = {
+        "opening balance = prior-year net ($200)": prior == 200.0,
+        "in-year rows only (3, excludes 2025 + 2027)": len(rows) == 3,
+        "total charges = 100 + 50 (Dec 31 included)": tc == 150.0,
+        "total payments = 150": tp == 150.0,
+        "ending balance = 200 + 150 - 150 = 200": ending == 200.0,
+        "running balance ends at 200": rows and rows[-1]["running"] == 200.0,
+    }
+    bad = [k for k, ok in checks.items() if not ok]
+    record("Year-end statement math is exact (prior-balance carryover, boundaries, running total)",
+           not bad, f"wrong: {bad} | prior={prior} rows={len(rows)} tc={tc} tp={tp} end={ending}", "P1")
+
+
 def run_cashtag_sanitize():
     """The admin-set Cash App cashtag renders into an unescaped href/URL on the
     parent portal — so it must be sanitized to alphanumeric/underscore at the
@@ -3511,6 +3560,7 @@ def main():
     run_backup(ids)
     run_csv_exports(ids)
     run_statements(ids)
+    run_statement_math()
     run_xss_guard()
     run_cashtag_sanitize()
     run_qr_upload_safety()
