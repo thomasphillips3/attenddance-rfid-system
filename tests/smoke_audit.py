@@ -83,6 +83,15 @@ def login(client, username, password):
 
 def run_idor(ids):
     """Parent A acting on Parent B's child must be blocked (403/404)."""
+    from datetime import time as _time
+    from app.models import DanceClass, User as _U
+    with app.app_context():
+        _adm = _U.query.filter_by(username="admin").first()
+        _dc = DanceClass(name="IDOR Class", day_of_week=4, start_time=_time(9, 0),
+                         end_time=_time(10, 0), instructor_id=_adm.id)
+        db.session.add(_dc)
+        db.session.commit()
+        idor_cid = _dc.id
     with app.test_client() as c:
         login(c, "parent_a", "pw")
         bid = ids["child_b"]
@@ -155,6 +164,12 @@ def run_idor(ids):
             blocked = resp.status_code in (401, 403, 404)
             record(f"Parent blocked from staff read [GET {path}] -> {resp.status_code}",
                    blocked, f"got {resp.status_code}", "P0")
+
+        # A SINGLE class GET leaks the instructor name + class internals, so it
+        # must be staff-only like the plural /api/classes (it wasn't).
+        r_cls = c.get(f"/api/classes/{idor_cid}")
+        record(f"Parent blocked from single-class read [GET /api/classes/<id>] -> {r_cls.status_code}",
+               r_cls.status_code in (401, 403, 404), f"got {r_cls.status_code}", "P1")
 
         # The nav-badge count endpoints intentionally 200 for parents but MUST
         # return a safe stub (0), never the real studio count.

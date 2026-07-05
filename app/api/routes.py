@@ -447,6 +447,9 @@ def get_classes():
 @bp.route('/classes/<int:class_id>', methods=['GET'])
 @login_required
 def get_class(class_id):
+    err = _staff_only()  # instructor name + class internals are staff-only (matches get_classes)
+    if err:
+        return err
     return jsonify(class_to_dict(DanceClass.query.get_or_404(class_id)))
 
 
