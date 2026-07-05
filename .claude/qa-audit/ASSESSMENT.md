@@ -81,6 +81,13 @@ Severity counts (original pass): **2 P0, 3 P1, 5 P2, 3 P3.** Now resolved: 2 P0,
 
 ---
 
+## Waiver signing (enrollment flow) — verified end-to-end
+
+New families sign waivers at enrollment, so the positive path was verified (not just the IDOR block):
+- A parent signs their **own** child's waiver (`POST .../waivers/<tid>/sign` → 200) and it reads back as `signed: true`.
+- A typed signature is required (empty → 400); an idempotent re-sign updates the existing signature.
+- **Decline rules hold:** declining a mandatory form → 400 ("requires agreement"); declining an opt-out form (e.g. photo release, `allow_decline`) → 200. Still blocks signing another family's child (403). Regression-guarded.
+
 ## Taking attendance (most-used fall feature) — verified live
 
 The single most-used daily flow was exercised end-to-end and works:
@@ -230,5 +237,8 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 19 — DONE (smoke 61/61)
 - **Verified taking attendance end-to-end** (the most-used fall feature — see the Attendance section): UI renders, mark-present persists (201), toggle-off removes (200), parents blocked (403). Added a 4-check regression. This was the last core fall flow I'd loaded pages around but not actually exercised.
 
+### Iteration 20 — DONE (smoke 66/66)
+- **Verified waiver signing end-to-end** (enrollment flow — see the Waiver section): parent signs own child's waiver (200) + reads back signed; typed-signature required; decline rules enforced (mandatory→400, opt-out→200); other-family still blocked (403). Added a 5-check regression. With this + attendance, every parent-and-staff flow a fall session touches is now exercised, not just code-reviewed.
+
 ### Remaining for next iterations
-- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~30 remaining staff-side `prompt()` flows → modals (spring-only: recital, waivers, skills, makeups, donations-admin), P3-4 SRI (deferred — see above) prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.
+- P1-2 autopay/cards-on-file (biggest parity build — needs Thomas's go-ahead, it's a feature), ~30 remaining staff-side `prompt()` flows → modals (spring-only: recital, waivers-admin, skills, makeups, donations-admin), P3-4 SRI (deferred — see above) prompt() flows, P2-3 toast unify, P2-4 aria-labels, P2-5 cron token constant-time check, P2 Square PARTIALLY_PAID semantics, P3s. Full Jackrabbit parity matrix still to expand.

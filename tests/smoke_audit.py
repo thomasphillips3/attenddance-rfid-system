@@ -183,6 +183,48 @@ def run_csrf():
                b'Cross-origin' not in resp.data, "blocked a no-Origin request", "P2")
 
 
+def run_waiver_signing(ids):
+    """A parent signs their OWN child's waiver end-to-end (enrollment flow):
+    signature records + reads back as signed; decline rules enforced."""
+    from app.models import WaiverTemplate
+
+    with app.app_context():
+        mandatory = WaiverTemplate(title="Liability Waiver", body="I agree.",
+                                   allow_decline=False, is_active=True)
+        optional = WaiverTemplate(title="Photo Release", body="Photos ok?",
+                                  allow_decline=True, is_active=True)
+        db.session.add_all([mandatory, optional])
+        db.session.commit()
+        mid, oid = mandatory.id, optional.id
+
+    sid = ids["child_a"]
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        # sign the mandatory waiver for own child
+        r = c.post(f"/api/students/{sid}/waivers/{mid}/sign",
+                   json={"signed_name": "Pat Alpha", "consent": True})
+        record(f"Parent signs own child's waiver -> {r.status_code}", r.status_code == 200,
+               f"got {r.status_code}: {r.get_data(as_text=True)[:80]}", "P1")
+        # reads back as signed
+        data = c.get(f"/api/students/{sid}/waivers").get_json() or {}
+        signed = next((w for w in data.get("waivers", []) if w["id"] == mid), {})
+        record("Signed waiver reads back as signed", signed.get("signed") is True, str(signed)[:80], "P1")
+        # empty signature rejected
+        r = c.post(f"/api/students/{sid}/waivers/{mid}/sign", json={"signed_name": ""})
+        record(f"Waiver requires a typed signature -> {r.status_code}", r.status_code == 400,
+               f"got {r.status_code}", "P3")
+        # declining a mandatory form rejected
+        r = c.post(f"/api/students/{sid}/waivers/{mid}/sign",
+                   json={"signed_name": "Pat Alpha", "consent": False})
+        record(f"Cannot decline a mandatory waiver -> {r.status_code}", r.status_code == 400,
+               f"got {r.status_code}", "P2")
+        # declining an opt-out form allowed
+        r = c.post(f"/api/students/{sid}/waivers/{oid}/sign",
+                   json={"signed_name": "Pat Alpha", "consent": False})
+        record(f"Can decline an opt-out form -> {r.status_code}", r.status_code == 200,
+               f"got {r.status_code}", "P2")
+
+
 def run_attendance(ids):
     """Taking attendance — the most-used fall feature: mark present persists,
     toggling again removes it, and parents can't mark attendance."""
@@ -416,6 +458,7 @@ def main():
     ids = seed()
     run_idor(ids)
     run_csrf()
+    run_waiver_signing(ids)
     run_attendance(ids)
     run_message_blast()
     run_registration_flow()
