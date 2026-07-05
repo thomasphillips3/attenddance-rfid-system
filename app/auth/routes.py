@@ -175,6 +175,12 @@ def register_parent():
             flash('All fields are required', 'error')
             return render_template('auth/register.html')
 
+        # Enforce the same minimum as change-password/reset — onboarding is where
+        # most parents set their password, so it can't be the weak link.
+        if len(password) < 6:
+            flash('Password must be at least 6 characters.', 'error')
+            return render_template('auth/register.html')
+
         invite_user = User.query.filter_by(invite_code=invite_code, role='parent', is_active=False).first()
         if not invite_user:
             flash('Invalid invite code', 'error')

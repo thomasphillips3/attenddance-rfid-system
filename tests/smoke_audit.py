@@ -298,6 +298,52 @@ def run_csrf():
                b'Cross-origin' not in resp.data, "blocked a no-Origin request", "P2")
 
 
+def run_invite_security():
+    """Parent invite codes are the account-claim credential — they must be
+    CSPRNG-generated, single-use (cleared on claim, no reuse), and the claim must
+    enforce a password minimum (onboarding is where most parents set it)."""
+    import re
+    from app.models import Student, Family, User
+    with app.app_context():
+        fam = Family(name="Invite Fam")
+        db.session.add(fam)
+        db.session.flush()
+        st = Student(first_name="Inv", last_name="Kid", family_id=fam.id)
+        db.session.add(st)
+        db.session.commit()
+        stid = st.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        code = (c.post(f"/api/students/{stid}/invite-parent", json={}).get_json() or {}).get("invite_code", "")
+    record(f"Invite code is 8-char CSPRNG hex ({code})",
+           bool(re.fullmatch(r"[0-9A-F]{8}", code)), f"got {code!r}", "P2")
+    # Short password rejected; account stays unclaimed.
+    with app.test_client() as c:
+        c.post("/auth/register", data={"invite_code": code, "first_name": "P", "last_name": "K",
+                                       "email": "invparent@x.com", "password": "ab"})
+    with app.app_context():
+        still_unclaimed = User.query.filter_by(invite_code=code, is_active=False).first() is not None
+    record("Registration enforces the password minimum (2-char rejected)",
+           still_unclaimed, "short password was accepted", "P2")
+    # Valid claim succeeds and clears the code (single-use).
+    with app.test_client() as c:
+        c.post("/auth/register", data={"invite_code": code, "first_name": "P", "last_name": "K",
+                                       "email": "invparent@x.com", "password": "secure123"})
+    with app.app_context():
+        claimed = User.query.filter_by(email="invparent@x.com", is_active=True).first()
+        code_gone = User.query.filter_by(invite_code=code).first() is None
+    record("Valid claim activates the account and clears the code (single-use)",
+           claimed is not None and code_gone, "claim failed or code not cleared", "P1")
+    # Reusing the spent code creates no account (no takeover).
+    with app.test_client() as c:
+        c.post("/auth/register", data={"invite_code": code, "first_name": "A", "last_name": "T",
+                                       "email": "attacker@x.com", "password": "secure123"})
+    with app.app_context():
+        no_takeover = User.query.filter_by(email="attacker@x.com").first() is None
+    record("Reusing a spent invite code creates no account (no takeover)",
+           no_takeover, "a spent code was reusable", "P0")
+
+
 def run_multichild_invite_merge():
     """Sibling families get one invite per child. Registering the 2nd+ invite
     with the same email must MERGE the dancer onto the parent's existing account
@@ -320,12 +366,12 @@ def run_multichild_invite_merge():
 
     with app.test_client() as c:
         r1 = c.post("/auth/register", data={"invite_code": "MCODE1", "first_name": "Sib",
-                    "last_name": "Parent", "email": "sibs@x.com", "password": "pw"})
+                    "last_name": "Parent", "email": "sibs@x.com", "password": "siblingpw"})
         record(f"Sibling invite 1 registers -> {r1.status_code}", r1.status_code in (200, 302),
                f"got {r1.status_code}", "P1")
     with app.test_client() as c:
         r2 = c.post("/auth/register", data={"invite_code": "MCODE2", "first_name": "Sib",
-                    "last_name": "Parent", "email": "sibs@x.com", "password": "pw"},
+                    "last_name": "Parent", "email": "sibs@x.com", "password": "siblingpw"},
                     follow_redirects=False)
         record(f"Sibling invite 2 (same email) merges, no 500 -> {r2.status_code}",
                r2.status_code in (200, 302), f"got {r2.status_code} (500=the bug)", "P1")
@@ -1689,6 +1735,7 @@ def main():
     run_timeclock()
     run_auto_reminders()
     run_multichild_invite_merge()
+    run_invite_security()
     run_square_webhook(ids)
     run_reconciliation(ids)
     run_enrollment(ids)
