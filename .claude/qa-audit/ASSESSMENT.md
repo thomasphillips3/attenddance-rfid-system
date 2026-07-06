@@ -291,6 +291,10 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 25 — DONE
 - **Scoped the one remaining item — auto-pay** ([AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)): decision-ready design so it can be greenlit/deferred. Grounded in the app's existing Square integration (customer helper + idempotent recurring scheduler already exist), it lays out the Cards-API/Web-Payments-SDK approach, `SavedCard` model, charge-on-schedule + failure handling, PCI (SAQ-A) posture, a ~3–4 day phased build, risks, and the recommendation to launch fall on manual and build auto-pay as the first post-launch project. This turns "what remains" into an actionable decision for the one open item.
 
+### Iteration 210 — DONE — PR description drafted ([PR-DESCRIPTION.md](PR-DESCRIPTION.md))
+- **Removed the friction from the next human step:** merging 217 commits needs a PR, and distilling this branch into a reviewable description is work the audit can hand over finished. [PR-DESCRIPTION.md](PR-DESCRIPTION.md) has a ready-to-paste title + body — prose (per the git-workflow rules: no conventional-commit title, no template scaffolding, no generated-with footer), organized by area (authorization, billing correctness, fall enrollment, operational safety), with the verification story (458 CI checks, mutation-tested net, three deploy rehearsals including real prod data) and the post-merge steps.
+- No code changes; suites unchanged (436/436, 22/22). Saturation stance stands.
+
 ### Iteration 209 — DONE — mutation-tested the safety net: 5/5 representative regressions caught
 - **Audited the audit:** 458 green checks are only a safety net if they bite, so five representative regressions were deliberately re-introduced (one at a time, reverted after each) across the highest-stakes fixes. **All five went red:**
   | Mutation | Failures caught |
