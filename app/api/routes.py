@@ -875,7 +875,12 @@ def manual_checkin():
         att = Attendance(
             student_id=student_id,
             class_id=class_id,
-            check_in_time=datetime.utcnow(),
+            # Local time (the server runs in the studio's timezone). Must match the
+            # `date.today()` used above and everywhere else the app groups by day —
+            # `datetime.utcnow()` would date an evening check-in on the next UTC day,
+            # hiding it from today's roster and tripping the unique-day index. Same
+            # basis as toggle_attendance.
+            check_in_time=datetime.now(),
             check_in_method='manual',
             notes=_clean_str(data.get('notes')) or None,
             is_present=True,
@@ -886,6 +891,12 @@ def manual_checkin():
             'message': f'{student.full_name} checked in successfully',
             'attendance': attendance_to_dict(att),
         }), 201
+    except IntegrityError:
+        # A concurrent double-tap raced past the pre-check to the unique
+        # (student, class, day) index. They're already checked in — graceful
+        # no-op, not a 500 (mirrors toggle_attendance).
+        db.session.rollback()
+        return jsonify({'error': 'Student already checked in today'}), 400
     except Exception:
         db.session.rollback()
         logger.exception("Failed to check in student %d", student_id)
@@ -3031,8 +3042,19 @@ def square_webhook():
         created_by=None,
     )
     db.session.add(t)
-    rec.status = status
-    rec.paid_at = datetime.utcnow()
+    # Atomically claim the invoice so a duplicate PAID delivery can't double-credit
+    # the family. Square delivers webhooks at-least-once, so two identical PAID
+    # events can be processed concurrently by different worker threads — both would
+    # pass the paid_at pre-check above and each insert a payment. The conditional
+    # UPDATE re-checks paid_at IS NULL at write time: only the first wins; the loser
+    # matches 0 rows and rolls back its just-inserted payment (autoflushed before
+    # the UPDATE runs). Same pattern as the pending-payment confirm race.
+    claimed = db.session.query(SquareInvoice).filter(
+        SquareInvoice.id == rec.id, SquareInvoice.paid_at.is_(None)).update(
+        {'status': status, 'paid_at': datetime.utcnow()}, synchronize_session=False)
+    if not claimed:
+        db.session.rollback()
+        return jsonify({'status': 'already_recorded'}), 200
     AuditLog.record(None, 'payment.square_webhook',
                     f'Auto-recorded ${amount:.2f} for {student.full_name} (invoice {invoice_id})')
     db.session.commit()

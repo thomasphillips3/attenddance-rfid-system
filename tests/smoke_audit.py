@@ -535,6 +535,39 @@ def run_square_webhook(ids):
                (rd.get_json() or {}).get("status") == "already_recorded" and len(n_txns()) == 1,
                f"txns={len(n_txns())}", "P1")
 
+    # Concurrency: Square delivers webhooks at-least-once, so two identical PAID
+    # events can hit two worker threads at once. Both pass the paid_at pre-check;
+    # only the atomic claim stops a double-credit. Fire two at a FRESH invoice
+    # simultaneously and assert exactly one payment lands (the sequential
+    # duplicate above is caught by the pre-check — this catches the true race).
+    import threading
+    with app.app_context():
+        db.session.add(SquareInvoice(student_id=sid, invoice_id="sqinv_race",
+                                     amount_cents=5000, status="SENT"))
+        db.session.commit()
+    rbody = _json.dumps({"type": "invoice.updated",
+                         "data": {"object": {"invoice": {"id": "sqinv_race", "status": "PAID"}}}})
+    rsig = sign(rbody)
+    barrier = threading.Barrier(2)
+    rstatuses = []
+
+    def race_worker():
+        with app.test_client() as c:
+            barrier.wait()
+            r = c.post("/api/webhooks/square", data=rbody, content_type="application/json",
+                       headers={"x-square-hmacsha256-signature": rsig})
+            rstatuses.append((r.get_json() or {}).get("status"))
+
+    threads = [threading.Thread(target=race_worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    with app.app_context():
+        race_n = Transaction.query.filter(Transaction.description.like("%sqinv_race%")).count()
+    record(f"Concurrent duplicate PAID webhooks credit the family exactly once (statuses={rstatuses})",
+           race_n == 1, f"created {race_n} payments for one invoice (want 1); statuses={rstatuses}", "P1")
+
 
 def run_reconciliation(ids):
     """The core fall tuition-collection flow: parent claims a payment -> admin
@@ -928,6 +961,14 @@ def run_attendance(ids):
         rc = c.post("/api/attendance/checkin", json={"student_id": sid, "class_id": cid})
         record(f"Manual check-in dedups (2nd -> {rc.status_code}, {rows()} row)",
                rc.status_code == 400 and rows() == 1, f"status={rc.status_code} rows={rows()}", "P2")
+        # The check-in must land on TODAY's roster. The server runs in the studio's
+        # timezone (Eastern), so a UTC-dated timestamp would file an evening
+        # check-in under tomorrow and hide it from today's list (and trip the
+        # unique-day index). Assert the just-checked-in student shows up today.
+        today_att = c.get(f"/api/attendance/today?class_id={cid}").get_json() or {}
+        today_ids = [a.get("student_id") for a in today_att.get("attendance", [])]
+        record("Manual check-in appears in today's attendance roster (correct local day)",
+               sid in today_ids, f"today ids={today_ids} (want {sid}); count={today_att.get('count')}", "P1")
         # Validation: nonexistent class 404s (no orphan row), garbage id 400s, bad date doesn't 500.
         rb1 = c.post("/api/attendance/toggle", json={"student_id": sid, "class_id": 999999})
         rb2 = c.post("/api/attendance/toggle", json={"student_id": "xyz", "class_id": cid})
