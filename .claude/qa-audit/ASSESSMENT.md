@@ -291,6 +291,17 @@ Verdict: **strong parity for daily operations; the one structural gap is automat
 ### Iteration 25 — DONE
 - **Scoped the one remaining item — auto-pay** ([AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)): decision-ready design so it can be greenlit/deferred. Grounded in the app's existing Square integration (customer helper + idempotent recurring scheduler already exist), it lays out the Cards-API/Web-Payments-SDK approach, `SavedCard` model, charge-on-schedule + failure handling, PCI (SAQ-A) posture, a ~3–4 day phased build, risks, and the recommendation to launch fall on manual and build auto-pay as the first post-launch project. This turns "what remains" into an actionable decision for the one open item.
 
+### Iteration 209 — DONE — mutation-tested the safety net: 5/5 representative regressions caught
+- **Audited the audit:** 458 green checks are only a safety net if they bite, so five representative regressions were deliberately re-introduced (one at a time, reverted after each) across the highest-stakes fixes. **All five went red:**
+  | Mutation | Failures caught |
+  |---|---|
+  | Teacher-lockdown gate removed from the transactions list | 2 |
+  | Balance math inverted (payments ADD to the balance) | smoke 1 + billing 1 |
+  | No-retroactive-billing guard deleted | 1 |
+  | IDOR: student ownership check disabled for everyone | 5 |
+  | Returning-dancer matching disabled (re-registration duplicates again) | 3 |
+- Tree restored, both suites re-verified green (436/436, 22/22). The guard suite demonstrably enforces the fixes it claims to — a future change that quietly undoes any of these classes fails CI. Saturation stance stands: ship it.
+
 ### Iteration 208 — DONE — CI dress rehearsal: the workflow's first-ever run is your merge PR, so it was simulated locally
 - **The one unverified deploy-day dependency left was CI itself** — `.github/workflows/tests.yml` was added on this never-pushed branch, so its first real run happens on the merge PR; a failure there stalls the merge at the worst moment. Audited the workflow (Python 3.12 matches the Docker image; installs `requirements-deploy.txt`; `RFID_ENABLED=false` set on both steps; node-dependent checks degrade gracefully) and **re-ran today's full suite under CI-shape conditions** — a clean venv containing only the deploy pins, plain `python tests/...` invocations: **436/436 + 22/22.** The iter-183 clean-env run predated ~20 iterations of new tests (including the prod-config boot test); today's suite is self-sufficient on the pin set. CI will go green on the first PR.
 - No changes; saturation stance from iteration 207 stands.
