@@ -1483,6 +1483,31 @@ def run_reminder_non_blocking():
            elapsed < 1.0, f"took {elapsed:.2f}s — sending appears to block the boot/request thread", "P1")
 
 
+def run_rfid_assign_unique():
+    """An RFID card must map to exactly ONE student — assigning a UID already on
+    another student is rejected. Otherwise the scan (which does `.first()` on the
+    UID) would check in the wrong dancer. Re-assigning the same UID to the SAME
+    student is fine (idempotent)."""
+    from app.models import Student, Family
+    with app.app_context():
+        fam = Family(name="RfidUniq Fam")
+        db.session.add(fam)
+        db.session.flush()
+        a = Student(first_name="Card", last_name="Aaa", family_id=fam.id, is_active=True)
+        b = Student(first_name="Card", last_name="Bbb", family_id=fam.id, is_active=True)
+        db.session.add_all([a, b])
+        db.session.commit()
+        aid, bid = a.id, b.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r1 = c.post(f"/api/students/{aid}/assign-rfid", json={"rfid_uid": "UNIQCARD_1"})
+        r2 = c.post(f"/api/students/{bid}/assign-rfid", json={"rfid_uid": "UNIQCARD_1"})  # dup -> reject
+        r3 = c.post(f"/api/students/{aid}/assign-rfid", json={"rfid_uid": "UNIQCARD_1"})  # same student -> ok
+    record("RFID card can't be assigned to two students (prevents wrong-student check-in)",
+           r1.status_code == 200 and r2.status_code == 400 and r3.status_code == 200,
+           f"assignA={r1.status_code} dupB={r2.status_code} reassignA={r3.status_code}", "P2")
+
+
 def run_day_of_week_convention():
     """`day_of_week` is 0=Monday .. 6=Sunday (matching Python's weekday()), and
     DanceClass.day_name must agree. The calendar, take-attendance's "today's
@@ -3996,6 +4021,7 @@ def main():
     run_message_blast_non_blocking()
     run_recurring_short_month_clamp()
     run_attendance_default_local()
+    run_rfid_assign_unique()
     run_day_of_week_convention()
     run_rfid_checkin_local_day()
     run_rfid_reuses_app()
