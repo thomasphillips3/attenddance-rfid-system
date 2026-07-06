@@ -90,6 +90,7 @@
             </div>
 
             <div class="space-y-6">
+                {% if current_user.is_admin %}{# billing is admin-only — teachers see the profile, not the money #}
                 <div class="bg-surface border border-line rounded-2xl shadow-soft p-6">
                     <h2 class="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">Account</h2>
                     <div class="text-center mb-3">
@@ -109,6 +110,7 @@
                         <a href="{{ url_for('main.student_ledger', student_id=student.id) }}" class="text-sm text-primary-600 hover:text-primary-700">View Full Ledger</a>
                     </div>
                 </div>
+                {% endif %}
 
                 <div class="bg-surface border border-line rounded-2xl shadow-soft p-6">
                     <h2 class="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">Sizes</h2>

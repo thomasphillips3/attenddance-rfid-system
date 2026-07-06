@@ -354,6 +354,56 @@ def run_teacher_authz(ids):
             r = c.get(path)
             record(f"Teacher blocked from admin-only [{path}] -> {r.status_code}",
                    r.status_code in (401, 403), f"got {r.status_code} — teacher reached admin data", "P1")
+        # Billing is admin-only across the board (Thomas, 2026-07-06): teachers
+        # must not READ money data or POST money mutations. Sweep the whole
+        # teacher-reachable billing surface — reads...
+        sid = ids["child_a"]
+        money_gets = [
+            "/api/transactions", "/api/balances", "/api/reports/transactions.csv",
+            "/api/recurring-charges", f"/api/students/{sid}/ledger",
+            "/api/families/1/ledger", f"/api/students/{sid}/payment-plan",
+            "/api/performances/1/ticket-orders",
+        ]
+        for path in money_gets:
+            r = c.get(path)
+            record(f"Teacher blocked from billing read [{path}] -> {r.status_code}",
+                   r.status_code in (401, 403), f"got {r.status_code} — teacher read money data", "P1")
+        # ...and writes (posting charges/payments, billing setup, claims, blasts).
+        money_posts = [
+            ("/api/transactions", {"student_id": sid, "type": "charge", "amount": 10, "category": "tuition"}),
+            ("/api/transactions/bulk-charge", {"class_id": 1, "amount": 10, "category": "tuition"}),
+            ("/api/recurring-charges", {"class_id": 1, "amount": 10, "category": "tuition", "day_of_month": 1}),
+            ("/api/recurring-charges/process", {}),
+            ("/api/payments/claim", {"student_id": sid, "amount": 10, "method": "zelle"}),
+            (f"/api/students/{sid}/send-invoice", {}),
+            ("/api/messages", {"subject": "s", "body": "b", "recipient_type": "all"}),
+        ]
+        for path, body in money_posts:
+            r = c.post(path, json=body)
+            record(f"Teacher blocked from billing write [{path}] -> {r.status_code}",
+                   r.status_code in (401, 403), f"got {r.status_code} — teacher posted money", "P1")
+        # Pending-payments badge returns 0 for teachers (no volume leak).
+        pc = (c.get("/api/pending-payments/count").get_json() or {}).get("count")
+        record(f"Teacher pending-payments badge is 0 (got {pc})", pc == 0, f"count={pc}", "P2")
+        # Family list still works for teachers but carries NO money fields.
+        fams = (c.get("/api/families").get_json() or {}).get("families", [])
+        leak = any("balance" in f or "total_charges" in f for f in fams)
+        record(f"Teacher family list has no money fields ({len(fams)} families)",
+               not leak, "balance/total_charges present for a teacher", "P1")
+        # Still CAN message a class (instructional need preserved).
+        cm = c.post("/api/messages", json={"subject": "Bring jazz shoes", "body": "b",
+                                           "recipient_type": "class", "recipient_filter": "1"})
+        record(f"Teacher CAN message a class -> {cm.status_code}",
+               cm.status_code in (200, 201, 400), f"got {cm.status_code} (403 = over-locked)", "P2")
+    # The money-access helper must still let a PARENT read their OWN child's
+    # ledger + plan (the admin-or-owner path — teachers were cut out, parents not).
+    with app.test_client() as pc:
+        login(pc, "parent_a", "pw")
+        rl = pc.get(f"/api/students/{ids['child_a']}/ledger")
+        rp = pc.get(f"/api/students/{ids['child_a']}/payment-plan")
+        record(f"Parent still reads own child's ledger ({rl.status_code}) + plan ({rp.status_code})",
+               rl.status_code == 200 and rp.status_code == 200,
+               f"ledger={rl.status_code} plan={rp.status_code} (parent over-locked)", "P1")
 
 
 def run_login_no_demo_creds_in_prod():
@@ -911,9 +961,9 @@ def run_password_reset():
 
 
 def run_rule_authz():
-    """Rules are a STAFF feature by design — the Rules nav + page are shown to all
-    staff (unlike the admin-gated Waivers/Locations), grouped with Messages + Time
-    Clock. So a teacher CAN manage rules; a PARENT cannot (before_request block)."""
+    """Rule MUTATIONS are admin-only (least privilege — Thomas, 2026-07-06):
+    rules are studio policy. Teachers can still VIEW the rules page/list;
+    parents can't mutate anything (before_request block)."""
     from app.models import User, Rule
     with app.app_context():
         if not User.query.filter_by(username="teacher_t").first():
@@ -924,17 +974,23 @@ def run_rule_authz():
             db.session.commit()
     with app.test_client() as c:
         login(c, "teacher_t", "pw")
-        cr = c.post("/api/rules", json={"text": "Teacher-made rule"})
+        tcr = c.post("/api/rules", json={"text": "Teacher-made rule"})
+        tview = c.get("/api/rules")
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        cr = c.post("/api/rules", json={"text": "Admin-made rule"})
         rid = (cr.get_json() or {}).get("id")
-        pu = c.put(f"/api/rules/{rid}", json={"text": "Teacher-edited rule"}) if rid else None
+        pu = c.put(f"/api/rules/{rid}", json={"text": "Admin-edited rule"}) if rid else None
         de = c.delete(f"/api/rules/{rid}") if rid else None
     with app.test_client() as c:
         login(c, "parent_a", "pw")
         pcr = c.post("/api/rules", json={"text": "Parent rule"})
-    record("Teacher (staff) can manage rules; parent cannot",
-           cr.status_code == 201 and pu is not None and pu.status_code == 200
+    record("Admin manages rules; teacher can view but not mutate; parent blocked",
+           tcr.status_code == 403 and tview.status_code == 200
+           and cr.status_code == 201 and pu is not None and pu.status_code == 200
            and de is not None and de.status_code == 200 and pcr.status_code == 403,
-           f"teacher_create={cr.status_code} put={getattr(pu,'status_code',None)} "
+           f"teacher_create={tcr.status_code} teacher_view={tview.status_code} "
+           f"admin_create={cr.status_code} put={getattr(pu,'status_code',None)} "
            f"del={getattr(de,'status_code',None)} parent_create={pcr.status_code}", "P2")
 
 

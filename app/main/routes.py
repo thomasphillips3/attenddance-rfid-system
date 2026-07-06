@@ -160,7 +160,7 @@ def parent_dashboard():
 
 
 @bp.route('/transactions')
-@staff_required
+@admin_required
 def transactions():
     students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
     classes = DanceClass.query.filter_by(is_active=True).order_by(DanceClass.name).all()
@@ -182,7 +182,7 @@ def student_detail(student_id):
 
 
 @bp.route('/students/<int:student_id>/ledger')
-@staff_required
+@admin_required
 def student_ledger(student_id):
     student = Student.query.get_or_404(student_id)
     return render_template('transactions/ledger.html', student=student)
@@ -195,7 +195,7 @@ def families_page():
 
 
 @bp.route('/families/<int:family_id>/ledger')
-@staff_required
+@admin_required
 def family_ledger(family_id):
     family = Family.query.get_or_404(family_id)
     return render_template('families/ledger.html', family=family)

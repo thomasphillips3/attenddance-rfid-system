@@ -171,8 +171,9 @@
                 {% if current_user.is_admin %}{{ nl('Makeups', 'main.makeups_page', 'rotate', ['makeups']) }}{% endif %}
                 {% if current_user.is_admin %}{{ nl('Skills', 'main.skills_page', 'medal', ['skills']) }}{% endif %}
 
+                {% if current_user.is_admin %}
                 {{ group_label('Money') }}
-                {{ nl('Payments', 'main.transactions', 'dollar-sign', ['transaction']) }}
+                {{ nl('Payments', 'main.transactions', 'dollar-sign', ['transaction']) }}{% endif %}
                 {% if current_user.is_admin %}{{ nl('Pending', 'main.pending_payments_page', 'clock', ['pending'], pending_payment_count) }}{% endif %}
                 {% if current_user.is_admin %}{{ nl('Payment Methods', 'main.settings_page', 'gear', ['settings']) }}{% endif %}
                 {% if current_user.is_admin %}{{ nl('Revenue', 'main.revenue_report_page', 'chart-column', ['revenue']) }}{% endif %}

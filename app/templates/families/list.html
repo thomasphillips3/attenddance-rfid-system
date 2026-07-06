@@ -68,10 +68,18 @@ function renderFamilies(families) {
         return;
     }
     el.innerHTML = families.map(f => {
-        const bal = parseFloat(f.balance);
-        const balClass = bal > 0 ? 'text-danger' : 'text-ok';
-        const balText = bal > 0 ? '$' + bal.toFixed(2) + ' due' : bal === 0 ? 'Paid up' : '$' + Math.abs(bal).toFixed(2) + ' credit';
         const kids = f.students.map(s => esc(s.full_name)).join(', ') || 'No students assigned';
+        // The API only includes money fields for admins — billing is admin-only.
+        let moneyRow = '';
+        if (f.balance !== undefined) {
+            const bal = parseFloat(f.balance);
+            const balClass = bal > 0 ? 'text-danger' : 'text-ok';
+            const balText = bal > 0 ? '$' + bal.toFixed(2) + ' due' : bal === 0 ? 'Paid up' : '$' + Math.abs(bal).toFixed(2) + ' credit';
+            moneyRow = `<div class="mt-3 pt-3 border-t border-line flex justify-between items-center">
+                    <span class="text-sm font-bold ${balClass} tabular-nums">${balText}</span>
+                    <a href="/families/${f.id}/ledger" class="text-sm text-primary-600 hover:text-primary-700">View Ledger</a>
+                </div>`;
+        }
         return `<div class="bg-surface border border-line rounded-2xl shadow-soft overflow-hidden">
             <div class="bg-primary-500 px-5 py-3">
                 <h3 class="text-lg font-bold text-white">${esc(f.name)}</h3>
@@ -80,10 +88,7 @@ function renderFamilies(families) {
             <div class="p-5">
                 <p class="text-sm text-ink-2 mb-2"><i class="fas fa-users mr-1"></i>${kids}</p>
                 ${f.primary_email ? '<p class="text-sm text-ink-3"><i class="fas fa-envelope mr-1"></i>' + esc(f.primary_email) + '</p>' : ''}
-                <div class="mt-3 pt-3 border-t border-line flex justify-between items-center">
-                    <span class="text-sm font-bold ${balClass} tabular-nums">${balText}</span>
-                    <a href="/families/${f.id}/ledger" class="text-sm text-primary-600 hover:text-primary-700">View Ledger</a>
-                </div>
+                ${moneyRow}
             </div>
         </div>`;
     }).join('');

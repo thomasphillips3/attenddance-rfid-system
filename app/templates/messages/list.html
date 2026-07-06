@@ -20,7 +20,9 @@
             <div>
                 <label class="{{ LABEL }}">Send To *</label>
                 <select id="msg-type" required onchange="updateRecipientFilter()" class="{{ INPUT }}">
+                    {% if current_user.is_admin %}{# whole-studio blasts are admin-only #}
                     <option value="all">All Parents</option>
+                    {% endif %}
                     <option value="class">Parents in a Class</option>
                     <option value="individual">Individual Student's Parent</option>
                 </select>
@@ -108,6 +110,9 @@ function updateRecipientFilter() {
         select.innerHTML = students.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
     }
 }
+// Initialize for the default selection — teachers have no "All Parents" option,
+// so their default is "class" and the filter must populate without a change event.
+updateRecipientFilter();
 
 async function sendMessage(e) {
     e.preventDefault();

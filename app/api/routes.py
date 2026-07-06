@@ -131,6 +131,26 @@ def _require_family_access(family_id):
     return jsonify({'error': 'Not authorized for this family'}), 403
 
 
+def _require_student_money_access(student_id):
+    """Billing variant of _require_student_access: ADMIN or a linked parent.
+    Teachers are staff but must not read financial data (least privilege —
+    Thomas, 2026-07-06)."""
+    if current_user.is_admin:
+        return None
+    if current_user.is_staff:
+        return jsonify({'error': 'Admin access required'}), 403
+    return _require_student_access(student_id)
+
+
+def _require_family_money_access(family_id):
+    """Billing variant of _require_family_access: ADMIN or a linked parent."""
+    if current_user.is_admin:
+        return None
+    if current_user.is_staff:
+        return jsonify({'error': 'Admin access required'}), 403
+    return _require_family_access(family_id)
+
+
 def _valid_amount(raw):
     """Coerce a money amount. Returns (value, None) or (None, (json, status)).
     Rejects non-numeric, non-positive, and absurdly large values so a typo or
@@ -1041,11 +1061,15 @@ def dashboard_stats():
 
 
 # ── Transaction endpoints ───────────────────────────────────────────
+# Billing is ADMIN-only (Thomas, 2026-07-06): teachers take attendance and see
+# rosters, but must not read the studio ledger or post charges/payments. Parents
+# keep their own-child financial views (ledger, plans, claims) via the
+# owner-checks inside those endpoints.
 
 @bp.route('/transactions', methods=['GET'])
 @login_required
 def get_transactions():
-    err = _staff_only()
+    err = _admin_only()
     if err:
         return err
     page = request.args.get('page', 1, type=int)
@@ -1075,6 +1099,9 @@ def get_transactions():
 @bp.route('/transactions', methods=['POST'])
 @login_required
 def create_transaction():
+    err = _admin_only()
+    if err:
+        return err
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -1127,7 +1154,7 @@ def create_transaction():
 @login_required
 def get_balances():
     """Balance summary for all active students — single SQL aggregate."""
-    err = _staff_only()
+    err = _admin_only()
     if err:
         return err
     students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
@@ -1278,7 +1305,7 @@ def export_students_csv():
 @login_required
 def export_transactions_csv():
     """Transaction ledger export for bookkeeping/taxes. Optional ?start=&end= (YYYY-MM-DD)."""
-    err = _staff_only()
+    err = _admin_only()
     if err:
         return err
     q = Transaction.query
@@ -1453,7 +1480,7 @@ def revenue_report():
 @login_required
 def get_student_ledger(student_id):
     """Full ledger with running balance — single pass."""
-    err = _require_student_access(student_id)
+    err = _require_student_money_access(student_id)
     if err:
         return err
     student = Student.query.get_or_404(student_id)
@@ -1471,6 +1498,9 @@ def get_student_ledger(student_id):
 @bp.route('/transactions/bulk-charge', methods=['POST'])
 @login_required
 def bulk_charge():
+    err = _admin_only()
+    if err:
+        return err
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -1543,7 +1573,7 @@ def delete_transaction(tid):
 @bp.route('/recurring-charges', methods=['GET'])
 @login_required
 def get_recurring_charges():
-    err = _staff_only()
+    err = _admin_only()
     if err:
         return err
     charges = RecurringCharge.query.order_by(RecurringCharge.created_at).all()
@@ -1553,6 +1583,9 @@ def get_recurring_charges():
 @bp.route('/recurring-charges', methods=['POST'])
 @login_required
 def create_recurring_charge():
+    err = _admin_only()
+    if err:
+        return err
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -1597,6 +1630,9 @@ def create_recurring_charge():
 @bp.route('/recurring-charges/<int:rc_id>', methods=['PUT', 'PATCH'])
 @login_required
 def update_recurring_charge(rc_id):
+    err = _admin_only()
+    if err:
+        return err
     """Edit an auto-billing rule — the studio raises tuition or shifts the billing
     day mid-year without having to delete and recreate (which risks a gap)."""
     rc = RecurringCharge.query.get_or_404(rc_id)
@@ -1632,6 +1668,9 @@ def update_recurring_charge(rc_id):
 @bp.route('/recurring-charges/<int:rc_id>', methods=['DELETE'])
 @login_required
 def delete_recurring_charge(rc_id):
+    err = _admin_only()
+    if err:
+        return err
     rc = RecurringCharge.query.get_or_404(rc_id)
     rc.is_active = False
     db.session.commit()
@@ -1641,6 +1680,9 @@ def delete_recurring_charge(rc_id):
 @bp.route('/recurring-charges/process', methods=['POST'])
 @login_required
 def process_recurring_charges():
+    err = _admin_only()
+    if err:
+        return err
     from app import _process_recurring_charges
     _process_recurring_charges()
     return jsonify({'message': 'Recurring charges processed'})
@@ -1660,7 +1702,7 @@ def square_status():
 @bp.route('/students/<int:student_id>/send-invoice', methods=['POST'])
 @login_required
 def send_student_invoice(student_id):
-    err = _staff_only()
+    err = _admin_only()
     if err:
         return err
     if not square_service.is_configured():
@@ -1809,9 +1851,11 @@ def get_rules():
 @bp.route('/rules', methods=['POST'])
 @login_required
 def create_rule():
-    # Staff-level by design: the Rules nav + page are shown to all staff (unlike
-    # the admin-gated Waivers/Locations), grouped with Messages + Time Clock.
-    # Parents are still blocked by the _restrict_parent_writes before_request.
+    # Admin-only (least privilege, Thomas 2026-07-06): rules are studio policy —
+    # teachers can view them (the nav/page stay staff) but not change them.
+    err = _admin_only()
+    if err:
+        return err
     data = request.get_json()
     if not data or not data.get('text'):
         return jsonify({'error': 'text is required'}), 400
@@ -1825,6 +1869,9 @@ def create_rule():
 @bp.route('/rules/<int:rule_id>', methods=['PUT'])
 @login_required
 def update_rule(rule_id):
+    err = _admin_only()
+    if err:
+        return err
     r = Rule.query.get_or_404(rule_id)
     data = request.get_json(silent=True) or {}
     if data.get('text'):
@@ -1841,6 +1888,9 @@ def update_rule(rule_id):
 @bp.route('/rules/<int:rule_id>', methods=['DELETE'])
 @login_required
 def delete_rule(rule_id):
+    err = _admin_only()
+    if err:
+        return err
     r = Rule.query.get_or_404(rule_id)
     r.is_active = False
     db.session.commit()
@@ -1998,6 +2048,10 @@ def send_message():
     rtype = _clean_str(data.get('recipient_type'))
     if not subject or not body or not rtype:
         return jsonify({'error': 'subject, body, and recipient_type are required'}), 400
+    if rtype == 'all' and not current_user.is_admin:
+        # Whole-studio blasts are admin-only (least privilege); teachers can
+        # still message a class or an individual family.
+        return jsonify({'error': 'Only an admin can message all parents'}), 403
 
     emails = _resolve_recipient_emails(rtype, data.get('recipient_filter'))
     if isinstance(emails, tuple):
@@ -2112,17 +2166,23 @@ def get_families():
     result = []
     for f in families:
         students = family_students[f.id]
-        total_charges = sum(balances_map[s.id]['total_charges'] for s in students)
-        total_payments = sum(balances_map[s.id]['total_payments'] for s in students)
-        result.append({
+        row = {
             'id': f.id, 'name': f.name,
             'primary_email': f.primary_email, 'primary_phone': f.primary_phone,
             'student_count': len(students),
             'students': [{'id': s.id, 'full_name': s.full_name} for s in students],
-            'total_charges': f'{total_charges:.2f}',
-            'total_payments': f'{total_payments:.2f}',
-            'balance': f'{total_charges - total_payments:.2f}',
-        })
+        }
+        # Billing is admin-only: teachers get the family list (for forms and
+        # sibling context) but not the money columns.
+        if current_user.is_admin:
+            total_charges = sum(balances_map[s.id]['total_charges'] for s in students)
+            total_payments = sum(balances_map[s.id]['total_payments'] for s in students)
+            row.update({
+                'total_charges': f'{total_charges:.2f}',
+                'total_payments': f'{total_payments:.2f}',
+                'balance': f'{total_charges - total_payments:.2f}',
+            })
+        result.append(row)
     return jsonify({'families': result})
 
 
@@ -2147,7 +2207,7 @@ def create_family():
 @login_required
 def get_family_ledger(family_id):
     """Combined ledger for all students in a family — single pass."""
-    err = _require_family_access(family_id)
+    err = _require_family_money_access(family_id)
     if err:
         return err
     family = Family.query.get_or_404(family_id)
@@ -2702,7 +2762,9 @@ def claim_payment():
             my_families = {Student.query.get(sid).family_id for sid in my_students}
             if family_id not in my_families:
                 return jsonify({'error': 'Not authorized for this family'}), 403
-    elif not current_user.is_staff:
+    elif not current_user.is_admin:
+        # Billing is admin-only: teachers can't record payment claims on a
+        # family's behalf (least privilege).
         return jsonify({'error': 'Not authorized'}), 403
 
     p = PendingPayment(
@@ -2751,7 +2813,8 @@ def list_pending_payments():
 @bp.route('/pending-payments/count', methods=['GET'])
 @login_required
 def pending_payments_count():
-    if not current_user.is_staff:
+    # Billing badge is admin-only; the count leaks payment activity volume.
+    if not current_user.is_admin:
         return jsonify({'count': 0})
     return jsonify({'count': PendingPayment.query.filter_by(status='pending').count()})
 
@@ -4029,7 +4092,7 @@ def delete_ticket_type(tid):
 @bp.route('/performances/<int:pid>/ticket-orders', methods=['GET'])
 @login_required
 def list_ticket_orders(pid):
-    if not current_user.is_staff:
+    if not current_user.is_admin:
         return jsonify({'error': 'Staff access required'}), 403
     Performance.query.get_or_404(pid)
     type_ids = [t.id for t in TicketType.query.filter_by(performance_id=pid).all()]
@@ -4076,6 +4139,9 @@ def create_ticket_order(pid):
         if student_id and student_id not in _parent_student_ids(current_user):
             return jsonify({'error': 'Not authorized for this student'}), 403
         paid = False  # parent requests are unpaid until the studio confirms
+    elif not current_user.is_admin:
+        # Ticket sales are money — admin-only on the staff side (least privilege).
+        return jsonify({'error': 'Admin access required'}), 403
     else:
         paid = bool(data.get('paid', False))
 
@@ -4265,8 +4331,9 @@ def list_payment_plans():
 @bp.route('/students/<int:student_id>/payment-plan', methods=['GET'])
 @login_required
 def get_payment_plan(student_id):
-    if current_user.is_parent and student_id not in _parent_student_ids(current_user):
-        return jsonify({'error': 'Not authorized'}), 403
+    err = _require_student_money_access(student_id)
+    if err:
+        return err
     plan = PaymentPlan.query.filter_by(student_id=student_id, is_active=True).order_by(desc(PaymentPlan.created_at)).first()
     return jsonify({'plan': _plan_to_dict(plan) if plan else None})
 

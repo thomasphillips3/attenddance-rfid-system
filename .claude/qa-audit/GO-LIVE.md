@@ -95,12 +95,8 @@ with a "copy these emails" fallback until SMTP is set). Turn them on as ready.
      data-portability path if you ever leave AttenDANCE.
   2. **Automatic — ✅ verified live (2026-07-06):** Fly is taking daily snapshots
      of `attenddance_data` (`vol_vjy1k1q7zjk60y9v`) — 5 on record, one per day.
-     **But retention is only 5 days**: a bad bulk operation noticed a week later
-     has no good snapshot left. Recommended one-liner (max is 60 days; cost is
-     negligible — snapshots are incremental, ~68 MiB stored total today):
-     ```
-     fly volumes update vol_vjy1k1q7zjk60y9v --snapshot-retention 60
-     ```
+     ✅ **Retention raised to 60 days (Thomas, 2026-07-06)** via
+     `fly volumes update vol_vjy1k1q7zjk60y9v --snapshot-retention 60`.
      The manual download is still the one you control — don't rely on Fly
      snapshots alone.
 - **Restore recipes (hope you never need them):**
