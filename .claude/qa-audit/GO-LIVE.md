@@ -21,7 +21,7 @@ a real `SECRET_KEY`, and the seeded admin password is publicly known.
   restarted healthy (200). Square wasn't configured, so nothing encrypted got
   orphaned.
 
-- [ ] **Change the admin password.** After deploy, log in as `admin` and go to
+- [x] **Change the admin password.** ✅ done 2026-07-06. After deploy, log in as `admin` and go to
   `/auth/change-password`. (Until then the default `admin123` is public.) The
   demo-credentials box on the login page auto-hides in production.
 - **Demo parent self-cleans — no action needed.** The prod DB currently has the
@@ -34,7 +34,7 @@ a real `SECRET_KEY`, and the seeded admin password is publicly known.
 
 ## 2. Ship the branch (10 min)
 
-- [ ] Review the branch: the P0 security fixes (IDOR, SECRET_KEY, CSRF), the
+- [x] ✅ Merged via PR #1 (2026-07-06, CI green). Review the branch: the P0 security fixes (IDOR, SECRET_KEY, CSRF), the
   parent-portal JS repair, the billing fixes, the new reports, and CI. Merge to
   `main`.
 - ✅ **Deploy rehearsal already done (2026-07-06):** the production image was
@@ -42,8 +42,8 @@ a real `SECRET_KEY`, and the seeded admin password is publicly known.
   it, login through the proxied CSRF shape, Secure/HttpOnly/Lax cookie, HSTS,
   JSON API errors, and the demo-parent self-clean were all verified against the
   live container.
-- [ ] Deploy to Fly (`flyctl deploy`, or your existing push-to-deploy flow).
-- [ ] **Confirm it booted** — if you forgot step 1, the logs will show
+- [x] Deploy to Fly ✅ done 2026-07-06 (`flyctl deploy`).
+- [x] **Confirm it booted** ✅ verified (boot logs clean, demo-parent self-clean fired) — if you forgot step 1, the logs will show
   `RuntimeError: Refusing to start in production ... SECRET_KEY`. That's the
   fail-closed guard working; set the secret and redeploy.
 
@@ -51,11 +51,11 @@ a real `SECRET_KEY`, and the seeded admin password is publicly known.
 
 ## 3. Post-deploy smoke test (5 min)
 
-- [ ] Log in as admin; open Dashboard, Students, Payments, Calendar — all load.
-- [ ] Open a parent account (or the demo parent) and confirm the portal loads
+- [x] Log in as admin; open Dashboard, Students, Payments, Calendar — all load. ✅ verified live 2026-07-06.
+- [x] Parent portal: the demo parent is deleted (test data cleared 2026-07-06); verify with the first real parent account
   its sections (this was fully broken before the JS fix — it must show payment
   methods, makeups, etc., not a static shell).
-- [ ] Open `/reports/revenue` and `/reports/aging` — charts + tables render.
+- [x] Open `/reports/revenue` and `/reports/aging` — charts + tables render. ✅ verified live 2026-07-06.
 
 ---
 
