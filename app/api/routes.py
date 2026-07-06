@@ -1004,7 +1004,8 @@ def dashboard_stats():
         func.date(Attendance.check_in_time) >= week_start
     ).count()
     recent_rfid_logs = RFIDLog.query.filter(
-        RFIDLog.scan_time >= datetime.utcnow() - timedelta(days=1)
+        # Local: scan_time is stored studio-local, so the cutoff must be too.
+        RFIDLog.scan_time >= datetime.now() - timedelta(days=1)
     ).count()
 
     return jsonify({
@@ -5128,7 +5129,8 @@ def analytics_retention():
         return err
     today = date.today()
     month_start = today.replace(day=1)
-    cutoff_30 = datetime.utcnow() - timedelta(days=30)
+    # Local: compared against Attendance.check_in_time, which is stored studio-local.
+    cutoff_30 = datetime.now() - timedelta(days=30)
 
     active = Student.query.filter_by(is_active=True).count()
     inactive = Student.query.filter_by(is_active=False).count()

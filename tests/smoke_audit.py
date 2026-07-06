@@ -1047,6 +1047,32 @@ def run_analytics(ids):
         record("Retention at_risk_count matches the at_risk list length (capped 50)",
                d.get("at_risk_count", -1) >= len(d.get("at_risk", [])),
                f"count={d.get('at_risk_count')} list={len(d.get('at_risk', []))}", "P3")
+        # At-risk correctness + the local-date cutoff: a fresh active student with
+        # no attendance is at-risk; checking them in TODAY drops them from the
+        # count. The cutoff compares against the studio-local check_in_time, so it
+        # must itself be local (not utcnow) or a boundary check-in mis-counts.
+        from datetime import time as _t_an
+        from app.models import User as _U_an, DanceClass as _DC_an, Student as _S_an, Family as _F_an, ClassEnrollment as _CE_an
+        with app.app_context():
+            adm = _U_an.query.filter_by(username="admin").first()
+            fam = _F_an(name="AtRisk Fam")
+            db.session.add(fam)
+            db.session.flush()
+            st = _S_an(first_name="AtRisk", last_name="Kid", family_id=fam.id, is_active=True)
+            db.session.add(st)
+            db.session.flush()
+            cls = _DC_an(name="AtRiskClass", day_of_week=0, start_time=_t_an(16, 0),
+                         end_time=_t_an(17, 0), instructor_id=adm.id)
+            db.session.add(cls)
+            db.session.flush()
+            db.session.add(_CE_an(student_id=st.id, class_id=cls.id))
+            db.session.commit()
+            arid, acid = st.id, cls.id
+        before = (c.get("/api/analytics/retention").get_json() or {}).get("at_risk_count", 0)
+        c.post("/api/attendance/toggle", json={"student_id": arid, "class_id": acid})  # check in today
+        after = (c.get("/api/analytics/retention").get_json() or {}).get("at_risk_count", 0)
+        record("A check-in today removes a student from the at-risk count (local-date cutoff)",
+               after == before - 1, f"at_risk before={before} after={after} (want -1)", "P2")
     with app.test_client() as c:
         login(c, "parent_a", "pw")
         rp = c.get("/api/analytics/retention")
