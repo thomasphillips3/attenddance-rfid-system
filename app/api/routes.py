@@ -2630,10 +2630,11 @@ def _send_receipt(parent_email, who, amount, method):
         f"You can view your balance any time in the parent portal.\n\n"
         f"Thank you,\n{STUDIO_NAME}"
     )
-    try:
-        email_service.send_email(parent_email, f'Payment received — {STUDIO_NAME}', body)
-    except Exception:
-        logger.exception("Failed to send payment receipt to %s", parent_email)
+    # Fire-and-forget: the receipt is best-effort and must not make the admin's
+    # payment-confirm (or the Square webhook) wait on a slow SMTP send. Same
+    # pattern as the admin-notify emails. The payment is already committed by
+    # the time this runs, so a failed/slow receipt never affects the balance.
+    _send_email_async([parent_email], f'Payment received — {STUDIO_NAME}', body)
 
 
 @bp.route('/payments/claim', methods=['POST'])

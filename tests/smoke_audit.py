@@ -2922,6 +2922,52 @@ def run_email_header_injection():
            "P1")
 
 
+def run_receipt_non_blocking():
+    """Confirming a payment emails a best-effort receipt — it must NOT block the
+    admin's confirm on a slow SMTP send (the payment is already committed, so a
+    slow/failed receipt is harmless). Arm a slow sender, confirm a pending
+    payment, and assert the confirm returns fast."""
+    import time
+    from app import email as email_service
+    from app.models import User, Student, Family, PendingPayment
+    with app.app_context():
+        fam = Family(name="Receipt Fam", primary_email="rcpt@x.com")
+        parent = User(username="rcpt_parent", email="rcptp@x.com",
+                      first_name="R", last_name="P", role="parent")
+        parent.set_password("pw")
+        db.session.add_all([fam, parent])
+        db.session.flush()
+        st = Student(first_name="Rcpt", last_name="Kid", family_id=fam.id,
+                     is_active=True, parent_email="rcpt@x.com")
+        db.session.add(st)
+        db.session.flush()
+        pp = PendingPayment(student_id=st.id, parent_id=parent.id, amount=50.0,
+                            method="zelle", status="pending")
+        db.session.add(pp)
+        db.session.commit()
+        pid = pp.id
+    app.config["MAIL_SERVER"] = "smtp.example.com"
+    orig = email_service.send_email
+
+    def slow_send(*a, **k):
+        time.sleep(2)
+        return 1
+
+    email_service.send_email = slow_send
+    try:
+        with app.test_client() as c:
+            login(c, "admin", "admin123")
+            t0 = time.monotonic()
+            r = c.post(f"/api/pending-payments/{pid}/confirm", json={})
+            elapsed = time.monotonic() - t0
+    finally:
+        email_service.send_email = orig
+        app.config["MAIL_SERVER"] = None
+    record(f"Confirming a payment doesn't block on the receipt send (returned in {elapsed:.2f}s)",
+           r.status_code == 200 and elapsed < 1.0,
+           f"status={r.status_code} elapsed={elapsed:.2f}s", "P2")
+
+
 def run_confirm_payment_race():
     """Confirming a PendingPayment is a check-then-act on real money: an admin
     double-click (or two open tabs) fires two concurrent confirms that both pass
@@ -4079,6 +4125,7 @@ def main():
     run_qr_upload_safety()
     run_email_header_injection()
     run_confirm_payment_race()
+    run_receipt_non_blocking()
     run_registration_approve_race()
     run_attendance_race()
     run_late_fee_race()
