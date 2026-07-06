@@ -1946,6 +1946,25 @@ def run_message_blast(ids):
                f"got {r.status_code}", "P0")
 
 
+def run_clean_str_backstop():
+    """_clean_str has a generous default length backstop (SQLite ignores
+    VARCHAR(n), so NO client field should be able to store multi-MB). Verify both
+    definitions cap at the 50 KB default, that an explicit tight cap overrides,
+    and that maxlen=None opts out."""
+    from app.api.routes import _clean_str as _cs_routes
+    from app.helpers import _clean_str as _cs_helpers
+    huge = "A" * 200000
+    checks = {
+        "routes default 50KB": len(_cs_routes(huge)) == 50000,
+        "helpers default 50KB": len(_cs_helpers(huge)) == 50000,
+        "explicit tight cap overrides": len(_cs_routes(huge, 80)) == 80,
+        "maxlen=None opts out": len(_cs_routes(huge, maxlen=None)) == 200000,
+    }
+    bad = [k for k, ok in checks.items() if not ok]
+    record("_clean_str default backstop caps client text at 50 KB (both defs)",
+           not bad, f"wrong: {bad}", "P3")
+
+
 def run_registration_field_caps():
     """The public (unauthenticated) registration must cap field lengths — SQLite
     ignores VARCHAR(n), so an uncapped multi-MB field would bloat the DB volume.
@@ -4138,6 +4157,7 @@ def main():
     run_login_by_email()
     run_registration_flow()
     run_registration_field_caps()
+    run_clean_str_backstop()
     run_amount_validation(ids)
     run_payment_plans(ids)
     run_recital_money(ids)

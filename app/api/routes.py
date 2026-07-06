@@ -190,15 +190,17 @@ def _resolve_student_id(raw, required=True):
     return sid, None
 
 
-def _clean_str(value, maxlen=None):
+def _clean_str(value, maxlen=50_000):
     """Coerce a JSON value to a trimmed string. Scalars (str/int/float) stringify;
     None and non-scalars (list/dict) become '' so a `not name` guard still fires.
     Guards every `.strip()` on client input against a non-string blowing up (a
     JSON `name: 123` would otherwise raise AttributeError -> 500).
 
-    `maxlen` truncates the result — pass it on UNAUTHENTICATED input (public
-    registration). SQLite ignores VARCHAR(n) limits, so without a cap a scripted
-    submit could stuff a multi-MB string into a field and bloat the DB volume."""
+    `maxlen` truncates the result. It DEFAULTS to a generous 50 KB backstop —
+    SQLite ignores VARCHAR(n) limits, so without a cap a client (esp. the public
+    registration) could stuff a multi-MB string into any field and bloat the DB
+    volume; no legitimate field (even a message-blast body) approaches 50 KB.
+    High-risk fields pass a much tighter cap; pass maxlen=None to opt out."""
     if value is None or isinstance(value, (list, dict)):
         return ''
     s = str(value).strip()

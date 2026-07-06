@@ -288,11 +288,14 @@ def class_to_dict(dance_class) -> dict:
     }
 
 
-def _clean_str(value):
-    """Coerce a JSON value to a trimmed string; None/non-scalar -> ''."""
+def _clean_str(value, maxlen=50_000):
+    """Coerce a JSON value to a trimmed string; None/non-scalar -> ''. `maxlen`
+    defaults to a generous 50 KB backstop against multi-MB storage abuse (SQLite
+    ignores VARCHAR(n) limits); no legitimate field approaches it."""
     if value is None or isinstance(value, (list, dict)):
         return ''
-    return str(value).strip()
+    s = str(value).strip()
+    return s[:maxlen] if maxlen else s
 
 
 def _utc_iso(dt):
