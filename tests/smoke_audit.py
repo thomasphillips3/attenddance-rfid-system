@@ -4073,6 +4073,43 @@ def run_withdrawn_student_balance():
            f"bal_owe={bal_owe} settled_shown={bal_settled} age_owe={bool(age_owe)}", "P2")
 
 
+def run_parent_sees_withdrawn_child():
+    """Collection-critical, from the PARENT side: a withdrawn (is_active=False)
+    child who still owes must stay visible on their own parent's portal, with the
+    balance and a pay affordance — otherwise the family can't see or pay the debt.
+    get_children() deliberately does NOT filter is_active; a well-meaning 'declutter
+    the portal' change that filtered it would silently hide an owed balance from the
+    one person who pays it. The staff-side balances/aging test can't catch that (it
+    queries a different path) — this drives the /parent page as the parent."""
+    from datetime import date as _date
+    from app.models import User, Family, Student, Transaction, ParentStudent
+    with app.app_context():
+        fam = Family(name="WD Portal Fam", primary_email="wdp@x.com")
+        db.session.add(fam)
+        db.session.flush()
+        kid = Student(first_name="Zizi", last_name="Withdrawn", family_id=fam.id, is_active=False)
+        db.session.add(kid)
+        db.session.flush()
+        par = User(username="wd_portal_parent", email="wdportal@x.com", role="parent",
+                   first_name="Wanda", last_name="Withdrawn", is_active=True)
+        par.set_password("pw")
+        db.session.add(par)
+        db.session.flush()
+        db.session.add_all([
+            ParentStudent(parent_id=par.id, student_id=kid.id),
+            Transaction(student_id=kid.id, type="charge", amount=77, category="tuition",
+                        payment_method="n/a", description="owed", transaction_date=_date.today()),
+        ])
+        db.session.commit()
+    with app.test_client() as c:
+        login(c, "wd_portal_parent", "pw")
+        r = c.get("/parent")
+    body = r.get_data(as_text=True)
+    record("Withdrawn owing child still shows on their parent's portal, balance + pay button",
+           r.status_code == 200 and "Zizi" in body and "77.00" in body,
+           f"status={r.status_code} name={'Zizi' in body} amt={'77.00' in body}", "P2")
+
+
 def run_page_route_authz(ids):
     """The page routes (main blueprint) that render a specific student/class must
     not leak to a parent who doesn't own that student — the API endpoints were
@@ -4442,6 +4479,7 @@ def main():
     run_registrations_pagination()
     run_registration_notify_throttle()
     run_withdrawn_student_balance()
+    run_parent_sees_withdrawn_child()
     run_skill_archive_safe()
     run_parent_portal_classes()
     run_withdraw_frees_enrollment()
