@@ -324,13 +324,26 @@ def create_app(config_name=None):
 
     @app.errorhandler(404)
     def not_found_error(error):
-        from flask import render_template
+        from flask import render_template, request, jsonify
+        # API clients expect JSON — an HTML error page makes res.json() throw
+        # client-side and swallows the actual error.
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'Not found'}), 404
         return render_template('errors/404.html'), 404
+
+    @app.errorhandler(405)
+    def method_not_allowed_error(error):
+        from flask import render_template, request, jsonify
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'Method not allowed'}), 405
+        return render_template('errors/404.html'), 405
 
     @app.errorhandler(500)
     def internal_error(error):
-        from flask import render_template
+        from flask import render_template, request, jsonify
         db.session.rollback()
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'Internal server error'}), 500
         return render_template('errors/500.html'), 500
 
     @app.context_processor

@@ -4162,6 +4162,31 @@ def run_withdrawn_student_balance():
            f"bal_owe={bal_owe} settled_shown={bal_settled} age_owe={bool(age_owe)}", "P2")
 
 
+def run_api_error_shape():
+    """API errors must be JSON, page errors must be the branded HTML page.
+    Before this guard, a get_or_404 on any /api/* route returned the HTML 404
+    page to a JSON client — res.json() throws client-side and the real error is
+    swallowed into a generic 'Failed to load'."""
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r404 = c.get("/api/students/999999")            # get_or_404 inside an endpoint
+        rroute = c.get("/api/no-such-endpoint")          # unrouted API path
+        r405 = c.delete("/api/balances")                 # GET-only route, wrong method
+        ok_api = (r404.status_code == 404 and r404.is_json and "error" in (r404.get_json() or {})
+                  and rroute.status_code == 404 and rroute.is_json
+                  and r405.status_code == 405 and r405.is_json)
+        record("API 404/405 errors are JSON (not the HTML error page)",
+               ok_api,
+               f"404={r404.status_code}/{r404.content_type} route={rroute.status_code}/{rroute.content_type} "
+               f"405={r405.status_code}/{r405.content_type}", "P2")
+    with app.test_client() as c:  # anonymous — the public hits bad links logged-out
+        rp = c.get("/no-such-page")
+        body = rp.get_data(as_text=True)
+        record("Page 404 renders the branded HTML error page",
+               rp.status_code == 404 and "text/html" in (rp.content_type or "") and "html" in body.lower(),
+               f"status={rp.status_code} type={rp.content_type}", "P3")
+
+
 def run_parent_sees_withdrawn_child():
     """Collection-critical, from the PARENT side: a withdrawn (is_active=False)
     child who still owes must stay visible on their own parent's portal, with the
@@ -4574,6 +4599,7 @@ def main():
     run_registration_notify_throttle()
     run_withdrawn_student_balance()
     run_parent_sees_withdrawn_child()
+    run_api_error_shape()
     run_skill_archive_safe()
     run_parent_portal_classes()
     run_withdraw_frees_enrollment()
