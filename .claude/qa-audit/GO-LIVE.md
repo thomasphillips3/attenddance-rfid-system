@@ -2,7 +2,9 @@
 
 The concrete steps to take the hardened `fix/api-authorization-and-secret-key`
 branch live for the fall session. Do them in order. Full findings behind each
-item are in [ASSESSMENT.md](ASSESSMENT.md).
+item are in [ASSESSMENT.md](ASSESSMENT.md). Once deployed, hand
+[FALL-SETUP.md](FALL-SETUP.md) to Carollette — it's the operator runbook for
+standing up the fall session (classes, tuition, enrollment, first billing).
 
 ---
 
