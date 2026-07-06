@@ -308,8 +308,8 @@ function updateProgress() {
 
 async function fetchItems() {
   try {
-    const res = await fetch(`${API_BASE}/items`);
-    if (!res.ok) throw new Error(`GET /items ${res.status}`);
+    const res = await fetch(API_BASE);
+    if (!res.ok) throw new Error(`GET ${res.status}`);
     const data = await res.json();
     items = data.items || [];
     render();
@@ -321,7 +321,10 @@ async function fetchItems() {
 }
 
 async function onToggle(itemId, checkboxEl) {
-  const idx = items.findIndex(i => i.item_id === itemId);
+  // Compare as strings: data-item-id (a DOM attribute) is always a string,
+  // but Google Sheets stores item_id as a number when the cell looks
+  // numeric — a strict === here would never match and silently break toggling.
+  const idx = items.findIndex(i => String(i.item_id) === String(itemId));
   if (idx === -1) return;
   const prev = { ...items[idx] };
   const newDone = checkboxEl.checked;
@@ -334,12 +337,16 @@ async function onToggle(itemId, checkboxEl) {
   render();
 
   try {
-    const res = await fetch(`${API_BASE}/toggle`, {
+    // No explicit Content-Type: Apps Script Web Apps don't handle a CORS
+    // preflight (OPTIONS) correctly, so the request must stay a CORS-simple
+    // one. Omitting the header lets the browser default to text/plain, which
+    // doesn't trigger a preflight; Apps Script parses the raw body as JSON
+    // regardless of the declared type.
+    const res = await fetch(API_BASE, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ item_id: itemId, done: newDone }),
     });
-    if (!res.ok) throw new Error(`POST /toggle ${res.status}`);
+    if (!res.ok) throw new Error(`POST ${res.status}`);
     fetchItems();
   } catch (err) {
     items[idx] = prev;
