@@ -1080,6 +1080,11 @@ def create_transaction():
             created_by=current_user.id,
         )
         db.session.add(t)
+        # Log money creation to the audit trail, same as deletion/confirmation —
+        # otherwise the trail shows who *removed* a charge but not who *posted* one
+        # (matters since staff, not only admins, can post charges).
+        AuditLog.record(current_user.id, 'transaction.create',
+                        f'{txn_type} ${float(amount):.2f} {data["category"]} for {student.full_name}')
         db.session.commit()
         return jsonify(transaction_to_dict(t)), 201
     except Exception:
@@ -1472,6 +1477,8 @@ def bulk_charge():
         )
         db.session.add(t)
         charged.append(e.student_id)
+    AuditLog.record(current_user.id, 'bulk_charge',
+                    f'${float(amount):.2f} {data["category"]} to {len(charged)} students in {dance_class.name}')
     db.session.commit()
     return jsonify({'message': f'Charged {len(charged)} students', 'count': len(charged)}), 201
 

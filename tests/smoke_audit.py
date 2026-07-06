@@ -1388,6 +1388,43 @@ def run_rfid_checkin_local_day():
            f"scan_ok={ok} att={'none' if att is None else att.check_in_time.isoformat()}", "P2")
 
 
+def run_money_creation_audited():
+    """Posting money must hit the audit trail, not just deleting it — otherwise
+    the trail shows who *removed* a charge but not who *added* one (matters since
+    staff, not only admins, can post charges). Post a charge and a bulk charge,
+    then assert both actions are recorded in the AuditLog."""
+    from datetime import time as _time
+    from app.models import (User, DanceClass, Student, Family, ClassEnrollment, AuditLog)
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        fam = Family(name="Audit Fam")
+        db.session.add(fam)
+        db.session.flush()
+        s = Student(first_name="Aud", last_name="Itlog", family_id=fam.id, is_active=True)
+        db.session.add(s)
+        db.session.flush()
+        cls = DanceClass(name="AuditClass", day_of_week=0, start_time=_time(16, 0),
+                         end_time=_time(17, 0), instructor_id=adm.id)
+        db.session.add(cls)
+        db.session.flush()
+        db.session.add(ClassEnrollment(student_id=s.id, class_id=cls.id))
+        db.session.commit()
+        sid, cid = s.id, cls.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        rc = c.post("/api/transactions", json={"student_id": sid, "type": "charge",
+                                               "amount": 42.42, "category": "tuition"})
+        rb = c.post("/api/transactions/bulk-charge", json={"class_id": cid, "amount": 15,
+                                                           "category": "tuition"})
+    with app.app_context():
+        actions = {a.action for a in AuditLog.query.filter(
+            AuditLog.action.in_(["transaction.create", "bulk_charge"])).all()}
+    record("Posting a charge and a bulk charge are written to the audit trail",
+           rc.status_code == 201 and rb.status_code == 201
+           and "transaction.create" in actions and "bulk_charge" in actions,
+           f"charge={rc.status_code} bulk={rb.status_code} actions={actions}", "P2")
+
+
 def run_costume_charge_race():
     """Posting a costume fee only charges not-yet-charged assignments (idempotent
     on a sequential re-run), but it's check-then-act: two concurrent charge runs
@@ -3731,6 +3768,7 @@ def main():
     run_rfid_checkin_local_day()
     run_rfid_reuses_app()
     run_registration_approve_capacity()
+    run_money_creation_audited()
     run_costume_charge_race()
     run_full_mutation_fuzz()
     run_update_fuzz()
