@@ -33,6 +33,12 @@ Assumes the app is deployed and the admin password is changed
 - Optional, in **Settings**: late fee amount + minimum balance (applied via
   the Payments page when you choose, never automatically), Zelle/Cash App
   display, message templates.
+- **Fresh paperwork for the new season:** signatures and rule initials are
+  per-form, per-dancer, forever — there's no "reset" button. If you want new
+  fall signatures, create a NEW waiver form (e.g. "2026–27 Liability Waiver")
+  in Forms & Waivers and retire the old one; same idea for rules (add the new
+  season's rules; parents initial anything they haven't initialed). Parents
+  see outstanding forms on their portal automatically.
 
 ## 3. Open enrollment (5 min)
 
