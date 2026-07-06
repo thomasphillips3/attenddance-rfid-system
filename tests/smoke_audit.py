@@ -1330,8 +1330,10 @@ def run_update_valid_id_fuzz():
     VALID-id path (unguarded int()/float() -> 500) slipped through. Seed real
     rows and PUT garbage numeric bodies to their update endpoints with valid ids;
     assert no 5xx."""
+    from datetime import time as _t_uf
     from app.models import (User, Rule, WaiverTemplate, MakeupClass, Costume,
-                            Student, Family, Recital, RecitalNumber)
+                            Student, Family, Recital, RecitalNumber, DanceClass,
+                            RecurringCharge, PerformanceGroup)
     with app.app_context():
         adm = User.query.filter_by(username="admin").first()
         fam = Family(name="UpdFuzz Fam")
@@ -1345,10 +1347,15 @@ def run_update_valid_id_fuzz():
         mk = MakeupClass(student_id=st.id, status="scheduled", requested_by=adm.id)
         cos = Costume(name="UF costume", fee=10)
         rec = Recital(year=2031, title="UF recital")
-        db.session.add_all([rule, wt, mk, cos, rec])
+        cls = DanceClass(name="UF class", day_of_week=0, start_time=_t_uf(16, 0),
+                         end_time=_t_uf(17, 0), instructor_id=adm.id)
+        grp = PerformanceGroup(name="UF group")
+        db.session.add_all([rule, wt, mk, cos, rec, cls, grp])
         db.session.flush()
         num = RecitalNumber(recital_id=rec.id, title="UF number", order_index=1)
-        db.session.add(num)
+        rc = RecurringCharge(class_id=cls.id, amount=98, category="tuition",
+                             day_of_month=1, created_by=adm.id)
+        db.session.add_all([num, rc])
         db.session.commit()
         targets = [
             (f"/api/rules/{rule.id}", {"display_order": "x"}),
@@ -1357,6 +1364,10 @@ def run_update_valid_id_fuzz():
             (f"/api/costumes/{cos.id}", {"fee": "x"}),
             (f"/api/recitals/{rec.id}", {"year": "x"}),
             (f"/api/recital-numbers/{num.id}", {"order_index": "x", "student_id": "x"}),
+            (f"/api/classes/{cls.id}", {"day_of_week": "x", "max_students": "x"}),
+            (f"/api/recurring-charges/{rc.id}", {"day_of_month": "x", "amount": "x"}),
+            (f"/api/performance/groups/{grp.id}", {"is_active": "x"}),
+            (f"/api/students/{st.id}", {"date_of_birth": "x", "grade": {"a": 1}}),
         ]
     with app.test_client() as c:
         login(c, "admin", "admin123")
