@@ -2549,7 +2549,7 @@ def run_parent_input_robustness(ids):
     for an actual parent — the admin sweep can't see it. Seed the target rows,
     then post malformed ids AS a parent and assert no 500 (and no orphan row)."""
     from app.models import (Rule, Audition, Performance, TicketType,
-                            PerformanceGroup)
+                            PerformanceGroup, WaiverTemplate)
     cid = ids["child_a"]
     with app.app_context():
         grp = PerformanceGroup(name="Robustness Co")
@@ -2558,12 +2558,13 @@ def run_parent_input_robustness(ids):
         aud = Audition(title="Robust Audition", group_id=grp.id, is_open=True)
         rule = Rule(text="Be kind", display_order=99)
         perf = Performance(title="Robust Show", group_id=grp.id)
-        db.session.add_all([aud, rule, perf])
+        wt = WaiverTemplate(title="Robust Waiver", body="b", allow_decline=True)
+        db.session.add_all([aud, rule, perf, wt])
         db.session.flush()
         tt = TicketType(performance_id=perf.id, name="GA", price=10)
         db.session.add(tt)
         db.session.commit()
-        aid, rid, pid, ttid = aud.id, rule.id, perf.id, tt.id
+        aid, rid, pid, ttid, wtid = aud.id, rule.id, perf.id, tt.id, wt.id
 
     cases = [
         (f"/api/performance/auditions/{aid}/signup",
@@ -2576,6 +2577,19 @@ def run_parent_input_robustness(ids):
          [{"ticket_type_id": ttid, "quantity": "lots", "student_id": cid},
           {"ticket_type_id": ttid, "student_id": "xyz"},
           {"ticket_type_id": ttid, "student_id": -1}]),
+        # The other parent-allowed writes, exercised through the is_parent branch
+        # the admin fuzz never reaches.
+        ("/api/payments/claim",
+         [{"student_id": cid, "amount": "x", "method": "zelle"},
+          {"student_id": cid, "amount": 50, "method": []},
+          {"student_id": cid, "amount": 50, "method": "zelle", "reference": 123}]),
+        (f"/api/students/{cid}/waivers/{wtid}/sign",
+         [{"signed_name": 123, "consent": "maybe"}, {"signed_name": "Me", "consent": []}, {}]),
+        ("/api/makeups",
+         [{"student_id": cid, "missed_date": "bad", "note": 123},
+          {"student_id": cid, "missed_class_id": "x"}, {"student_id": cid, "makeup_date": []}]),
+        ("/api/donations",
+         [{"amount": "x", "method": "zelle"}, {"amount": 50, "method": []}, {"amount": 50, "note": {}}]),
     ]
     with app.test_client() as c:
         login(c, "parent_a", "pw")
