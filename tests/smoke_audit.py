@@ -492,6 +492,29 @@ def run_admin_parent_reset_link(ids):
         db.session.commit()
 
 
+def run_csrf_guard_behind_tls_proxy():
+    """Deploy-day safety: Fly terminates TLS, so Flask sees http:// internally
+    while the browser sends Origin: https://<host>. The CSRF origin guard must
+    compare HOSTS only — a scheme-sensitive compare would 403 every browser
+    POST in production, starting with login. Simulate the proxied shape."""
+    with app.test_client() as c:
+        # Same host, https Origin (what Fly forwards) — must pass the guard.
+        r = c.post("/auth/login",
+                   data={"username": "admin", "password": "admin123"},
+                   headers={"Origin": "https://localhost"},
+                   environ_overrides={"HTTP_X_FORWARDED_PROTO": "https"})
+        same_ok = r.status_code in (200, 302)
+    with app.test_client() as c:
+        # Different host — must still be blocked.
+        r2 = c.post("/auth/login",
+                    data={"username": "admin", "password": "admin123"},
+                    headers={"Origin": "https://evil.example"})
+        cross_blocked = r2.status_code == 403
+    record("CSRF origin guard is scheme-agnostic (https Origin passes; foreign host blocked)",
+           same_ok and cross_blocked,
+           f"same_origin={'pass' if same_ok else r.status_code} cross={r2.status_code}", "P0")
+
+
 def run_demo_parent_prod_lockout():
     """The demo parent (parent-demo/parent123) is a dev convenience linked to a
     REAL student's records. In production it must be dead twice over: the seed
@@ -4616,6 +4639,7 @@ def main():
     run_security_headers()
     run_login_no_demo_creds_in_prod()
     run_demo_parent_prod_lockout()
+    run_csrf_guard_behind_tls_proxy()
     run_teacher_authz(ids)
     run_admin_parent_reset_link(ids)
     run_privilege_escalation(ids)
