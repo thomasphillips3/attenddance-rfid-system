@@ -2455,6 +2455,47 @@ def run_transaction_delete(ids):
            r404.status_code == 404, f"got {r404.status_code}", "P3")
 
 
+def run_manual_cascade_deletes(ids):
+    """Two deletes clean up children by hand (no ORM cascade, no ON DELETE):
+    deleting an audition must remove its signups, and deleting a ticket type must
+    remove its orders. Both child FKs are NOT NULL, so if a future edit drops the
+    manual child-delete, SQLAlchemy tries to null the FK and the delete 500s
+    outright (same failure the delete_performance comment guards against). These
+    two paths were unguarded — this locks them in."""
+    from app.models import (Audition, AuditionSignup, PerformanceGroup,
+                            Performance, TicketType, TicketOrder)
+    with app.app_context():
+        g = PerformanceGroup(name="Cascade Co")
+        db.session.add(g)
+        db.session.flush()
+        au = Audition(group_id=g.id, title="Cascade Audition")
+        db.session.add(au)
+        db.session.flush()
+        db.session.add(AuditionSignup(audition_id=au.id, student_id=ids["child_a"]))
+        perf = Performance(title="Cascade Show", group_id=g.id)
+        db.session.add(perf)
+        db.session.flush()
+        tt = TicketType(performance_id=perf.id, name="GA", price=10)
+        db.session.add(tt)
+        db.session.flush()
+        db.session.add(TicketOrder(ticket_type_id=tt.id, quantity=2, amount=20))
+        db.session.commit()
+        aid, ttid = au.id, tt.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        rd_au = c.delete(f"/api/performance/auditions/{aid}")
+        rd_tt = c.delete(f"/api/ticket-types/{ttid}")
+    with app.app_context():
+        signup_orphans = AuditionSignup.query.filter_by(audition_id=aid).count()
+        order_orphans = TicketOrder.query.filter_by(ticket_type_id=ttid).count()
+    record(f"Delete audition cascades to signups (delete={rd_au.status_code}, {signup_orphans} orphans)",
+           rd_au.status_code == 200 and signup_orphans == 0,
+           f"status={rd_au.status_code} orphans={signup_orphans}", "P2")
+    record(f"Delete ticket type cascades to orders (delete={rd_tt.status_code}, {order_orphans} orphans)",
+           rd_tt.status_code == 200 and order_orphans == 0,
+           f"status={rd_tt.status_code} orphans={order_orphans}", "P2")
+
+
 def run_payment_plans(ids):
     """Payment plans (a Jackrabbit-parity billing feature): generate the right
     number of installments on the right monthly schedule with the right amount,
@@ -4367,6 +4408,7 @@ def main():
     run_recital_money(ids)
     run_recital_delete_cascade(ids)
     run_transaction_delete(ids)
+    run_manual_cascade_deletes(ids)
     run_input_robustness(ids)
     run_parent_input_robustness(ids)
     run_parent_write_authz(ids)
