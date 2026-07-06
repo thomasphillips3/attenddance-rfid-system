@@ -1,14 +1,11 @@
-Flask==3.0.3
+Flask==3.1.3
 Flask-SQLAlchemy==3.1.1
 Flask-Login==0.6.3
-Flask-WTF==1.2.1
-WTForms==3.1.2
-Werkzeug==3.0.3
-bcrypt==4.1.3
-PyJWT==2.8.0
-python-dotenv==1.0.1
-python-dateutil==2.9.0
-requests==2.32.3
+Flask-WTF==1.3.0
+WTForms==3.2.2
+Werkzeug==3.1.8
+python-dateutil==2.9.0.post0
+requests==2.34.2
 gunicorn==22.0.0
 squareup>=44,<45   # pin to the v44 SDK (from square import Square); v45+ may break the API
-cryptography>=42,<46
+cryptography>=48.0.1,<49
