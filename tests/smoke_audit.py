@@ -839,6 +839,32 @@ def run_password_reset():
         db.session.commit()
 
 
+def run_forgot_password_no_enumeration():
+    """Anti-enumeration: with email configured, forgot-password must return the
+    SAME generic reply whether or not the account exists — otherwise an attacker
+    can discover which emails have accounts by diffing the responses."""
+    from app import email as email_service
+    app.config["MAIL_SERVER"] = "smtp.example.com"
+    orig = email_service.send_email
+    email_service.send_email = lambda *a, **k: 1  # no-op send (an account may exist)
+    try:
+        with app.test_client() as c:
+            r_exist = c.post('/auth/forgot-password', data={'email': 'a@x.com'},
+                             follow_redirects=True).get_data(as_text=True).lower()
+        with app.test_client() as c:
+            r_nope = c.post('/auth/forgot-password', data={'email': 'no-such-user-zzz@x.com'},
+                            follow_redirects=True).get_data(as_text=True).lower()
+    finally:
+        email_service.send_email = orig
+        app.config["MAIL_SERVER"] = None
+    generic = "if an account exists"
+    record("Forgot-password reply is identical for real vs unknown email (no account enumeration)",
+           generic in r_exist and generic in r_nope
+           and "no account" not in r_nope and "not found" not in r_nope
+           and "doesn't exist" not in r_nope,
+           f"exist_generic={generic in r_exist} nope_generic={generic in r_nope}", "P2")
+
+
 def run_login_by_email():
     """Invited parents get an auto-generated `parent-<code>` username they never
     see and register with an email — so login MUST accept email, or they're
@@ -3904,6 +3930,7 @@ def main():
     run_enrollment(ids)
     run_deactivation_revokes_session()
     run_password_reset()
+    run_forgot_password_no_enumeration()
     run_login_throttle()
     run_open_redirect_guard()
     run_login_by_email()
