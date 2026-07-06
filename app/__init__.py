@@ -305,6 +305,23 @@ def create_app(config_name=None):
             return jsonify({'error': 'Cross-origin request blocked'}), 403
         return None
 
+    @app.after_request
+    def _security_headers(resp):
+        """Defense-in-depth response headers, site-wide. The app holds minors'
+        PII + finances, so set the standard hardening headers. `setdefault` so a
+        specific response can still override. No Content-Security-Policy: the
+        CDN Tailwind/Alpine + inline event handlers would force 'unsafe-inline'
+        anyway (little benefit), and output is already XSS-escaped; a tuned CSP
+        is a future add. HSTS only when cookies are Secure (production/HTTPS) —
+        never assert HSTS over plain HTTP."""
+        resp.headers.setdefault('X-Frame-Options', 'DENY')  # no iframes -> block clickjacking
+        resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        resp.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+        if app.config.get('SESSION_COOKIE_SECURE'):
+            resp.headers.setdefault('Strict-Transport-Security',
+                                    'max-age=31536000; includeSubDomains')
+        return resp
+
     @app.errorhandler(404)
     def not_found_error(error):
         from flask import render_template

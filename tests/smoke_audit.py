@@ -356,6 +356,32 @@ def run_teacher_authz(ids):
                    r.status_code in (401, 403), f"got {r.status_code} — teacher reached admin data", "P1")
 
 
+def run_security_headers():
+    """Site-wide hardening headers must be present on every response
+    (clickjacking, MIME-sniffing, referrer leak). HSTS is asserted ONLY when
+    cookies are Secure (production/HTTPS) — never over plain HTTP."""
+    with app.test_client() as c:
+        h = c.get("/auth/login").headers
+        record("Hardening headers set (X-Frame-Options DENY, nosniff, Referrer-Policy)",
+               h.get("X-Frame-Options") == "DENY"
+               and h.get("X-Content-Type-Options") == "nosniff"
+               and "strict-origin" in (h.get("Referrer-Policy") or ""),
+               f"XFO={h.get('X-Frame-Options')} XCTO={h.get('X-Content-Type-Options')} "
+               f"RP={h.get('Referrer-Policy')}", "P2")
+        record("HSTS is NOT asserted under non-secure (dev) config",
+               h.get("Strict-Transport-Security") is None,
+               f"HSTS leaked over http: {h.get('Strict-Transport-Security')}", "P3")
+    prev = app.config.get("SESSION_COOKIE_SECURE")
+    app.config["SESSION_COOKIE_SECURE"] = True
+    try:
+        with app.test_client() as c:
+            hsts = c.get("/auth/login").headers.get("Strict-Transport-Security")
+    finally:
+        app.config["SESSION_COOKIE_SECURE"] = prev
+    record("HSTS set when cookies are Secure (production/HTTPS)",
+           hsts is not None and "max-age=" in hsts, f"HSTS={hsts}", "P2")
+
+
 def run_csrf():
     """Cross-origin writes must be blocked; same-origin writes must pass through."""
     with app.test_client() as c:
@@ -3928,6 +3954,7 @@ def main():
     ids = seed()
     run_idor(ids)
     run_csrf()
+    run_security_headers()
     run_teacher_authz(ids)
     run_privilege_escalation(ids)
     run_waiver_signing(ids)
