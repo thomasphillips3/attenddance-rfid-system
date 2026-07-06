@@ -674,6 +674,8 @@ def enroll_student(class_id):
         student_ids = [data.get('student_id')]
     if not student_ids:
         return jsonify({'error': 'student_id or student_ids is required'}), 400
+    if not isinstance(student_ids, list):  # tolerate a scalar; a non-list would TypeError the loop
+        student_ids = [student_ids]
 
     # Enforce class capacity so a class can't be silently overbooked (the waitlist
     # exists for exactly this). Enroll up to the cap and report who couldn't fit;
@@ -4004,7 +4006,8 @@ def create_ticket_type(pid):
     data = request.get_json() or {}
     if not data.get('name'):
         return jsonify({'error': 'name is required'}), 400
-    t = TicketType(performance_id=pid, name=_clean_str(data['name']), price=data.get('price') or 0)
+    t = TicketType(performance_id=pid, name=_clean_str(data['name']),
+                   price=_opt_num(data.get('price'), 0, is_float=True))  # garbage -> 0, not a DB StatementError
     db.session.add(t)
     db.session.commit()
     return jsonify({'id': t.id, 'name': t.name, 'price': f'{float(t.price):.2f}'}), 201

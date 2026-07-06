@@ -1364,6 +1364,66 @@ def run_date_param_robustness():
            not bad, f"5xx: {bad}", "P2")
 
 
+def run_post_valid_id_fuzz():
+    """The mutation fuzz substitutes a NONEXISTENT id, so id-param POST endpoints
+    (sub-resource creates/actions) 404 before parsing the body — the same blind
+    spot that hid the cast-fill TypeError (iter 174). Seed real parents and POST
+    a broad garbage body (incl. a non-list student_ids) to their id-param POSTs;
+    assert no 5xx."""
+    from datetime import time as _t_pf
+    from app.models import (User, DanceClass, Student, Family, Costume, Performance,
+                            PerformanceGroup, Audition, Recital, RecitalNumber)
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        fam = Family(name="PostFuzz Fam")
+        db.session.add(fam)
+        db.session.flush()
+        st = Student(first_name="Post", last_name="Fuzz", family_id=fam.id, is_active=True)
+        db.session.add(st)
+        db.session.flush()
+        cls = DanceClass(name="PF class", day_of_week=0, start_time=_t_pf(16, 0),
+                         end_time=_t_pf(17, 0), instructor_id=adm.id)
+        cos = Costume(name="PF costume", fee=10)
+        grp = PerformanceGroup(name="PF grp")
+        rec = Recital(year=2034, title="PF rec")
+        db.session.add_all([cls, cos, grp, rec])
+        db.session.flush()
+        perf = Performance(title="PF perf", group_id=grp.id)
+        au = Audition(title="PF aud", group_id=grp.id)
+        num = RecitalNumber(recital_id=rec.id, title="PF num", order_index=1)
+        db.session.add_all([perf, au, num])
+        db.session.commit()
+        paths = [
+            f"/api/classes/{cls.id}/enroll",
+            f"/api/performances/{perf.id}/ticket-types",
+            f"/api/performances/{perf.id}/ticket-orders",
+            f"/api/costumes/{cos.id}/assignments",
+            f"/api/students/{st.id}/payment-plan",
+            f"/api/performance/auditions/{au.id}/signup",
+            f"/api/recital-numbers/{num.id}/cast",
+            f"/api/performance/performances/{perf.id}/assignments",
+            f"/api/performance/groups/{grp.id}/members",
+        ]
+    garbage = {
+        "student_ids": 123,  # non-iterable -> would TypeError an unguarded loop
+        "student_id": "x", "quantity": "x", "price": "x", "ticket_type_id": "x",
+        "installment_amount": "x", "num_installments": "x", "day_of_month": "x",
+        "size": 123, "part": [], "name": 123, "role": [], "note": {}, "amount": "x",
+    }
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        bad = []
+        for p in paths:
+            try:
+                code = c.post(p, json=garbage).status_code
+                if code >= 500:
+                    bad.append(f"{p}->{code}")
+            except Exception as e:  # a propagated exception is as bad as a 500
+                bad.append(f"{p}!{type(e).__name__}")
+    record("Id-param POST endpoints don't 5xx on a broad garbage body (valid id)",
+           not bad, f"5xx/exc: {bad}", "P2")
+
+
 def run_update_valid_id_fuzz():
     """run_update_fuzz substitutes a NONEXISTENT id, so endpoints that
     get_or_404 FIRST return 404 before parsing the body — the garbage-body-on-
@@ -4262,6 +4322,7 @@ def main():
     run_full_mutation_fuzz()
     run_update_fuzz()
     run_update_valid_id_fuzz()
+    run_post_valid_id_fuzz()
     run_date_param_robustness()
     run_get_queryparam_fuzz(ids)
     run_skills(ids)
