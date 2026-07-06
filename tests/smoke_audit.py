@@ -418,6 +418,14 @@ def run_teacher_authz(ids):
         # Pending-payments badge returns 0 for teachers (no volume leak).
         pc = (c.get("/api/pending-payments/count").get_json() or {}).get("count")
         record(f"Teacher pending-payments badge is 0 (got {pc})", pc == 0, f"count={pc}", "P2")
+        # UI drift guard: pages must not show teachers buttons that 403 —
+        # the student-detail withdraw toggle is server-rendered (assert absent),
+        # and the classes page's JS-rendered admin buttons key off IS_ADMIN.
+        detail_body = c.get(f"/students/{sid}/detail").get_data(as_text=True)
+        classes_body = c.get("/classes").get_data(as_text=True)
+        record("Teacher UI hides admin-only actions (withdraw toggle, IS_ADMIN=false)",
+               'id="toggle-btn"' not in detail_body and "const IS_ADMIN = false;" in classes_body,
+               f"toggle_shown={'toggle-btn' in detail_body} is_admin_flag={'IS_ADMIN = false' in classes_body}", "P3")
         # Family list still works for teachers but carries NO money fields.
         fams = (c.get("/api/families").get_json() or {}).get("families", [])
         leak = any("balance" in f or "total_charges" in f for f in fams)

@@ -17,9 +17,11 @@
         {% else %}
         <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-danger/10 text-danger">Inactive</span>
         {% endif %}
+        {% if current_user.is_admin %}{# withdraw/reactivate is a roster mutation — admin-only #}
         <button onclick="toggleActive()" id="toggle-btn" class="inline-flex items-center px-3 py-1.5 rounded-xl border border-line-2 text-ink-2 text-sm font-bold hover:bg-surface-2">
             {% if student.is_active %}<i class="fas fa-pause mr-1"></i>Deactivate{% else %}<i class="fas fa-play mr-1"></i>Reactivate{% endif %}
         </button>
+        {% endif %}
     </div>
 </div>
 

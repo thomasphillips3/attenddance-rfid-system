@@ -275,10 +275,10 @@ async function loadWaitlist() {
         el.innerHTML = w.map(x => `
             <div class="flex items-center justify-between p-2 bg-gold-300/30 rounded-lg">
                 <span class="text-sm text-ink"><span class="text-xs text-gold-ink mr-2">#${x.position}</span>${esc(x.student_name)}</span>
-                <span>
+                ${IS_ADMIN ? `<span>
                     <button onclick="promoteWait(${x.id})" class="text-xs text-ok font-bold hover:underline mr-2">Enroll</button>
                     <button onclick="removeWait(${x.id})" class="text-xs text-danger hover:underline">Remove</button>
-                </span>
+                </span>` : ''}
             </div>`).join('');
     } catch { sec.classList.add('hidden'); }
 }
