@@ -122,3 +122,11 @@ with a "copy these emails" fallback until SMTP is set). Turn them on as ready.
   feature build — decision-ready scope in [AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)
   (~3–4 days, recommend building it as the first post-launch project). Greenlight
   it when you want it.
+- **RFID card-tap check-in** — the card reader can't reach the Fly deployment
+  (it reads in-process and writes to a local DB; there's no remote-scan
+  endpoint). **Check-in at launch = the take-attendance page on a
+  tablet/laptop** — teachers have access, works today. Do NOT boot the old Pi
+  setup alongside Fly: it would check dancers into its own local database and
+  fork attendance away from billing. If card-tap matters for fall, the bridge
+  (a token-authenticated scan endpoint + a thin Pi poster with offline queueing)
+  is ~a half-day plus hardware testing — ask for it.
