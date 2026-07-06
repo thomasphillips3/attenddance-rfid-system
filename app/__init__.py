@@ -94,6 +94,20 @@ def _process_recurring_charges(today=None):
     db.session.commit()
 
 
+def _disable_demo_parent():
+    """Deactivate the demo parent login in production. `parent-demo`/`parent123`
+    is a dev-only convenience seeded via /api/seed-demo-parent — it links a
+    publicly-known password to a REAL student's records (attendance, balance,
+    waivers). Called at production boot so an already-seeded prod DB self-cleans;
+    the active-user before_request then kills any live session too."""
+    from app.models import User
+    demo = User.query.filter_by(username='parent-demo', is_active=True).first()
+    if demo:
+        demo.is_active = False
+        db.session.commit()
+        logger.warning("Disabled demo parent account 'parent-demo' (production)")
+
+
 def _process_auto_reminders():
     """Decide whether balance reminders are due this month; if so, mark the month
     done (anti-spam) and hand the actual sending to a background thread.
@@ -255,6 +269,17 @@ def create_app(config_name=None):
             db.session.add(admin)
             db.session.commit()
             logger.info("Default admin user created (username: admin, password: admin123)")
+
+        # The demo parent (parent-demo/parent123) is a dev convenience with a
+        # publicly-known password, linked to a REAL student's records. It must
+        # never be a working login in production — disable it at boot so a
+        # previously-seeded prod DB self-cleans on the next deploy.
+        if not app.debug and not app.testing:
+            try:
+                _disable_demo_parent()
+            except Exception:
+                db.session.rollback()
+                logger.exception("Demo-parent cleanup failed at startup")
 
         # Both run on every boot (Fly wakes/sleeps several times a day). Never let
         # a single bad row take the whole app down at startup — log and continue.

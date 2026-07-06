@@ -22,6 +22,11 @@ a real `SECRET_KEY`, and the seeded admin password is publicly known.
 - [ ] **Change the admin password.** After deploy, log in as `admin` and go to
   `/auth/change-password`. (Until then the default `admin123` is public.) The
   demo-credentials box on the login page auto-hides in production.
+- **Demo parent self-cleans — no action needed.** The prod DB currently has the
+  `parent-demo`/`parent123` account linked to a real student; on the first boot
+  of this branch, production automatically deactivates it (and the seed endpoint
+  refuses to recreate it outside dev). Verify in logs: "Disabled demo parent
+  account".
 
 ---
 

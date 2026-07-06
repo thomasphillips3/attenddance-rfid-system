@@ -439,6 +439,43 @@ def run_teacher_authz(ids):
                f"ledger={rl.status_code} plan={rp.status_code} (parent over-locked)", "P1")
 
 
+def run_demo_parent_prod_lockout():
+    """The demo parent (parent-demo/parent123) is a dev convenience linked to a
+    REAL student's records. In production it must be dead twice over: the seed
+    endpoint refuses, and boot deactivates any previously-seeded account (the
+    live prod DB has one — it self-cleans on next deploy)."""
+    from app import _disable_demo_parent
+    from app.models import User
+    # Seeding works in dev/testing (it's a demo tool)...
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r_dev = c.post("/api/seed-demo-parent")
+        # ...but refuses when the app is production-shaped.
+        prev_debug, prev_testing = app.config.get("DEBUG"), app.config.get("TESTING")
+        app.config["DEBUG"] = False
+        app.config["TESTING"] = False
+        try:
+            r_prod = c.post("/api/seed-demo-parent")
+        finally:
+            app.config["DEBUG"] = prev_debug
+            app.config["TESTING"] = prev_testing
+    record(f"Demo-parent seeding: dev {r_dev.status_code}, production {r_prod.status_code}",
+           r_dev.status_code == 200 and r_prod.status_code == 403,
+           f"dev={r_dev.status_code} prod={r_prod.status_code}", "P1")
+    # Boot cleanup deactivates a seeded demo account; the login then fails.
+    with app.app_context():
+        _disable_demo_parent()
+        demo = User.query.filter_by(username="parent-demo").first()
+        deactivated = demo is not None and demo.is_active is False
+    with app.test_client() as c:
+        login(c, "parent-demo", "parent123")
+        r = c.get("/parent")
+        blocked = r.status_code in (302, 401, 403)  # redirected to login / rejected
+    record("Production boot disables the demo parent; its login stops working",
+           deactivated and blocked,
+           f"deactivated={deactivated} portal_status={r.status_code}", "P1")
+
+
 def run_login_no_demo_creds_in_prod():
     """The login page shows demo credentials (admin123 / parent123) for dev
     convenience, gated behind DEBUG. In production (DEBUG=False) that box MUST be
@@ -4525,6 +4562,7 @@ def main():
     run_csrf()
     run_security_headers()
     run_login_no_demo_creds_in_prod()
+    run_demo_parent_prod_lockout()
     run_teacher_authz(ids)
     run_privilege_escalation(ids)
     run_waiver_signing(ids)

@@ -1837,6 +1837,10 @@ def invite_parent(student_id):
 def seed_demo_parent():
     if not current_user.is_admin:
         return jsonify({'error': 'Admin access required'}), 403
+    # Dev-only: this links a publicly-known password to a real student's records.
+    # Production boot also disables any previously-seeded demo account.
+    if not (current_app.debug or current_app.testing):
+        return jsonify({'error': 'Demo accounts are disabled in production'}), 403
 
     student = Student.query.first()
     if not student:
