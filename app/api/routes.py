@@ -2654,12 +2654,11 @@ def claim_payment():
     if method not in VALID_PAYMENT_METHODS:
         return jsonify({'error': f'Invalid payment method. One of: {", ".join(sorted(VALID_PAYMENT_METHODS))}'}), 400
 
-    try:
-        amount = round(float(data.get('amount')), 2)
-    except (TypeError, ValueError):
-        return jsonify({'error': 'A valid amount is required'}), 400
-    if amount <= 0:
-        return jsonify({'error': 'Amount must be greater than zero'}), 400
+    # Same amount validation as admin charges — including the upper cap, so a
+    # parent can't report an absurd (e.g. $999,999,999) payment into the inbox.
+    amount, aerr = _valid_amount(data.get('amount'))
+    if aerr:
+        return aerr
 
     student_id = data.get('student_id')
     family_id = data.get('family_id')
@@ -2692,8 +2691,8 @@ def claim_payment():
         parent_id=current_user.id,
         amount=amount,
         method=method,
-        reference=_clean_str(data.get('reference')) or None,
-        note=_clean_str(data.get('note')) or None,
+        reference=_clean_str(data.get('reference'), 100) or None,  # parent input — cap length
+        note=_clean_str(data.get('note'), 1000) or None,
     )
     db.session.add(p)
     db.session.commit()

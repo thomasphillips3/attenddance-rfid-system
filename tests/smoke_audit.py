@@ -633,6 +633,12 @@ def run_reconciliation(ids):
                    json={"student_id": sid, "amount": 60, "method": "zelle", "reference": "abc123"})
         record(f"Parent claims a payment -> {r.status_code}", r.status_code in (200, 201),
                r.get_data(as_text=True)[:60], "P1")
+        # Amount now has the same bounds as admin charges (upper cap) — a parent
+        # can't stuff an absurd $999,999,999 into the confirm inbox.
+        rbig = c.post("/api/payments/claim",
+                      json={"student_id": sid, "amount": 999999999, "method": "zelle"})
+        record(f"Parent can't report an absurd amount -> {rbig.status_code}",
+               rbig.status_code == 400, f"got {rbig.status_code} (want 400)", "P2")
 
     with app.app_context():
         pend = PendingPayment.query.filter_by(student_id=sid, status="pending").order_by(
