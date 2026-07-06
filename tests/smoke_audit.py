@@ -558,6 +558,25 @@ def run_smtp_timeout():
     record(f"SMTP connections carry a timeout (got {captured.get('timeout')})",
            isinstance(captured.get("timeout"), (int, float)) and 0 < captured["timeout"] <= 60,
            f"timeout={captured.get('timeout')} — a hung SMTP blocks the worker", "P2")
+    # The rest of the outbound surface, statically: every requests.* call and
+    # the Square client constructor must carry an explicit timeout (httpx
+    # treats None as NO timeout). A hung outbound call pins a worker thread.
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    bad = []
+    for f in (root / "app").rglob("*.py"):
+        src = f.read_text()
+        # One level of nested parens (auth=(a, b), dicts) before the close.
+        call = r"\((?:[^()]|\([^()]*\))*\)"
+        for m in re.finditer(r"requests\.(?:get|post|put|delete|request)" + call, src, re.S):
+            if "timeout" not in m.group(0):
+                bad.append(f"{f.name}: {m.group(0)[:60]}")
+        for m in re.finditer(r"\bSquare" + call, src, re.S):
+            if "timeout" not in m.group(0):
+                bad.append(f"{f.name}: {m.group(0)[:60]}")
+    record(f"All outbound HTTP calls carry explicit timeouts ({len(bad)} without)",
+           not bad, "; ".join(bad[:4]), "P2")
 
 
 def run_proxyfix_https_links():

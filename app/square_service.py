@@ -44,7 +44,10 @@ def _client():
     from square import Square
     from square.environment import SquareEnvironment
     env = SquareEnvironment.PRODUCTION if get_environment() == 'production' else SquareEnvironment.SANDBOX
-    return Square(token=token, environment=env)
+    # Explicit timeout: the SDK passes None through to httpx, which DISABLES
+    # timeouts — a hung Square API call would pin an admin request's worker
+    # thread indefinitely (invoice send + test-connection run inline).
+    return Square(token=token, environment=env, timeout=30)
 
 
 def is_configured():
