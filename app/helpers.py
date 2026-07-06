@@ -302,6 +302,16 @@ def _utc_iso(dt):
     return (dt.isoformat() + 'Z') if dt else None
 
 
+def _local_iso(dt):
+    """ISO-8601 for a naive *studio-local* datetime (no 'Z'). Attendance
+    check-in times are stored in the studio's timezone (the server runs there),
+    so they must NOT be tagged 'Z' — that would make the browser treat the local
+    wall-clock as UTC and shift it by the whole offset. Without an offset,
+    new Date() parses it in the viewer's zone and shows the stored wall-clock
+    time as-is (7:05 PM stays 7:05 PM)."""
+    return dt.isoformat() if dt else None
+
+
 def attendance_to_dict(attendance) -> dict:
     return {
         'id': attendance.id,
@@ -309,8 +319,10 @@ def attendance_to_dict(attendance) -> dict:
         'student_name': attendance.student.full_name if attendance.student else None,
         'class_id': attendance.class_id,
         'class_name': attendance.dance_class.name if attendance.dance_class else None,
-        'check_in_time': _utc_iso(attendance.check_in_time),
-        'check_out_time': _utc_iso(attendance.check_out_time),
+        # Attendance times are studio-local (see check-in handlers) — emit them
+        # without a 'Z' so the log page renders the real wall-clock, not a shift.
+        'check_in_time': _local_iso(attendance.check_in_time),
+        'check_out_time': _local_iso(attendance.check_out_time),
         'check_in_method': attendance.check_in_method,
         'notes': attendance.notes,
         'is_present': attendance.is_present,

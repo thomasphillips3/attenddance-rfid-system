@@ -969,6 +969,15 @@ def run_attendance(ids):
         today_ids = [a.get("student_id") for a in today_att.get("attendance", [])]
         record("Manual check-in appears in today's attendance roster (correct local day)",
                sid in today_ids, f"today ids={today_ids} (want {sid}); count={today_att.get('count')}", "P1")
+        # Attendance times are studio-local, so the API must emit them WITHOUT a
+        # 'Z' — tagging a local wall-clock as UTC shifts the log page's displayed
+        # time by the whole offset. Assert no 'Z' and the ISO is dated today.
+        from datetime import date as _date_local
+        mine = next((a for a in today_att.get("attendance", []) if a.get("student_id") == sid), {})
+        cit = mine.get("check_in_time") or ""
+        record("Attendance check_in_time is emitted studio-local (no 'Z' shift, dated today)",
+               bool(cit) and not cit.endswith("Z") and cit.startswith(_date_local.today().isoformat()),
+               f"check_in_time={cit!r} today={_date_local.today().isoformat()}", "P2")
         # Validation: nonexistent class 404s (no orphan row), garbage id 400s, bad date doesn't 500.
         rb1 = c.post("/api/attendance/toggle", json={"student_id": sid, "class_id": 999999})
         rb2 = c.post("/api/attendance/toggle", json={"student_id": "xyz", "class_id": cid})
