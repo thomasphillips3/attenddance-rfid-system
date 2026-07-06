@@ -7,9 +7,11 @@
         <h1 class="font-display text-3xl text-ink leading-tight mt-1">Classes</h1>
         <p class="mt-1 text-sm text-ink-2">Manage your weekly class schedule.</p>
     </div>
+    {% if current_user.is_admin %}{# class + enrollment mutations are admin-only #}
     <button onclick="openAddModal()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">
         <i class="fas fa-calendar-plus"></i>Add Class
     </button>
+    {% endif %}
 </div>
 
 <div id="classes-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -100,7 +102,7 @@
                     <button onclick="enrollSelected()" class="px-3 py-1.5 rounded-lg bg-primary-500 text-white text-sm font-bold hover:bg-primary-600">Enroll Selected</button>
                 </div>
             </div>
-            <div id="add-btn-row" class="mb-4">
+            <div id="add-btn-row" class="mb-4{% if not current_user.is_admin %} hidden{% endif %}">
                 <button onclick="toggleAddSection(true)" class="w-full inline-flex justify-center items-center gap-2 px-3 py-2 border border-dashed border-line-2 rounded-xl text-sm text-ink-2 hover:border-primary-400 hover:text-primary-600">
                     <i class="fas fa-plus"></i>Add Students
                 </button>
@@ -121,6 +123,7 @@
 
 {% block extra_js %}
 <script>
+const IS_ADMIN = {{ 'true' if current_user.is_admin else 'false' }};
 function esc(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
 
 let allClasses = [];
@@ -155,10 +158,10 @@ function renderClasses(classes) {
                 <button data-class-id="${cls.id}" data-class-name="${esc(cls.name)}" class="enroll-btn mt-4 w-full inline-flex justify-center items-center gap-2 px-3 py-2 rounded-xl border border-line-2 text-sm font-bold text-ink-2 hover:border-primary-300 hover:text-primary-700">
                     <i class="fas fa-user-plus"></i>Manage Students
                 </button>
-                <div class="mt-2 flex gap-2">
+                ${IS_ADMIN ? `<div class="mt-2 flex gap-2">
                     <button onclick="openEditModal(${cls.id})" class="flex-1 inline-flex justify-center items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-ink-2 hover:bg-surface-2"><i class="fas fa-pen"></i>Edit</button>
                     <button onclick="cancelClass(${cls.id}, ${JSON.stringify(cls.name)})" class="flex-1 inline-flex justify-center items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-danger hover:bg-danger/5"><i class="fas fa-ban"></i>Cancel Class</button>
-                </div>
+                </div>` : ''}
             </div>
         </div>
     `).join('');
@@ -357,7 +360,7 @@ async function loadEnrollments() {
                         <p class="text-xs text-ink-3">Enrolled ${e.enrolled_date}</p>
                     </div>
                 </div>
-                <button aria-label="Remove from class" data-enrollment-id="${e.enrollment_id}" class="unenroll-btn text-danger hover:opacity-70 text-sm"><i class="fas fa-xmark"></i></button>
+                ${IS_ADMIN ? `<button aria-label="Remove from class" data-enrollment-id="${e.enrollment_id}" class="unenroll-btn text-danger hover:opacity-70 text-sm"><i class="fas fa-xmark"></i></button>` : ''}
             </div>
         `).join('');
         el.querySelectorAll('.unenroll-btn').forEach(btn => {

@@ -382,6 +382,39 @@ def run_teacher_authz(ids):
             r = c.post(path, json=body)
             record(f"Teacher blocked from billing write [{path}] -> {r.status_code}",
                    r.status_code in (401, 403), f"got {r.status_code} — teacher posted money", "P1")
+        # Roster / class / enrollment / family MUTATIONS are admin-only too
+        # (iter 184): they carry billing side effects (cancelling a class stops
+        # its recurring charges; enrollment drives tuition) or PII edits.
+        mutation_probes = [
+            ("POST", "/api/students", {"first_name": "T", "last_name": "X"}),
+            ("PUT", f"/api/students/{sid}", {"first_name": "T"}),
+            ("DELETE", f"/api/students/{sid}", None),
+            ("POST", "/api/classes", {"name": "TClass", "day_of_week": 1,
+                                      "start_time": "10:00", "end_time": "11:00"}),
+            ("PUT", "/api/classes/1", {"name": "TClass2"}),
+            ("DELETE", "/api/classes/1", None),
+            ("POST", "/api/classes/1/enroll", {"student_ids": [sid]}),
+            ("DELETE", "/api/enrollments/1", None),
+            ("POST", "/api/classes/1/waitlist", {"student_id": sid}),
+            ("DELETE", "/api/waitlist/1", None),
+            ("POST", "/api/families", {"name": "TFam"}),
+            (f"POST", f"/api/students/{sid}/invite-parent", {}),
+        ]
+        for method, path, body in mutation_probes:
+            r = c.open(path, method=method, json=body)
+            record(f"Teacher blocked from roster/class mutation [{method} {path}] -> {r.status_code}",
+                   r.status_code in (401, 403), f"got {r.status_code} — teacher mutated roster/class", "P1")
+        # Roster CSV still works for teachers but must NOT carry the Balance column.
+        csv_r = c.get("/api/reports/students.csv")
+        csv_body = csv_r.get_data(as_text=True)
+        record(f"Teacher roster CSV has no Balance column -> {csv_r.status_code}",
+               csv_r.status_code == 200 and "Balance" not in csv_body.splitlines()[0],
+               f"status={csv_r.status_code} header={csv_body.splitlines()[0] if csv_body else ''}", "P1")
+        # Search family results must not link teachers to the (admin-only) ledger page.
+        sr = (c.get("/api/search?q=alpha").get_json() or {})
+        fam_urls = [f.get("url", "") for f in sr.get("families", [])]
+        record("Teacher search results don't link to family ledgers",
+               all("/ledger" not in u for u in fam_urls), f"urls={fam_urls}", "P2")
         # Pending-payments badge returns 0 for teachers (no volume leak).
         pc = (c.get("/api/pending-payments/count").get_json() or {}).get("count")
         record(f"Teacher pending-payments badge is 0 (got {pc})", pc == 0, f"count={pc}", "P2")
@@ -4360,7 +4393,12 @@ def run_js_syntax():
         record("JS syntax check (node not found — skipped)", True, "", "P3")
         return
 
-    pages = [("admin", "admin123", ["/dashboard", "/reports/aging"]),
+    pages = [("admin", "admin123", ["/dashboard", "/reports/aging",
+                                    "/students", "/classes", "/rules", "/messages", "/families"]),
+             # Teacher renders differ (IS_ADMIN-gated JS blocks) — a bad template
+             # conditional would kill a page only for teachers, invisible to the
+             # admin-only check.
+             ("teacher_t", "pw", ["/students", "/classes", "/rules", "/messages", "/families"]),
              ("parent_a", "pw", ["/parent"])]
     bad = []
     for user, pw, paths in pages:

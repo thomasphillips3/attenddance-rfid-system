@@ -365,7 +365,7 @@ def get_student(student_id):
 @bp.route('/students', methods=['POST'])
 @login_required
 def create_student():
-    err = _staff_only()
+    err = _admin_only()
     if err:
         return err
     data = request.get_json()
@@ -394,7 +394,7 @@ def create_student():
 @bp.route('/students/<int:student_id>', methods=['PUT'])
 @login_required
 def update_student(student_id):
-    err = _staff_only()
+    err = _admin_only()
     if err:
         return err
     student = Student.query.get_or_404(student_id)
@@ -423,7 +423,7 @@ def update_student(student_id):
 @bp.route('/students/<int:student_id>', methods=['DELETE'])
 @login_required
 def delete_student(student_id):
-    err = _staff_only()
+    err = _admin_only()
     if err:
         return err
     from app.models import WaitlistEntry
@@ -526,6 +526,9 @@ def get_class(class_id):
 @bp.route('/classes', methods=['POST'])
 @login_required
 def create_class():
+    err = _admin_only()
+    if err:
+        return err
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -575,6 +578,9 @@ def create_class():
 @login_required
 def update_class(class_id):
     """Edit a class — the studio adjusts schedules/instructors/capacity mid-season."""
+    err = _admin_only()
+    if err:
+        return err
     dc = DanceClass.query.get_or_404(class_id)
     data = request.get_json() or {}
     if data.get('name') is not None:
@@ -637,6 +643,9 @@ def deactivate_class(class_id):
       student's enrolled-classes list, which filters by active enrollment);
     - clear its waitlist (else those families are stuck waiting for a dead class).
     Past attendance + ledger charges are left intact (history)."""
+    err = _admin_only()
+    if err:
+        return err
     from app.models import RecurringCharge, WaitlistEntry
     dc = DanceClass.query.get_or_404(class_id)
     dc.is_active = False
@@ -684,6 +693,9 @@ def get_class_enrollments(class_id):
 @bp.route('/classes/<int:class_id>/enroll', methods=['POST'])
 @login_required
 def enroll_student(class_id):
+    err = _admin_only()
+    if err:
+        return err
     dance_class = DanceClass.query.get_or_404(class_id)
     data = request.get_json()
     if not data:
@@ -743,6 +755,9 @@ def enroll_student(class_id):
 @bp.route('/enrollments/<int:enrollment_id>', methods=['DELETE'])
 @login_required
 def unenroll_student(enrollment_id):
+    err = _admin_only()
+    if err:
+        return err
     enrollment = ClassEnrollment.query.get_or_404(enrollment_id)
     enrollment.is_active = False
     db.session.commit()
@@ -780,7 +795,10 @@ def global_search():
     return jsonify({
         'students': [{'id': s.id, 'name': s.full_name, 'url': f'/students/{s.id}/detail'}
                      for s in students],
-        'families': [{'id': f.id, 'name': f.name, 'url': f'/families/{f.id}/ledger'}
+        # Family results link to the ledger for admins; the ledger page is
+        # admin-only, so teachers land on the families card list instead.
+        'families': [{'id': f.id, 'name': f.name,
+                      'url': f'/families/{f.id}/ledger' if current_user.is_admin else '/families'}
                      for f in families],
         'classes': [{'id': c.id, 'name': c.name, 'url': '/classes'} for c in classes],
     })
@@ -1281,23 +1299,29 @@ def _csv_response(filename, header, rows):
 @bp.route('/reports/students.csv', methods=['GET'])
 @login_required
 def export_students_csv():
-    """Roster export — for the accountant, mail-merge, or an owner-held backup."""
+    """Roster export — for the accountant, mail-merge, or an owner-held backup.
+    The Balance column is admin-only (billing); a teacher's export is the plain
+    roster (class lists, allergy sheets)."""
     err = _staff_only()
     if err:
         return err
     students = Student.query.filter_by(is_active=True).order_by(
         Student.last_name, Student.first_name).all()
-    bals = calc_balance_bulk([s.id for s in students])
     header = ['Last name', 'First name', 'Family', 'Date of birth', 'Age',
               'Parent email', 'Parent phone', 'Emergency contact', 'Emergency phone',
-              'Allergies', 'Special needs', 'Balance']
+              'Allergies', 'Special needs']
+    bals = None
+    if current_user.is_admin:
+        header = header + ['Balance']
+        bals = calc_balance_bulk([s.id for s in students])
     rows = ([
         s.last_name, s.first_name, s.family.name if s.family else '',
         s.date_of_birth.isoformat() if s.date_of_birth else '', s.age if s.age is not None else '',
         s.parent_email or '', s.parent_phone or '',
         s.emergency_contact_name or '', s.emergency_contact_phone or '',
-        s.allergies or '', s.special_needs or '', f"{bals[s.id]['balance']:.2f}",
-    ] for s in students)
+        s.allergies or '', s.special_needs or '',
+    ] + ([f"{bals[s.id]['balance']:.2f}"] if bals is not None else [])
+        for s in students)
     return _csv_response(f'students-{date.today().isoformat()}.csv', header, rows)
 
 
@@ -1764,8 +1788,10 @@ def send_student_invoice(student_id):
 @bp.route('/students/<int:student_id>/invite-parent', methods=['POST'])
 @login_required
 def invite_parent(student_id):
-    if current_user.is_parent:
-        return jsonify({'error': 'Only staff can generate invites'}), 403
+    # Parent-account onboarding is an admin operation (least privilege).
+    err = _admin_only()
+    if err:
+        return err
 
     student = Student.query.get_or_404(student_id)
 
@@ -2189,6 +2215,9 @@ def get_families():
 @bp.route('/families', methods=['POST'])
 @login_required
 def create_family():
+    err = _admin_only()
+    if err:
+        return err
     data = request.get_json() or {}
     name = _clean_str(data.get('name'))
     if not name:
@@ -4766,6 +4795,9 @@ def get_waitlist(class_id):
 @bp.route('/classes/<int:class_id>/waitlist', methods=['POST'])
 @login_required
 def add_to_waitlist(class_id):
+    err = _admin_only()
+    if err:
+        return err
     DanceClass.query.get_or_404(class_id)
     data = request.get_json() or {}
     student_id, serr = _valid_id(data.get('student_id'))
@@ -4819,6 +4851,9 @@ def promote_waitlist(wid):
 @bp.route('/waitlist/<int:wid>', methods=['DELETE'])
 @login_required
 def remove_waitlist(wid):
+    err = _admin_only()
+    if err:
+        return err
     w = WaitlistEntry.query.get_or_404(wid)
     if current_user.is_parent and w.parent_id != current_user.id:
         return jsonify({'error': 'Not authorized'}), 403

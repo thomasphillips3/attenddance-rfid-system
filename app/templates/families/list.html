@@ -7,9 +7,11 @@
         <h1 class="font-display text-3xl text-ink leading-tight mt-1">Families</h1>
         <p class="mt-1 text-sm text-ink-2">Group students by family for combined billing</p>
     </div>
+    {% if current_user.is_admin %}{# family creation is admin-only #}
     <button onclick="openAddFamily()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">
         <i class="fas fa-plus"></i>Add Family
     </button>
+    {% endif %}
 </div>
 
 <div id="families-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
