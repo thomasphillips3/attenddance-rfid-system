@@ -224,7 +224,10 @@ async function sendInvoice() {
         const res = await fetch('/api/students/{{ student.id }}/send-invoice', { method: 'POST', headers: {'Content-Type': 'application/json'} });
         const data = await res.json();
         if (res.ok) {
-            alert(data.message + (data.invoice_url ? '\n\nInvoice URL: ' + data.invoice_url : ''));
+            // Toast, consistent with this function's error path — the app's last
+            // browser alert(). The invoice URL isn't shown (Square emails the
+            // invoice to the parent; it's also in the Square dashboard).
+            toast(data.message || 'Invoice sent', true);
             btn.innerHTML = '<i class="fas fa-check mr-2"></i>Invoice Sent';
             btn.className = btn.className.replace('bg-primary-500 hover:bg-primary-600', 'bg-ok');
         } else {
