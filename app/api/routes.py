@@ -172,6 +172,17 @@ def _opt_int(raw):
     return v if not err else None
 
 
+def _opt_num(raw, default, is_float=False):
+    """Parse an optional numeric UPDATE field, keeping `default` (usually the
+    current value) if it's garbage — so a non-numeric body can't 500 a
+    get_or_404-then-int() update endpoint (the update-fuzz uses a nonexistent id
+    and 404s before reaching the parse, so these were unguarded)."""
+    try:
+        return round(float(raw), 2) if is_float else int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 def _resolve_student_id(raw, required=True):
     """Validate that a student id is a positive int referring to a real student.
     Returns (id_or_None, None) on success or (None, (json, status)) on error.
@@ -1811,11 +1822,14 @@ def create_rule():
 @login_required
 def update_rule(rule_id):
     r = Rule.query.get_or_404(rule_id)
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if data.get('text'):
         r.text = _clean_str(data['text'])
     if 'display_order' in data:
-        r.display_order = int(data['display_order'])
+        try:
+            r.display_order = int(data['display_order'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'display_order must be a number'}), 400
     db.session.commit()
     return jsonify({'id': r.id, 'text': r.text, 'display_order': r.display_order})
 
@@ -3277,7 +3291,7 @@ def update_audition(aid):
     if 'title' in data and _clean_str(data['title']):
         a.title = _clean_str(data['title'])
     if 'group_id' in data:
-        a.group_id = int(data['group_id']) if data['group_id'] else None
+        a.group_id = _opt_int(data.get('group_id'))
     if 'audition_date' in data:
         a.audition_date = datetime.strptime(data['audition_date'], '%Y-%m-%d').date() if data['audition_date'] else None
     if 'location_text' in data:
@@ -3409,7 +3423,7 @@ def update_performance(pid):
     if 'title' in data and _clean_str(data['title']):
         p.title = _clean_str(data['title'])
     if 'group_id' in data:
-        p.group_id = int(data['group_id']) if data['group_id'] else None
+        p.group_id = _opt_int(data.get('group_id'))
     if 'performance_date' in data:
         p.performance_date = datetime.strptime(data['performance_date'], '%Y-%m-%d').date() if data['performance_date'] else None
     if 'call_time' in data:
@@ -3617,7 +3631,7 @@ def update_waiver_template(tid):
     if 'allow_decline' in data:
         t.allow_decline = bool(data['allow_decline'])
     if 'display_order' in data:
-        t.display_order = int(data['display_order'])
+        t.display_order = _opt_num(data['display_order'], t.display_order)
     if 'is_active' in data:
         t.is_active = bool(data['is_active'])
     db.session.commit()
@@ -3794,7 +3808,7 @@ def update_costume(cid):
         c.vendor = _clean_str(data['vendor']) or None
     if 'fee' in data:
         try:  # 0 is valid (free costume); garbage keeps the old fee
-            c.fee = round(float(data['fee'] or 0), 2)
+            c.fee = _opt_num(data['fee'] or 0, c.fee, is_float=True)
         except (TypeError, ValueError):
             pass
     if 'class_id' in data:
@@ -4917,7 +4931,7 @@ def update_makeup(mid):
     if 'status' in data and data['status'] in ('requested', 'scheduled', 'completed', 'cancelled'):
         m.status = data['status']
     if 'makeup_class_id' in data:
-        m.makeup_class_id = int(data['makeup_class_id']) if data['makeup_class_id'] else None
+        m.makeup_class_id = _opt_int(data.get('makeup_class_id'))  # garbage -> None, not 500
     if 'makeup_date' in data:
         m.makeup_date = _parse_date(data['makeup_date'])
     if 'note' in data:
@@ -5349,7 +5363,7 @@ def update_recital(rid):
         r.title = _clean_str(data['title'])
     if 'year' in data and data['year']:
         try:
-            r.year = int(data['year'])
+            r.year = _opt_num(data['year'], r.year)
         except (TypeError, ValueError):
             return jsonify({'error': 'year must be a number'}), 400
     if 'theme' in data:
@@ -5705,14 +5719,14 @@ def update_recital_award(aid):
     if 'category' in data:
         a.category = _clean_str(data['category']) or None
     if 'student_id' in data:
-        a.student_id = int(data['student_id']) if data['student_id'] else None
+        a.student_id = _opt_int(data.get('student_id'))
     if 'recipient_text' in data:
         a.recipient_text = _clean_str(data['recipient_text']) or None
     if 'description' in data:
         a.description = _clean_str(data['description']) or None
     if 'order_index' in data:
         try:
-            a.order_index = int(data['order_index'])
+            a.order_index = _opt_num(data['order_index'], a.order_index)
         except (TypeError, ValueError):
             pass
     db.session.commit()
@@ -5798,7 +5812,7 @@ def update_recital_ad(aid):
         a.size = data['size']
     if 'price' in data:
         try:
-            a.price = round(float(data['price'] or 0), 2)
+            a.price = _opt_num(data['price'] or 0, a.price, is_float=True)
         except (TypeError, ValueError):
             pass  # bad price keeps the old value (never let it reach the Numeric column)
     if 'content' in data:
@@ -5813,7 +5827,7 @@ def update_recital_ad(aid):
         a.status = _clean_str(data['status']) or 'submitted'
     if 'order_index' in data:
         try:
-            a.order_index = int(data['order_index'])
+            a.order_index = _opt_num(data['order_index'], a.order_index)
         except (TypeError, ValueError):
             pass
     if 'paid' in data:

@@ -1324,6 +1324,48 @@ def run_get_queryparam_fuzz(ids):
            not bad, f"5xx on: {bad[:12]}", "P2")
 
 
+def run_update_valid_id_fuzz():
+    """run_update_fuzz substitutes a NONEXISTENT id, so endpoints that
+    get_or_404 FIRST return 404 before parsing the body — the garbage-body-on-
+    VALID-id path (unguarded int()/float() -> 500) slipped through. Seed real
+    rows and PUT garbage numeric bodies to their update endpoints with valid ids;
+    assert no 5xx."""
+    from app.models import (User, Rule, WaiverTemplate, MakeupClass, Costume,
+                            Student, Family, Recital, RecitalNumber)
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        fam = Family(name="UpdFuzz Fam")
+        db.session.add(fam)
+        db.session.flush()
+        st = Student(first_name="Upd", last_name="Fuzz", family_id=fam.id, is_active=True)
+        db.session.add(st)
+        db.session.flush()
+        rule = Rule(text="UF rule", display_order=1)
+        wt = WaiverTemplate(title="UF waiver", body="b", display_order=1)
+        mk = MakeupClass(student_id=st.id, status="scheduled", requested_by=adm.id)
+        cos = Costume(name="UF costume", fee=10)
+        rec = Recital(year=2031, title="UF recital")
+        db.session.add_all([rule, wt, mk, cos, rec])
+        db.session.flush()
+        num = RecitalNumber(recital_id=rec.id, title="UF number", order_index=1)
+        db.session.add(num)
+        db.session.commit()
+        targets = [
+            (f"/api/rules/{rule.id}", {"display_order": "x"}),
+            (f"/api/waivers/templates/{wt.id}", {"display_order": "x"}),
+            (f"/api/makeups/{mk.id}", {"makeup_class_id": "x"}),
+            (f"/api/costumes/{cos.id}", {"fee": "x"}),
+            (f"/api/recitals/{rec.id}", {"year": "x"}),
+            (f"/api/recital-numbers/{num.id}", {"order_index": "x", "student_id": "x"}),
+        ]
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        bad = [f"{p}->{c.put(p, json=b).status_code}" for p, b in targets
+               if c.put(p, json=b).status_code >= 500]
+    record("Update endpoints don't 5xx on a garbage body with a VALID id",
+           not bad, f"5xx (unguarded int/float on body): {bad}", "P2")
+
+
 def run_update_fuzz():
     """Fuzz every PUT/PATCH with VALID ids + garbage bodies. The mutation fuzz
     uses bogus ids (404 before the update logic), so this is the only thing that
@@ -4157,6 +4199,7 @@ def main():
     run_costume_charge_race()
     run_full_mutation_fuzz()
     run_update_fuzz()
+    run_update_valid_id_fuzz()
     run_get_queryparam_fuzz(ids)
     run_skills(ids)
     run_analytics(ids)
