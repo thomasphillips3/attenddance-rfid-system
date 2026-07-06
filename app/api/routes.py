@@ -823,16 +823,18 @@ def get_attendance():
         return err
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 50, type=int), 100)
-    date_from = request.args.get('date_from')
-    date_to = request.args.get('date_to')
+    # _parse_date returns None on a garbage/absent value, so a bad ?date_from=abc
+    # skips the filter instead of 500-ing on an uncaught strptime ValueError.
+    date_from = _parse_date(request.args.get('date_from'))
+    date_to = _parse_date(request.args.get('date_to'))
     class_id = request.args.get('class_id', type=int)
     student_id = request.args.get('student_id', type=int)
 
     query = Attendance.query
     if date_from:
-        query = query.filter(func.date(Attendance.check_in_time) >= datetime.strptime(date_from, '%Y-%m-%d').date())
+        query = query.filter(func.date(Attendance.check_in_time) >= date_from)
     if date_to:
-        query = query.filter(func.date(Attendance.check_in_time) <= datetime.strptime(date_to, '%Y-%m-%d').date())
+        query = query.filter(func.date(Attendance.check_in_time) <= date_to)
     if class_id:
         query = query.filter_by(class_id=class_id)
     if student_id:
@@ -3269,8 +3271,7 @@ def create_audition():
     a = Audition(
         group_id=_opt_int(data.get('group_id')),
         title=_clean_str(data['title']),
-        audition_date=(datetime.strptime(data['audition_date'], '%Y-%m-%d').date()
-                       if data.get('audition_date') else None),
+        audition_date=_parse_date(data.get('audition_date')),
         location_text=_clean_str(data.get('location_text')) or None,
         description=_clean_str(data.get('description')) or None,
         is_open=bool(data.get('is_open', True)),
@@ -3293,7 +3294,7 @@ def update_audition(aid):
     if 'group_id' in data:
         a.group_id = _opt_int(data.get('group_id'))
     if 'audition_date' in data:
-        a.audition_date = datetime.strptime(data['audition_date'], '%Y-%m-%d').date() if data['audition_date'] else None
+        a.audition_date = _parse_date(data.get('audition_date'))
     if 'location_text' in data:
         a.location_text = _clean_str(data['location_text']) or None
     if 'description' in data:
@@ -3401,8 +3402,7 @@ def create_performance():
     p = Performance(
         group_id=_opt_int(data.get('group_id')),
         title=_clean_str(data['title']),
-        performance_date=(datetime.strptime(data['performance_date'], '%Y-%m-%d').date()
-                          if data.get('performance_date') else None),
+        performance_date=_parse_date(data.get('performance_date')),
         call_time=_clean_str(data.get('call_time')) or None,
         venue=_clean_str(data.get('venue')) or None,
         description=_clean_str(data.get('description')) or None,
@@ -3425,7 +3425,7 @@ def update_performance(pid):
     if 'group_id' in data:
         p.group_id = _opt_int(data.get('group_id'))
     if 'performance_date' in data:
-        p.performance_date = datetime.strptime(data['performance_date'], '%Y-%m-%d').date() if data['performance_date'] else None
+        p.performance_date = _parse_date(data.get('performance_date'))
     if 'call_time' in data:
         p.call_time = _clean_str(data['call_time']) or None
     if 'venue' in data:
@@ -4887,6 +4887,17 @@ def _parse_date(v):
         return None
 
 
+def _parse_time(v):
+    """Parse an HH:MM time string, or None on garbage/absent — so a bad
+    start_time/end_time in a request body can't 500 an unguarded strptime."""
+    if not v:
+        return None
+    try:
+        return datetime.strptime(v, '%H:%M').time()
+    except (ValueError, TypeError):
+        return None
+
+
 @bp.route('/makeups', methods=['POST'])
 @login_required
 def create_makeup():
@@ -5337,8 +5348,7 @@ def create_recital():
         year=year,
         title=_clean_str(data['title']),
         theme=_clean_str(data.get('theme')) or None,
-        recital_date=(datetime.strptime(data['recital_date'], '%Y-%m-%d').date()
-                      if data.get('recital_date') else None),
+        recital_date=_parse_date(data.get('recital_date')),
         show_times=_clean_str(data.get('show_times')) or None,
         venue=_clean_str(data.get('venue')) or None,
     )
@@ -5369,8 +5379,7 @@ def update_recital(rid):
     if 'theme' in data:
         r.theme = _clean_str(data['theme']) or None
     if 'recital_date' in data:
-        r.recital_date = (datetime.strptime(data['recital_date'], '%Y-%m-%d').date()
-                          if data['recital_date'] else None)
+        r.recital_date = _parse_date(data.get('recital_date'))
     if 'show_times' in data:
         r.show_times = _clean_str(data['show_times']) or None
     if 'venue' in data:

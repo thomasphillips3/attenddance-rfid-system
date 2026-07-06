@@ -1324,6 +1324,39 @@ def run_get_queryparam_fuzz(ids):
            not bad, f"5xx on: {bad[:12]}", "P2")
 
 
+def run_date_param_robustness():
+    """Unguarded strptime() on request data 500s on a garbage date/time — a class
+    the id-mismatching fuzzes missed (they 404 before parsing, or only send
+    numeric garbage). Covers the GET query-param path (attendance date filter)
+    and the update-body path (audition/performance/recital dates)."""
+    from app.models import User, Audition, Performance, PerformanceGroup, Recital
+    with app.app_context():
+        grp = PerformanceGroup(name="DateFuzz Grp")
+        db.session.add(grp)
+        db.session.flush()
+        au = Audition(title="DF aud", group_id=grp.id)
+        pf = Performance(title="DF perf", group_id=grp.id)
+        rec = Recital(year=2032, title="DF rec")
+        db.session.add_all([au, pf, rec])
+        db.session.commit()
+        aid, pid, rid = au.id, pf.id, rec.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        codes = {
+            "GET attendance ?date_from=garbage": c.get(
+                "/api/attendance?date_from=abc&date_to=2026-99-99").status_code,
+            "update audition garbage date": c.put(
+                f"/api/performance/auditions/{aid}", json={"audition_date": "nope"}).status_code,
+            "update performance garbage date": c.put(
+                f"/api/performance/performances/{pid}", json={"performance_date": "nope"}).status_code,
+            "update recital garbage date": c.put(
+                f"/api/recitals/{rid}", json={"recital_date": "nope"}).status_code,
+        }
+    bad = {k: v for k, v in codes.items() if v >= 500}
+    record("Garbage date on request data doesn't 5xx (strptime guarded)",
+           not bad, f"5xx: {bad}", "P2")
+
+
 def run_update_valid_id_fuzz():
     """run_update_fuzz substitutes a NONEXISTENT id, so endpoints that
     get_or_404 FIRST return 404 before parsing the body — the garbage-body-on-
@@ -4211,6 +4244,7 @@ def main():
     run_full_mutation_fuzz()
     run_update_fuzz()
     run_update_valid_id_fuzz()
+    run_date_param_robustness()
     run_get_queryparam_fuzz(ids)
     run_skills(ids)
     run_analytics(ids)
