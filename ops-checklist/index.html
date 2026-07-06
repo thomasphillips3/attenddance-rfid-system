@@ -182,75 +182,6 @@
     font-size: 0.9rem;
   }
 
-  /* Who-am-I overlay */
-  #whoami-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(31,26,23,.55);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    z-index: 50;
-  }
-  #whoami-overlay.hidden { display: none; }
-  .whoami-card {
-    background: var(--surface);
-    border-radius: 20px;
-    box-shadow: var(--shadow-pop);
-    padding: 28px 24px;
-    max-width: 360px;
-    width: 100%;
-    text-align: center;
-  }
-  .whoami-card h2 {
-    font-family: var(--font-display);
-    font-size: 1.3rem;
-    margin: 0 0 6px;
-  }
-  .whoami-card p {
-    font-size: 0.85rem;
-    color: var(--ink-3);
-    margin: 0 0 20px;
-  }
-  .whoami-buttons {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .btn-primary {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    font-weight: 700;
-    border-radius: 12px;
-    padding: 12px 16px;
-    font-size: 0.95rem;
-    background: var(--primary-500);
-    color: #fff;
-    border: none;
-    cursor: pointer;
-    min-height: 48px;
-  }
-  .btn-primary:hover { background: var(--primary-600); }
-
-  #whoami-footer {
-    text-align: center;
-    margin-top: 28px;
-    font-size: 0.78rem;
-    color: var(--ink-3);
-  }
-  #whoami-footer button {
-    background: none;
-    border: none;
-    color: var(--primary-600);
-    font-weight: 700;
-    cursor: pointer;
-    padding: 0;
-    font-size: inherit;
-  }
-
   /* Toast */
   #toast {
     position: fixed;
@@ -295,23 +226,10 @@
   <div id="list" class="loading">Loading…</div>
 </div>
 
-<div id="whoami-overlay" class="hidden">
-  <div class="whoami-card">
-    <h2>Who's checking in?</h2>
-    <p>So we know who did what — pick one, you won't be asked again on this device.</p>
-    <div class="whoami-buttons">
-      <button class="btn-primary" data-name="Wilkanda">I'm Wilkanda</button>
-      <button class="btn-primary" data-name="Carollette">I'm Carollette</button>
-    </div>
-  </div>
-</div>
-
 <div id="toast"></div>
 
 <script>
 const API_BASE = "__API_BASE__";
-const WHOAMI_KEY = "attenddance_checklist_whoami";
-
 const VIEWMODE_KEY = "attenddance_checklist_viewmode";
 
 let items = [];
@@ -338,21 +256,6 @@ function esc(s) {
   return d.innerHTML;
 }
 
-function getWhoAmI() {
-  return localStorage.getItem(WHOAMI_KEY);
-}
-function setWhoAmI(name) {
-  localStorage.setItem(WHOAMI_KEY, name);
-  document.getElementById("whoami-overlay").classList.add("hidden");
-}
-function showWhoAmI() {
-  document.getElementById("whoami-overlay").classList.remove("hidden");
-}
-
-document.querySelectorAll(".whoami-buttons [data-name]").forEach(btn => {
-  btn.addEventListener("click", () => setWhoAmI(btn.dataset.name));
-});
-
 function formatDate(iso) {
   if (!iso) return "";
   try {
@@ -370,7 +273,7 @@ function render() {
   el.className = "";
   el.innerHTML = items.map(item => {
     const doneMeta = item.done
-      ? `<div class="item-done-meta"><span class="pill">✓ done${item.done_by ? " by " + esc(item.done_by) : ""}${item.done_at ? " · " + esc(formatDate(item.done_at)) : ""}</span></div>`
+      ? `<div class="item-done-meta"><span class="pill">✓ done${item.done_at ? " · " + esc(formatDate(item.done_at)) : ""}</span></div>`
       : "";
     const note = (item.note && viewMode === "detailed")
       ? `<div class="item-note">${esc(item.note)}</div>`
@@ -418,13 +321,6 @@ async function fetchItems() {
 }
 
 async function onToggle(itemId, checkboxEl) {
-  const whoami = getWhoAmI();
-  if (!whoami) {
-    checkboxEl.checked = !checkboxEl.checked;
-    showWhoAmI();
-    return;
-  }
-
   const idx = items.findIndex(i => i.item_id === itemId);
   if (idx === -1) return;
   const prev = { ...items[idx] };
@@ -433,7 +329,6 @@ async function onToggle(itemId, checkboxEl) {
   items[idx] = {
     ...items[idx],
     done: newDone,
-    done_by: newDone ? whoami : "",
     done_at: newDone ? new Date().toISOString() : "",
   };
   render();
@@ -442,7 +337,7 @@ async function onToggle(itemId, checkboxEl) {
     const res = await fetch(`${API_BASE}/toggle`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ item_id: itemId, done: newDone, done_by: whoami }),
+      body: JSON.stringify({ item_id: itemId, done: newDone }),
     });
     if (!res.ok) throw new Error(`POST /toggle ${res.status}`);
     fetchItems();
@@ -466,8 +361,6 @@ function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(fetchItems, 15000);
 }
-
-if (!getWhoAmI()) showWhoAmI();
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") fetchItems();
