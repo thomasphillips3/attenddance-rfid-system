@@ -126,30 +126,6 @@
   .item-card.done .item-title {
     color: var(--ink-2);
   }
-  .view-toggle {
-    display: inline-flex;
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    padding: 3px;
-    margin-bottom: 16px;
-  }
-  .view-btn {
-    border: none;
-    background: none;
-    font-family: var(--font-body);
-    font-weight: 700;
-    font-size: 0.82rem;
-    color: var(--ink-2);
-    padding: 7px 16px;
-    border-radius: 999px;
-    cursor: pointer;
-  }
-  .view-btn.active {
-    background: var(--primary-500);
-    color: #fff;
-  }
-
   .item-done-meta {
     padding: 0 16px 10px 52px;
     margin-top: -8px;
@@ -213,11 +189,6 @@
     </div>
   </header>
 
-  <div class="view-toggle" role="group" aria-label="View detail level">
-    <button type="button" class="view-btn" data-mode="simple">Simple</button>
-    <button type="button" class="view-btn" data-mode="detailed">Detailed</button>
-  </div>
-
   <div class="progress">
     <span id="progress-label">0 of 0 done</span>
     <div class="progress-bar"><div id="progress-fill" style="width:0%"></div></div>
@@ -230,25 +201,9 @@
 
 <script>
 const API_BASE = "__API_BASE__";
-const VIEWMODE_KEY = "attenddance_checklist_viewmode";
 
 let items = [];
 let pollTimer = null;
-let viewMode = localStorage.getItem(VIEWMODE_KEY) || "simple";
-
-function setViewMode(mode) {
-  viewMode = mode;
-  localStorage.setItem(VIEWMODE_KEY, mode);
-  document.querySelectorAll(".view-btn").forEach(b => {
-    b.classList.toggle("active", b.dataset.mode === mode);
-  });
-  render();
-}
-
-document.querySelectorAll(".view-btn").forEach(btn => {
-  btn.classList.toggle("active", btn.dataset.mode === viewMode);
-  btn.addEventListener("click", () => setViewMode(btn.dataset.mode));
-});
 
 function esc(s) {
   const d = document.createElement("div");
@@ -275,7 +230,7 @@ function render() {
     const doneMeta = item.done
       ? `<div class="item-done-meta"><span class="pill">✓ done${item.done_at ? " · " + esc(formatDate(item.done_at)) : ""}</span></div>`
       : "";
-    const note = (item.note && viewMode === "detailed")
+    const note = item.note
       ? `<div class="item-note">${esc(item.note)}</div>`
       : "";
     return `
