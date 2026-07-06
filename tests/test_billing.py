@@ -150,7 +150,12 @@ def test_recurring_charge_idempotent():
             ClassEnrollment(student_id=s1.id, class_id=dc.id),
             ClassEnrollment(student_id=s2.id, class_id=dc.id),
         ])
-        rc = RecurringCharge(class_id=dc.id, amount=50, category="tuition", day_of_month=1)
+        # Backdate creation to last month: the first bill is the first due day
+        # on/after creation (no retroactive first month), so a charge created
+        # mid-month with day_of_month=1 wouldn't fire until NEXT month.
+        from datetime import datetime as _dtt
+        rc = RecurringCharge(class_id=dc.id, amount=50, category="tuition", day_of_month=1,
+                             created_at=_dtt.utcnow() - timedelta(days=40))
         db.session.add(rc)
         db.session.commit()
         rcid = rc.id

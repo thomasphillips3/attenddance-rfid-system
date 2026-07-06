@@ -63,6 +63,15 @@ def _process_recurring_charges(today=None):
         due_day = min(rc.day_of_month, last_day)
         if today.day < due_day:
             continue
+        # Never bill retroactively: the first bill is the first due day ON or
+        # AFTER the charge was created. Without this, setting up fall billing in
+        # August (due day 1) charged every enrolled family for August on the
+        # next boot — a month before classes start. A deliberately retroactive
+        # first month can still be posted manually (bulk charge).
+        created = rc.created_at.date() if rc.created_at else None
+        if created and (created.year, created.month) == (today.year, today.month) \
+                and created.day > due_day:
+            continue
         already = Transaction.query.filter_by(
             recurring_charge_id=rc.id,
         ).filter(Transaction.transaction_date >= month_start).first()

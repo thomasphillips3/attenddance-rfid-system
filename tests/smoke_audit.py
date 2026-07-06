@@ -2156,6 +2156,56 @@ def run_rfid_reuses_app():
            calls[0] == 1, f"create_app called {calls[0]}x for 2 scans (want 1)", "P2")
 
 
+def run_recurring_no_retroactive_first_month():
+    """Setting up fall billing in August must not bill August. A recurring
+    charge's first bill is the first due day ON or AFTER its creation — without
+    that, creating a due-day-1 charge on Aug 20 charged every enrolled family
+    for August on the next boot, a month before classes start. A charge created
+    BEFORE its due day still bills that same month."""
+    from datetime import date, datetime as _dtt, time as _time
+    from app.models import (User, DanceClass, Student, Family, ClassEnrollment,
+                            RecurringCharge, Transaction)
+    from app import _process_recurring_charges
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        fam = Family(name="Retro Fam")
+        db.session.add(fam)
+        db.session.flush()
+        s = Student(first_name="Retro", last_name="Kid", family_id=fam.id, is_active=True)
+        db.session.add(s)
+        db.session.flush()
+        cls = DanceClass(name="RetroClass", day_of_week=1, start_time=_time(16, 0),
+                         end_time=_time(17, 0), instructor_id=adm.id)
+        db.session.add(cls)
+        db.session.flush()
+        db.session.add(ClassEnrollment(student_id=s.id, class_id=cls.id))
+        # Fall setup shape: created Aug 20, bills on the 1st.
+        rc = RecurringCharge(class_id=cls.id, amount=55, category="tuition",
+                             day_of_month=1, created_by=adm.id,
+                             created_at=_dtt(2030, 8, 20, 12, 0))
+        # Control: created Aug 20, bills on the 25th (due day still ahead).
+        rc2 = RecurringCharge(class_id=cls.id, amount=66, category="tuition",
+                              day_of_month=25, created_by=adm.id,
+                              created_at=_dtt(2030, 8, 20, 12, 0))
+        db.session.add_all([rc, rc2])
+        db.session.commit()
+        rc_id, rc2_id = rc.id, rc2.id
+
+    def _count(rid):
+        with app.app_context():
+            return Transaction.query.filter_by(recurring_charge_id=rid).count()
+
+    with app.app_context():
+        _process_recurring_charges(today=date(2030, 8, 26))  # after both due days
+    aug_retro, aug_ok = _count(rc_id), _count(rc2_id)
+    with app.app_context():
+        _process_recurring_charges(today=date(2030, 9, 1))   # next month
+    sep_retro = _count(rc_id)
+    record("Recurring first bill is the first due day on/after creation (no retroactive month)",
+           aug_retro == 0 and aug_ok == 1 and sep_retro == 1,
+           f"aug_due1={aug_retro} (want 0) aug_due25={aug_ok} (want 1) sept_due1={sep_retro} (want 1)", "P1")
+
+
 def run_recurring_short_month_clamp():
     """The recurring-charge engine auto-creates tuition every month and runs
     unattended — so it needs a real regression guard. A charge set for the 31st
@@ -4726,6 +4776,7 @@ def main():
     run_message_blast(ids)
     run_message_blast_non_blocking()
     run_recurring_short_month_clamp()
+    run_recurring_no_retroactive_first_month()
     run_attendance_default_local()
     run_rfid_assign_unique()
     run_day_of_week_convention()

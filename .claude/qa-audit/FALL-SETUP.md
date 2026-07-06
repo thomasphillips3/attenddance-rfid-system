@@ -25,9 +25,11 @@ Assumes the app is deployed and the admin password is changed
   instructor, and **max students** (the cap is enforced — enrollment and
   registration approvals respect it).
 - **Payments page → recurring charges**: one per class — amount, category
-  `tuition`, and the day of the month it bills. Note: the app sleeps when
-  idle, so a charge posts when the app first wakes on or after that day; the
-  engine never double-charges and catches up on short months automatically.
+  `tuition`, and the day of the month it bills. **Safe to set up early:** the
+  first bill is the first due day *after* you create the charge, so building
+  September's billing in August won't charge anyone for August. (The app
+  sleeps when idle, so a charge posts when it first wakes on or after the due
+  day; the engine never double-charges and handles short months.)
 - Optional, in **Settings**: late fee amount + minimum balance (applied via
   the Payments page when you choose, never automatically), Zelle/Cash App
   display, message templates.
