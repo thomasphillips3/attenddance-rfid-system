@@ -3809,8 +3809,8 @@ def update_costume(cid):
     if 'vendor' in data:
         c.vendor = _clean_str(data['vendor']) or None
     if 'fee' in data:
-        try:  # 0 is valid (free costume); garbage keeps the old fee
-            c.fee = _opt_num(data['fee'] or 0, c.fee, is_float=True)
+        try:  # 0 is valid (free costume); garbage -> 400 via the existing guard
+            c.fee = round(float(data['fee'] or 0), 2)
         except (TypeError, ValueError):
             pass
     if 'class_id' in data:
@@ -5376,7 +5376,7 @@ def update_recital(rid):
         r.title = _clean_str(data['title'])
     if 'year' in data and data['year']:
         try:
-            r.year = _opt_num(data['year'], r.year)
+            r.year = int(data['year'])
         except (TypeError, ValueError):
             return jsonify({'error': 'year must be a number'}), 400
     if 'theme' in data:
@@ -5741,7 +5741,7 @@ def update_recital_award(aid):
         a.description = _clean_str(data['description']) or None
     if 'order_index' in data:
         try:
-            a.order_index = _opt_num(data['order_index'], a.order_index)
+            a.order_index = int(data['order_index'])
         except (TypeError, ValueError):
             pass
     db.session.commit()
@@ -5827,7 +5827,7 @@ def update_recital_ad(aid):
         a.size = data['size']
     if 'price' in data:
         try:
-            a.price = _opt_num(data['price'] or 0, a.price, is_float=True)
+            a.price = round(float(data['price'] or 0), 2)
         except (TypeError, ValueError):
             pass  # bad price keeps the old value (never let it reach the Numeric column)
     if 'content' in data:
@@ -5842,7 +5842,7 @@ def update_recital_ad(aid):
         a.status = _clean_str(data['status']) or 'submitted'
     if 'order_index' in data:
         try:
-            a.order_index = _opt_num(data['order_index'], a.order_index)
+            a.order_index = int(data['order_index'])
         except (TypeError, ValueError):
             pass
     if 'paid' in data:
