@@ -4779,6 +4779,7 @@ def approve_registration(rid):
             }
         class_ids = [cid for cid in class_ids if cid in caps]
     created = []
+    created_objs = []
     full_skips = []
     returning = []
     # Existing dancers who could be returning: those already in the (possibly
@@ -4845,7 +4846,26 @@ def approve_registration(rid):
         db.session.flush()
         _enroll(student)
         created.append(student.full_name)
+        created_objs.append(student)
         existing_by_name[(fn.lower(), ln.lower())] = student  # dedupe within one payload too
+
+    # Link newly-created dancers to the family's existing portal accounts.
+    # Without this, a returning family's new sibling never appears on the
+    # parent's portal — approval created the dancer with no ParentStudent link,
+    # and register-with-code can't be reused by an existing account. The
+    # registering parent listed the child themselves, so linkage is intended.
+    # (Returning dancers keep their existing links untouched.)
+    portal_linked = 0
+    if created_objs:
+        sibling_ids = [st.id for st in Student.query.filter_by(family_id=fam.id).all()
+                       if st.id not in {c.id for c in created_objs}]
+        parent_ids = {ps.parent_id for ps in ParentStudent.query.filter(
+            ParentStudent.student_id.in_(sibling_ids)).all()} if sibling_ids else set()
+        for pid in parent_ids:
+            for st in created_objs:
+                if not ParentStudent.query.filter_by(parent_id=pid, student_id=st.id).first():
+                    db.session.add(ParentStudent(parent_id=pid, student_id=st.id))
+                    portal_linked += 1
 
     # Atomically claim the registration — two concurrent approvals (double-click)
     # both pass the status check above and would otherwise each create a Family
@@ -4870,6 +4890,8 @@ def approve_registration(rid):
     if returning:
         msg += (f' — {len(returning)} returning dancer(s) re-enrolled (not duplicated): '
                 f'{", ".join(returning)}')
+    if portal_linked:
+        msg += " — new dancer(s) linked to the family's portal account"
     if full_skips:
         msg += (f' — {len(full_skips)} enrollment(s) skipped (class full): '
                 f'{"; ".join(full_skips)}. Raise the capacity or use the waitlist.')

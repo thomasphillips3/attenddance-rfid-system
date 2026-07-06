@@ -2552,6 +2552,50 @@ def run_registration_pilot_shape_dedupe():
            f"count={n_pilot} family_id={orphan.family_id} backfilled={fam_email_backfilled} res={res.get('returning_dancers')}", "P1")
 
 
+def run_approval_links_sibling_to_portal():
+    """A returning family's re-registration adds a new sibling. Approval must
+    link the new dancer to the family's existing portal account(s) — otherwise
+    the parent never sees them on the portal, and register-with-code can't be
+    reused by an existing account (it bounces authenticated users)."""
+    from app.models import Setting, Family, Student, User, ParentStudent
+    with app.app_context():
+        Setting.set("registration_open", "1")
+        fam = Family(name="Portal Fam", primary_email="portal-fam@x.com")
+        db.session.add(fam)
+        db.session.flush()
+        dancer = Student(first_name="Poppy", last_name="Portal", family_id=fam.id,
+                         parent_email="portal-fam@x.com", is_active=True)
+        parent = User(username="portal_parent", email="portal-fam@x.com", role="parent",
+                      first_name="Pat", last_name="Portal", is_active=True)
+        parent.set_password("pw")
+        db.session.add_all([dancer, parent])
+        db.session.flush()
+        db.session.add(ParentStudent(parent_id=parent.id, student_id=dancer.id))
+        db.session.commit()
+        parent_id = parent.id
+    with app.test_client() as pub:
+        pub.post("/api/register", json={
+            "parent_name": "Pat Portal", "parent_email": "portal-fam@x.com",
+            "students": [{"first_name": "Poppy", "last_name": "Portal"},
+                         {"first_name": "Newby", "last_name": "Portal"}]})
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        regs = (c.get("/api/registrations?status=pending").get_json() or {}).get("registrations", [])
+        rid = max(r["id"] for r in regs if (r.get("parent_email") or "").lower() == "portal-fam@x.com")
+        res = c.post(f"/api/registrations/{rid}/approve").get_json() or {}
+    with app.app_context():
+        newby = Student.query.filter_by(first_name="Newby", last_name="Portal").first()
+        linked = newby is not None and ParentStudent.query.filter_by(
+            parent_id=parent_id, student_id=newby.id).first() is not None
+        kid_names = {s.full_name for s in User.query.get(parent_id).get_children()}
+    with app.test_client() as pc:
+        login(pc, "portal_parent", "pw")
+        portal_ok = pc.get("/parent").status_code == 200
+    record("Approval links a new sibling to the family's existing portal account",
+           linked and "Newby Portal" in kid_names and portal_ok,
+           f"linked={linked} children={kid_names} portal={portal_ok} msg={res.get('message', '')[:80]}", "P1")
+
+
 def run_registration_flow():
     """Public self-registration: gated when closed, validated, and admin
     approval actually creates a family + students. The key fall-enrollment path."""
@@ -4856,6 +4900,7 @@ def main():
     run_registration_flow()
     run_registration_dedupe()
     run_registration_pilot_shape_dedupe()
+    run_approval_links_sibling_to_portal()
     run_registration_field_caps()
     run_clean_str_backstop()
     run_amount_validation(ids)
