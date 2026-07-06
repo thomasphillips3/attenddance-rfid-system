@@ -35,6 +35,11 @@ a real `SECRET_KEY`, and the seeded admin password is publicly known.
 - [ ] Review the branch: the P0 security fixes (IDOR, SECRET_KEY, CSRF), the
   parent-portal JS repair, the billing fixes, the new reports, and CI. Merge to
   `main`.
+- ✅ **Deploy rehearsal already done (2026-07-06):** the production image was
+  built and run locally — fail-closed boot without SECRET_KEY, clean boot with
+  it, login through the proxied CSRF shape, Secure/HttpOnly/Lax cookie, HSTS,
+  JSON API errors, and the demo-parent self-clean were all verified against the
+  live container.
 - [ ] Deploy to Fly (`flyctl deploy`, or your existing push-to-deploy flow).
 - [ ] **Confirm it booted** — if you forgot step 1, the logs will show
   `RuntimeError: Refusing to start in production ... SECRET_KEY`. That's the
