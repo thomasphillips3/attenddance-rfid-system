@@ -10,5 +10,5 @@ python-dotenv==1.0.1
 python-dateutil==2.9.0
 requests==2.32.3
 gunicorn==22.0.0
-squareup
+squareup>=44,<45   # pin to the v44 SDK (from square import Square); v45+ may break the API
 cryptography>=42,<46

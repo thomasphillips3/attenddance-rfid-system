@@ -17,7 +17,7 @@ PyJWT==2.8.0
 cryptography>=42,<46  # encrypt payment credentials at rest
 
 # Payments
-squareup  # Square Invoices API
+squareup>=44,<45  # Square Invoices API — pin to the v44 SDK (from square import Square); v45+ may break the API
 
 # Utilities and Configuration
 python-dotenv==1.0.1
