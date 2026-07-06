@@ -8,7 +8,7 @@ import threading
 import time
 from datetime import date, datetime, timedelta
 
-from flask import current_app, jsonify, request, send_file
+from flask import current_app, jsonify, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import desc, func, or_
 from sqlalchemy.exc import IntegrityError
@@ -2364,6 +2364,31 @@ def update_staff(user_id):
 
     db.session.commit()
     return jsonify(_staff_to_dict(u))
+
+
+@bp.route('/parents/<int:user_id>/reset-link', methods=['POST'])
+@login_required
+def parent_reset_link(user_id):
+    """Admin generates a single-use password-reset link for a PARENT account.
+    This is the no-SMTP recovery path: a parent who forgot their password calls
+    the studio, and the admin texts/reads them this link. Reuses the
+    forgot-password token — 1-hour expiry, invalidated by any password change,
+    rejected for inactive accounts."""
+    err = _admin_only()
+    if err:
+        return err
+    u = User.query.get_or_404(user_id)
+    if u.role != 'parent':
+        return jsonify({'error': 'Reset links are for parent accounts'}), 400
+    if not u.is_active:
+        return jsonify({'error': 'That account is deactivated'}), 400
+    from app.auth.routes import _reset_serializer
+    token = _reset_serializer().dumps({'uid': u.id, 'pw': (u.password_hash or '')[-16:]})
+    link = url_for('auth.reset_password', token=token, _external=True)
+    AuditLog.record(current_user.id, 'parent.reset_link',
+                    f'Password-reset link generated for {u.username}')
+    db.session.commit()
+    return jsonify({'reset_url': link, 'expires_in_minutes': 60})
 
 
 @bp.route('/staff/<int:user_id>', methods=['DELETE'])

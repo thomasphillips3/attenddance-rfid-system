@@ -170,15 +170,22 @@ def transactions():
 @bp.route('/students/<int:student_id>/detail')
 @staff_required
 def student_detail(student_id):
+    from app.models import ParentStudent, User
     student = Student.query.get_or_404(student_id)
     enrollments = ClassEnrollment.query.filter_by(student_id=student_id, is_active=True).all()
     classes = [e.dance_class for e in enrollments if e.dance_class]
     bal = calc_balance(student_id)
     recent_att = Attendance.query.filter_by(student_id=student_id).order_by(
         desc(Attendance.check_in_time)).limit(10).all()
+    # Parent portal accounts linked to this student (admin card: invite + reset).
+    portal_parents = (User.query
+                      .join(ParentStudent, ParentStudent.parent_id == User.id)
+                      .filter(ParentStudent.student_id == student_id)
+                      .order_by(User.first_name).all())
     return render_template('students/detail.html', student=student, classes=classes,
         balance=bal['balance'], total_charges=bal['total_charges'],
-        total_payments=bal['total_payments'], recent_attendance=recent_att)
+        total_payments=bal['total_payments'], recent_attendance=recent_att,
+        portal_parents=portal_parents)
 
 
 @bp.route('/students/<int:student_id>/ledger')

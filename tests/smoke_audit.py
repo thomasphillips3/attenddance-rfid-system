@@ -439,6 +439,59 @@ def run_teacher_authz(ids):
                f"ledger={rl.status_code} plan={rp.status_code} (parent over-locked)", "P1")
 
 
+def run_admin_parent_reset_link(ids):
+    """The no-SMTP password-recovery path: an admin can generate a single-use
+    reset link for a PARENT account (parents forget passwords; email isn't
+    configured yet; without this the only fix was hand-editing the prod DB).
+    Admin-only, parent-role-only, and the link must actually work end to end."""
+    from urllib.parse import urlparse
+    from app.models import User
+    with app.app_context():
+        pa = User.query.filter_by(username="parent_a").first()
+        admin_u = User.query.filter_by(username="admin").first()
+        pa_id, admin_id = pa.id, admin_u.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r = c.post(f"/api/parents/{pa_id}/reset-link")
+        d = r.get_json() or {}
+        url = d.get("reset_url", "")
+        r_staff_target = c.post(f"/api/parents/{admin_id}/reset-link")
+    record(f"Admin gets a parent reset link ({r.status_code}); staff target rejected ({r_staff_target.status_code})",
+           r.status_code == 200 and "/auth/reset-password/" in url and r_staff_target.status_code == 400,
+           f"status={r.status_code} url={url[:60]} staff_target={r_staff_target.status_code}", "P1")
+    with app.test_client() as c:
+        login(c, "teacher_t", "pw")
+        rt = c.post(f"/api/parents/{pa_id}/reset-link")
+    with app.test_client() as c:
+        login(c, "parent_b", "pw")
+        rp = c.post(f"/api/parents/{pa_id}/reset-link")
+    record(f"Teacher ({rt.status_code}) and parent ({rp.status_code}) blocked from reset links",
+           rt.status_code in (401, 403) and rp.status_code in (401, 403),
+           f"teacher={rt.status_code} parent={rp.status_code}", "P0")
+    # The link works end to end: set a new password, old dies, link is single-use.
+    path = urlparse(url).path
+    with app.test_client() as c:
+        g = c.get(path)
+        p = c.post(path, data={"password": "newpw777", "confirm_password": "newpw777"})
+    with app.test_client() as c:
+        ok_new = login(c, "parent_a", "newpw777").status_code in (200, 302) and \
+                 c.get("/parent").status_code == 200
+    with app.test_client() as c:
+        login(c, "parent_a", "pw")
+        old_dead = c.get("/parent").status_code in (302, 401, 403)
+    with app.test_client() as c:
+        reused = c.get(path, follow_redirects=False)
+        single_use = reused.status_code == 302  # bounced to forgot-password
+    record("Reset link works once: new password logs in, old dead, link not replayable",
+           g.status_code == 200 and p.status_code == 302 and ok_new and old_dead and single_use,
+           f"get={g.status_code} post={p.status_code} new={ok_new} old_dead={old_dead} reuse302={single_use}", "P1")
+    # Restore parent_a's password for later tests.
+    with app.app_context():
+        pa = User.query.filter_by(username="parent_a").first()
+        pa.set_password("pw")
+        db.session.commit()
+
+
 def run_demo_parent_prod_lockout():
     """The demo parent (parent-demo/parent123) is a dev convenience linked to a
     REAL student's records. In production it must be dead twice over: the seed
@@ -4564,6 +4617,7 @@ def main():
     run_login_no_demo_creds_in_prod()
     run_demo_parent_prod_lockout()
     run_teacher_authz(ids)
+    run_admin_parent_reset_link(ids)
     run_privilege_escalation(ids)
     run_waiver_signing(ids)
     run_attendance(ids)
