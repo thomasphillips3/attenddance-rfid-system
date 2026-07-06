@@ -4267,24 +4267,33 @@ def run_page_route_authz(ids):
 
 
 def run_auth_form_labels():
-    """Accessibility guard: every text/email/password field on the standalone auth
-    forms (login, change/forgot/reset password) must have an accessible name — an
-    `id` (paired with a `<label for>`), an `aria-label`, a `placeholder`, or a
-    wrapping `<label>`. A nameless field is announced as an anonymous 'edit text'
-    by a screen reader (this caught change-password's three unlabeled inputs)."""
+    """Accessibility guard: every input/select/textarea on the auth forms AND the
+    parent-facing surfaces (portal, public registration, waiver signing, rules
+    acknowledgment) must have an accessible name — a `<label for>`, an
+    `aria-label`, a `placeholder`, or a wrapping `<label>`. The studio serves
+    ages 3–83; grandparents work these screens, and a nameless field is announced
+    as an anonymous 'edit text' by a screen reader (this caught change-password's
+    three unlabeled inputs, then the parent pay-amount + ticket fields)."""
     import re
     from pathlib import Path
     tpl = Path(__file__).resolve().parent.parent / "app" / "templates"
     forms = ["auth/login.html", "auth/change_password.html",
-             "auth/forgot_password.html", "auth/reset_password.html"]
+             "auth/forgot_password.html", "auth/reset_password.html",
+             "auth/register.html", "parent/dashboard.html",
+             "registration/public.html", "waivers/sign.html",
+             "rules/acknowledge.html"]
     nameless = []
     for rel in forms:
         f = tpl / rel
         if not f.exists():
+            nameless.append(f"{rel}: TEMPLATE MISSING (renamed? update this list)")
             continue
         txt = f.read_text()
         label_fors = set(re.findall(r'<label[^>]*\bfor="([^"]+)"', txt))
-        for m in re.finditer(r'<input\b[^>]*>', txt):
+        # Fields wrapped in a <label>…<input> get their name from the wrapper.
+        wrapped_starts = {mm.start(1) for mm in re.finditer(
+            r'<label[^>]*>[^<]*(<(?:input|select|textarea)\b)', txt)}
+        for m in re.finditer(r'<(input|select|textarea)\b[^>]*>', txt):
             tag = m.group(0)
             typ = (re.search(r'type="([^"]+)"', tag) or [None, "text"])[1]
             if typ in ("hidden", "submit", "button", "checkbox", "radio"):
@@ -4294,10 +4303,11 @@ def run_auth_form_labels():
                 (iid and iid in label_fors)
                 or "aria-label" in tag
                 or "placeholder" in tag
+                or m.start() in wrapped_starts
             )
             if not has_name:
                 nameless.append(f"{rel}: {tag[:70]}")
-    record(f"Auth-form fields all have an accessible name ({len(nameless)} nameless)",
+    record(f"Auth + parent-facing form fields all have an accessible name ({len(nameless)} nameless)",
            not nameless, "; ".join(nameless), "P2")
 
 
