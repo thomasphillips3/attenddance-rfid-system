@@ -4546,13 +4546,22 @@ def approve_registration(rid):
     db.session.flush()
 
     class_ids = [int(x) for x in (reg.class_ids or '').split(',') if x.isdigit()]
+    # Only enroll in classes that still exist — a class deleted between submit and
+    # approval would otherwise leave a dangling enrollment that 500s when the
+    # roster later tries to read its class name. Capture each class's capacity and
+    # current headcount so approval respects capacity like the manual-enroll path
+    # (otherwise approving registrations silently overbooks popular fall classes).
+    caps = {}
     if class_ids:
-        # Only enroll in classes that still exist — a class deleted between
-        # submit and approval would otherwise leave a dangling enrollment that
-        # 500s when the roster later tries to read its class name.
-        existing = {c.id for c in DanceClass.query.filter(DanceClass.id.in_(class_ids)).all()}
-        class_ids = [cid for cid in class_ids if cid in existing]
+        for c in DanceClass.query.filter(DanceClass.id.in_(class_ids)).all():
+            caps[c.id] = {
+                'capacity': c.max_students or 0,
+                'count': ClassEnrollment.query.filter_by(class_id=c.id, is_active=True).count(),
+                'name': c.name,
+            }
+        class_ids = [cid for cid in class_ids if cid in caps]
     created = []
+    full_skips = []
     for s in students:
         fn = (s.get('first_name') or '').strip()
         if not fn:
@@ -4571,7 +4580,15 @@ def approve_registration(rid):
         db.session.add(student)
         db.session.flush()
         for cid in class_ids:
+            cap = caps.get(cid)
+            if cap and cap['capacity'] and cap['count'] >= cap['capacity']:
+                # Class is full — skip and report so the admin can raise the cap or
+                # waitlist this dancer, rather than silently overbooking.
+                full_skips.append(f"{student.full_name} → {cap['name']}")
+                continue
             db.session.add(ClassEnrollment(student_id=student.id, class_id=cid))
+            if cap:
+                cap['count'] += 1
         created.append(student.full_name)
 
     # Atomically claim the registration — two concurrent approvals (double-click)
@@ -4591,7 +4608,11 @@ def approve_registration(rid):
     AuditLog.record(current_user.id, 'registration.approve',
                     f'Approved {reg.parent_name}: {", ".join(created)}')
     db.session.commit()
-    return jsonify({'message': f'Created {len(created)} dancer(s) under {fam.name}', 'students': created})
+    msg = f'Created {len(created)} dancer(s) under {fam.name}'
+    if full_skips:
+        msg += (f' — {len(full_skips)} enrollment(s) skipped (class full): '
+                f'{"; ".join(full_skips)}. Raise the capacity or use the waitlist.')
+    return jsonify({'message': msg, 'students': created, 'full_skipped': full_skips})
 
 
 @bp.route('/registrations/<int:rid>/reject', methods=['POST'])

@@ -1388,6 +1388,48 @@ def run_rfid_checkin_local_day():
            f"scan_ok={ok} att={'none' if att is None else att.check_in_time.isoformat()}", "P2")
 
 
+def run_registration_approve_capacity():
+    """Approving a self-registration must respect class capacity like the manual
+    enroll path — otherwise approving a registration for a popular fall class
+    silently overbooks it past max_students. Fill a max=1 class, submit a
+    registration requesting it, approve, and assert the newcomer is created but
+    NOT enrolled in the full class (and the skip is reported to the admin)."""
+    import json as _json
+    from datetime import time as _time
+    from app.models import (User, DanceClass, Student, Family, ClassEnrollment,
+                            Registration, Setting)
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        cls = DanceClass(name="TinyCapClass", day_of_week=0, start_time=_time(16, 0),
+                         end_time=_time(17, 0), instructor_id=adm.id, max_students=1)
+        db.session.add(cls)
+        db.session.flush()
+        ffam = Family(name="Filler Fam")
+        db.session.add(ffam)
+        db.session.flush()
+        filler = Student(first_name="Fill", last_name="Er", family_id=ffam.id, is_active=True)
+        db.session.add(filler)
+        db.session.flush()
+        db.session.add(ClassEnrollment(student_id=filler.id, class_id=cls.id))  # class now full
+        Setting.set("registration_open", "1")
+        reg = Registration(parent_name="Newcomer Fam", parent_email="newcap@x.com",
+                           students_json=_json.dumps([{"first_name": "Late", "last_name": "Comer"}]),
+                           class_ids=str(cls.id))
+        db.session.add(reg)
+        db.session.commit()
+        rid, cid = reg.id, cls.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        r = c.post(f"/api/registrations/{rid}/approve")
+        d = r.get_json() or {}
+    with app.app_context():
+        n = ClassEnrollment.query.filter_by(class_id=cid, is_active=True).count()
+        newcomer = Student.query.filter_by(first_name="Late", last_name="Comer").first()
+    record("Registration approval respects class capacity (no silent overbook)",
+           r.status_code == 200 and n == 1 and newcomer is not None and bool(d.get("full_skipped")),
+           f"status={r.status_code} enrolled={n} (want 1) newcomer={'yes' if newcomer else 'no'} skips={d.get('full_skipped')}", "P2")
+
+
 def run_rfid_reuses_app():
     """The RFID reader polls in a loop, one _process_card_scan per card tap. It
     must reuse a single Flask app — building one per scan (as it did) re-ran
@@ -3647,6 +3689,7 @@ def main():
     run_recurring_short_month_clamp()
     run_rfid_checkin_local_day()
     run_rfid_reuses_app()
+    run_registration_approve_capacity()
     run_full_mutation_fuzz()
     run_update_fuzz()
     run_get_queryparam_fuzz(ids)
