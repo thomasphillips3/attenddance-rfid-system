@@ -1397,24 +1397,35 @@ def run_update_valid_id_fuzz():
                              day_of_month=1, created_by=adm.id)
         db.session.add_all([num, rc])
         db.session.commit()
-        targets = [
-            (f"/api/rules/{rule.id}", {"display_order": "x"}),
-            (f"/api/waivers/templates/{wt.id}", {"display_order": "x"}),
-            (f"/api/makeups/{mk.id}", {"makeup_class_id": "x"}),
-            (f"/api/costumes/{cos.id}", {"fee": "x"}),
-            (f"/api/recitals/{rec.id}", {"year": "x"}),
-            (f"/api/recital-numbers/{num.id}", {"order_index": "x", "student_id": "x"}),
-            (f"/api/classes/{cls.id}", {"day_of_week": "x", "max_students": "x"}),
-            (f"/api/recurring-charges/{rc.id}", {"day_of_month": "x", "amount": "x"}),
-            (f"/api/performance/groups/{grp.id}", {"is_active": "x"}),
-            (f"/api/students/{st.id}", {"date_of_birth": "x", "grade": {"a": 1}}),
+        paths = [
+            f"/api/rules/{rule.id}", f"/api/waivers/templates/{wt.id}",
+            f"/api/makeups/{mk.id}", f"/api/costumes/{cos.id}",
+            f"/api/recitals/{rec.id}", f"/api/recital-numbers/{num.id}",
+            f"/api/classes/{cls.id}", f"/api/recurring-charges/{rc.id}",
+            f"/api/performance/groups/{grp.id}", f"/api/students/{st.id}",
         ]
+    # Kitchen-sink garbage: every numeric/date/id/time field name across the
+    # update surface, all wrong-typed, so each endpoint's parsing of whatever it
+    # reads is exercised (not just one hand-picked field). Extra fields are
+    # ignored by endpoints that don't use them.
+    garbage = {
+        "display_order": "x", "order_index": "x", "makeup_class_id": "x",
+        "fee": "x", "year": "x", "day_of_week": "x", "max_students": "x",
+        "day_of_month": "x", "amount": "x", "is_active": "x", "group_id": "x",
+        "student_id": "x", "class_id": "x", "date_of_birth": "x",
+        "audition_date": "x", "performance_date": "x", "recital_date": "x",
+        "start_time": "x", "end_time": "x", "price": "x", "quantity": "x",
+        "grade": {"a": 1}, "instructor_id": "x", "location_id": "x",
+    }
     with app.test_client() as c:
         login(c, "admin", "admin123")
-        bad = [f"{p}->{c.put(p, json=b).status_code}" for p, b in targets
-               if c.put(p, json=b).status_code >= 500]
-    record("Update endpoints don't 5xx on a garbage body with a VALID id",
-           not bad, f"5xx (unguarded int/float on body): {bad}", "P2")
+        bad = []
+        for p in paths:
+            code = c.put(p, json=garbage).status_code
+            if code >= 500:
+                bad.append(f"{p}->{code}")
+    record("Update endpoints don't 5xx on a broad garbage body (valid id)",
+           not bad, f"5xx (unguarded parse on body): {bad}", "P2")
 
 
 def run_update_fuzz():
