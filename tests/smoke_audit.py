@@ -1940,6 +1940,35 @@ def run_message_blast(ids):
                f"got {r.status_code}", "P0")
 
 
+def run_registration_field_caps():
+    """The public (unauthenticated) registration must cap field lengths — SQLite
+    ignores VARCHAR(n), so an uncapped multi-MB field would bloat the DB volume.
+    Submit huge fields and assert they're truncated (student count is already
+    capped at 30; this covers per-field size)."""
+    import json as _json
+    from app.models import Setting, Registration
+    with app.app_context():
+        Setting.set("registration_open", "1")
+        db.session.commit()
+    huge = "A" * 100000
+    with app.test_client() as c:
+        r = c.post("/api/register", json={
+            "parent_name": huge, "parent_email": "fieldcaps@x.com",
+            "students": [{"first_name": huge, "last_name": huge, "allergies": huge}]})
+    with app.app_context():
+        reg = (Registration.query.filter_by(parent_email="fieldcaps@x.com")
+               .order_by(Registration.id.desc()).first())
+        pn = len(reg.parent_name) if reg else -1
+        stu = _json.loads(reg.students_json) if reg else []
+        fn = len(stu[0]["first_name"]) if stu else -1
+        al = len(stu[0]["allergies"]) if stu else -1
+        Setting.set("registration_open", "0")
+        db.session.commit()
+    record("Public registration caps field lengths (no multi-MB storage abuse)",
+           r.status_code == 201 and 0 < pn <= 120 and 0 < fn <= 80 and 0 < al <= 500,
+           f"status={r.status_code} parent_name={pn}(<=120) first_name={fn}(<=80) allergies={al}(<=500)", "P2")
+
+
 def run_registration_flow():
     """Public self-registration: gated when closed, validated, and admin
     approval actually creates a family + students. The key fall-enrollment path."""
@@ -4102,6 +4131,7 @@ def main():
     run_open_redirect_guard()
     run_login_by_email()
     run_registration_flow()
+    run_registration_field_caps()
     run_amount_validation(ids)
     run_payment_plans(ids)
     run_recital_money(ids)

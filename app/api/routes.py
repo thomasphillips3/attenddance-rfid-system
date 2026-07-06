@@ -190,14 +190,19 @@ def _resolve_student_id(raw, required=True):
     return sid, None
 
 
-def _clean_str(value):
+def _clean_str(value, maxlen=None):
     """Coerce a JSON value to a trimmed string. Scalars (str/int/float) stringify;
     None and non-scalars (list/dict) become '' so a `not name` guard still fires.
     Guards every `.strip()` on client input against a non-string blowing up (a
-    JSON `name: 123` would otherwise raise AttributeError -> 500)."""
+    JSON `name: 123` would otherwise raise AttributeError -> 500).
+
+    `maxlen` truncates the result — pass it on UNAUTHENTICATED input (public
+    registration). SQLite ignores VARCHAR(n) limits, so without a cap a scripted
+    submit could stuff a multi-MB string into a field and bloat the DB volume."""
     if value is None or isinstance(value, (list, dict)):
         return ''
-    return str(value).strip()
+    s = str(value).strip()
+    return s[:maxlen] if maxlen else s
 
 
 def _valid_id(raw):
@@ -4454,8 +4459,10 @@ def submit_registration():
     # Public + unauthenticated: never trust the shape of the payload. Coerce every
     # field so a non-string name or a non-list `students` can't 500 the endpoint.
     data = request.get_json(silent=True) or {}
-    parent_name = _clean_str(data.get('parent_name'))
-    parent_email = _clean_str(data.get('parent_email'))
+    # Unauthenticated input — cap every field length (SQLite ignores VARCHAR(n),
+    # so uncapped a scripted submit could store multi-MB values and bloat the DB).
+    parent_name = _clean_str(data.get('parent_name'), 120)
+    parent_email = _clean_str(data.get('parent_email'), 200)
     if not parent_name or not parent_email:
         return jsonify({'error': 'Parent name and email are required'}), 400
     if '@' not in parent_email or '.' not in parent_email.split('@')[-1]:
@@ -4470,14 +4477,14 @@ def submit_registration():
     for s in raw_students:
         if not isinstance(s, dict):
             continue
-        fn = _clean_str(s.get('first_name'))
+        fn = _clean_str(s.get('first_name'), 80)
         if not fn:
             continue
         students.append({
             'first_name': fn,
-            'last_name': _clean_str(s.get('last_name')),
-            'dob': _clean_str(s.get('dob')),
-            'allergies': _clean_str(s.get('allergies')),
+            'last_name': _clean_str(s.get('last_name'), 80),
+            'dob': _clean_str(s.get('dob'), 20),
+            'allergies': _clean_str(s.get('allergies'), 500),
         })
         if len(students) >= 30:
             break
@@ -4490,10 +4497,10 @@ def submit_registration():
     reg = Registration(
         parent_name=parent_name,
         parent_email=parent_email,
-        parent_phone=_clean_str(data.get('parent_phone')) or None,
+        parent_phone=_clean_str(data.get('parent_phone'), 40) or None,
         students_json=json.dumps(students),
-        class_ids=','.join(str(int(c)) for c in raw_class_ids if str(c).isdigit()),
-        note=_clean_str(data.get('note')) or None,
+        class_ids=','.join(str(int(c)) for c in raw_class_ids[:50] if str(c).isdigit()),
+        note=_clean_str(data.get('note'), 2000) or None,
     )
     db.session.add(reg)
     db.session.commit()
