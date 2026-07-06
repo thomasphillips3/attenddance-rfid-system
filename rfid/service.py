@@ -267,7 +267,7 @@ class RFIDService:
                 log_entry = RFIDLog(
                     rfid_uid=uid,
                     student_id=student_id,
-                    scan_time=datetime.utcnow(),
+                    scan_time=datetime.now(),  # studio-local, like the check-in it logs
                     action_taken=action,
                     success=success,
                     error_message=error

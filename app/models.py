@@ -221,7 +221,8 @@ class Student(db.Model):
     def get_recent_attendance(self, days=30):
         """Get recent attendance records"""
         from datetime import timedelta
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        # Local (datetime.now) to match check_in_time, which is stored studio-local.
+        cutoff_date = datetime.now() - timedelta(days=days)
         return self.attendances.filter(Attendance.check_in_time >= cutoff_date).all()
     
     def __repr__(self):
@@ -322,8 +323,11 @@ class Attendance(db.Model):
     student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
     class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
     
-    # Attendance details
-    check_in_time = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    # Attendance details. check_in_time is studio-local (datetime.now, not utcnow):
+    # it's grouped/filtered by local date.today() and the unique-day index, so a
+    # UTC value would land an evening check-in on the next day. All creation paths
+    # set it explicitly; this default is the safety net for any future one.
+    check_in_time = db.Column(db.DateTime, default=datetime.now, nullable=False)
     check_out_time = db.Column(db.DateTime)
     
     # How they checked in
@@ -367,8 +371,9 @@ class RFIDLog(db.Model):
     rfid_uid = db.Column(db.String(50), nullable=False, index=True)
     student_id = db.Column(db.Integer, db.ForeignKey('students.id'))
     
-    # Scan details
-    scan_time = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    # Scan details. Studio-local (datetime.now) to match the check-in it records
+    # and the dashboard's server-side strftime display of the scan time.
+    scan_time = db.Column(db.DateTime, default=datetime.now, nullable=False)
     action_taken = db.Column(db.String(50))  # checkin, unknown_card, error
     
     # Results

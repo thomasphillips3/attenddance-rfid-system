@@ -1360,6 +1360,35 @@ def run_reminder_non_blocking():
            elapsed < 1.0, f"took {elapsed:.2f}s — sending appears to block the boot/request thread", "P1")
 
 
+def run_attendance_default_local():
+    """Defense-in-depth: the Attendance.check_in_time COLUMN DEFAULT must be
+    studio-local. All creation paths set it explicitly today, but the default is
+    the safety net — a future path that forgets would otherwise reintroduce the
+    evening wrong-day bug (this class of bug recurred four times). Create a row
+    without check_in_time and assert it defaults to today's local date."""
+    from datetime import date, time as _time
+    from app.models import User, DanceClass, Student, Family, Attendance
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        fam = Family(name="DefTZ Fam")
+        db.session.add(fam)
+        db.session.flush()
+        s = Student(first_name="Def", last_name="Tz", family_id=fam.id, is_active=True)
+        db.session.add(s)
+        db.session.flush()
+        cls = DanceClass(name="DefTzClass", day_of_week=0, start_time=_time(16, 0),
+                         end_time=_time(17, 0), instructor_id=adm.id)
+        db.session.add(cls)
+        db.session.flush()
+        att = Attendance(student_id=s.id, class_id=cls.id)  # no check_in_time -> column default
+        db.session.add(att)
+        db.session.commit()
+        dated_today = att.check_in_time is not None and att.check_in_time.date() == date.today()
+        stamp = att.check_in_time
+    record("Attendance.check_in_time column default is studio-local (dated today, not UTC-tomorrow)",
+           dated_today, f"defaulted to {stamp}", "P2")
+
+
 def run_rfid_checkin_local_day():
     """An RFID scan records attendance via a third code path (rfid/service.py).
     It must use the studio-local day like the manual/toggle paths — datetime.utcnow()
@@ -1392,11 +1421,16 @@ def run_rfid_checkin_local_day():
         sid = s.id
     ok = get_rfid_service().simulate_scan("TESTUID_RFID_1")
     with app.app_context():
+        from app.models import RFIDLog
         att = Attendance.query.filter_by(student_id=sid, check_in_method="rfid").first()
         dated_today = att is not None and att.check_in_time.date() == date.today()
+        log = RFIDLog.query.filter_by(rfid_uid="TESTUID_RFID_1").order_by(RFIDLog.id.desc()).first()
+        log_today = log is not None and log.scan_time.date() == date.today()
     record("RFID scan records attendance on the studio-local day (not the next UTC day)",
            ok and dated_today,
            f"scan_ok={ok} att={'none' if att is None else att.check_in_time.isoformat()}", "P2")
+    record("RFID scan_time log is also studio-local (matches the dashboard display)",
+           log_today, f"log scan_time={'none' if log is None else log.scan_time.isoformat()}", "P3")
 
 
 def run_money_creation_audited():
@@ -3776,6 +3810,7 @@ def main():
     run_message_blast(ids)
     run_message_blast_non_blocking()
     run_recurring_short_month_clamp()
+    run_attendance_default_local()
     run_rfid_checkin_local_day()
     run_rfid_reuses_app()
     run_registration_approve_capacity()
