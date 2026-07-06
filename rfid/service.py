@@ -147,7 +147,7 @@ class RFIDService:
                 current_class = self._find_current_class(student)
                 
                 if not current_class:
-                    logger.warning(f"No current class found for student {student.full_name}")
+                    logger.warning(f"No current class found for student #{student.id}")
                     self._log_rfid_scan(uid, "no_class", success=False, 
                                       error="No current class found", student_id=student.id)
                     return False
@@ -161,7 +161,7 @@ class RFIDService:
                 ).first()
                 
                 if existing_attendance:
-                    logger.info(f"Student {student.full_name} already checked in today")
+                    logger.info(f"Student #{student.id} already checked in today")
                     self._log_rfid_scan(uid, "already_checked_in", success=True, 
                                       error="Already checked in today", student_id=student.id)
                     return True
@@ -192,7 +192,7 @@ class RFIDService:
                                         error="Already checked in today", student_id=student.id)
                     return True
 
-                logger.info(f"✅ Student {student.full_name} checked in to {current_class.name}")
+                logger.info(f"✅ Student #{student.id} checked in to {current_class.name}")
                 self._log_rfid_scan(uid, "checkin", success=True, student_id=student.id)
 
                 return True

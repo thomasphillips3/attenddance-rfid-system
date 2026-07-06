@@ -3048,7 +3048,7 @@ def _notify_student_balance(s, balance, email_ok, sms_ok):
                 email_service.send_email(to, f'Balance reminder — {STUDIO_NAME}', body)
                 used.add('email')
             except Exception:
-                logger.exception("Reminder email failed for %s", s.full_name)
+                logger.exception("Reminder email failed for student #%s", s.id)
     if sms_ok:
         phone = _student_phone(s)
         if phone and sms_service.send_sms(phone, body):

@@ -192,14 +192,14 @@ def _send_balance_reminders(app):
                             email_service.send_email(to, "Balance reminder — LaShelle's School of Dance", body)
                             sent += 1
                         except Exception:
-                            logger.exception("Auto-reminder email failed for %s", s.full_name)
+                            logger.exception("Auto-reminder email failed for student #%s", s.id)
                 if sms_ok:
                     phone = s.parent_phone or (s.family.primary_phone if s.family else None) or s.phone
                     if phone:
                         try:  # a single SMS failure must not abort the whole run
                             sms_service.send_sms(phone, body)
                         except Exception:
-                            logger.exception("Auto-reminder SMS failed for %s", s.full_name)
+                            logger.exception("Auto-reminder SMS failed for student #%s", s.id)
             logger.info("Auto-reminders processed: %d students notified", sent)
         except Exception:
             logger.exception("Auto-reminder background send failed")

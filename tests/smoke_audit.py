@@ -523,6 +523,28 @@ def run_csrf_guard_behind_tls_proxy():
            f"same_origin={'pass' if same_ok else r.status_code} cross={r2.status_code}", "P0")
 
 
+def run_no_pii_in_logs():
+    """Static guard: application log lines must not carry PII. Fly retains logs
+    with weaker access control than the DB, and this system holds minors' data —
+    a child's name or a parent's email doesn't belong in a retained log stream.
+    Log entity IDs instead (this caught 6 lines: reminder failures and every
+    RFID scan logged the child's full name)."""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    pii_vars = re.compile(r"logger\.\w+\([^)]*("
+                          r"full_name|first_name|last_name|parent_name|"
+                          r"parent_email|\.email\b|parent_phone|\.phone\b)")
+    offenders = []
+    for rel in ("app", "rfid"):
+        for f in (root / rel).rglob("*.py"):
+            for i, line in enumerate(f.read_text().splitlines(), 1):
+                if pii_vars.search(line):
+                    offenders.append(f"{f.relative_to(root)}:{i}: {line.strip()[:80]}")
+    record(f"No PII (names/emails/phones) in application log lines ({len(offenders)} found)",
+           not offenders, "; ".join(offenders[:5]), "P2")
+
+
 def run_demo_parent_prod_lockout():
     """The demo parent (parent-demo/parent123) is a dev convenience linked to a
     REAL student's records. In production it must be dead twice over: the seed
@@ -4854,6 +4876,7 @@ def main():
     run_login_no_demo_creds_in_prod()
     run_demo_parent_prod_lockout()
     run_csrf_guard_behind_tls_proxy()
+    run_no_pii_in_logs()
     run_teacher_authz(ids)
     run_admin_parent_reset_link(ids)
     run_privilege_escalation(ids)
