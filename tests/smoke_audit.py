@@ -508,6 +508,28 @@ def run_multichild_invite_merge():
                "leftover invites", "P2")
 
 
+def run_crypto_secrets():
+    """Secrets (Square token, webhook signature key) are Fernet-encrypted at rest,
+    keyed off SECRET_KEY. Verify: round-trip works; and the failure path (a
+    tampered ciphertext, i.e. what happens if SECRET_KEY is rotated) returns ''
+    — NOT garbage — so an undecryptable token makes Square report not-configured
+    (get_access_token() -> '' -> is_configured() False) instead of using nonsense."""
+    from app.crypto import encrypt, decrypt, ENC_PREFIX
+    with app.app_context():
+        enc = encrypt("sq-secret-token-123")
+        checks = {
+            "round-trips": decrypt(enc) == "sq-secret-token-123",
+            "ciphertext is enc-prefixed": enc.startswith(ENC_PREFIX),
+            "tampered/rotated -> '' not garbage": decrypt(ENC_PREFIX + "not-a-valid-token") == "",
+            "empty -> ''": decrypt("") == "",
+            "plain: prefix stripped": decrypt("plain:hello") == "hello",
+            "legacy unprefixed treated as plaintext": decrypt("legacyvalue") == "legacyvalue",
+        }
+    bad = [k for k, ok in checks.items() if not ok]
+    record("Secret encryption round-trips and fails safe (undecryptable -> '', not garbage)",
+           not bad, f"wrong: {bad}", "P2")
+
+
 def run_square_webhook(ids):
     """Square auto-reconcile (real card money): it FAILS CLOSED without a
     signature key (an unverified webhook can't credit an account); with a key, a
@@ -4145,6 +4167,7 @@ def main():
     run_manual_reminders_non_blocking()
     run_multichild_invite_merge()
     run_invite_security()
+    run_crypto_secrets()
     run_square_webhook(ids)
     run_reconciliation(ids)
     run_enrollment(ids)
