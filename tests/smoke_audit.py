@@ -1388,6 +1388,47 @@ def run_rfid_checkin_local_day():
            f"scan_ok={ok} att={'none' if att is None else att.check_in_time.isoformat()}", "P2")
 
 
+def run_costume_charge_race():
+    """Posting a costume fee only charges not-yet-charged assignments (idempotent
+    on a sequential re-run), but it's check-then-act: two concurrent charge runs
+    (two tabs) both read the uncharged assignment before either commits and each
+    post a charge — a double-charge on real recital money. A process lock must
+    serialize the runs. Fire two at one costume and assert exactly one charge."""
+    import threading
+    from app.models import Costume, CostumeAssignment, Student, Family, Transaction
+    with app.app_context():
+        fam = Family(name="Costume Fam")
+        db.session.add(fam)
+        db.session.flush()
+        st = Student(first_name="Cos", last_name="Tume", family_id=fam.id, is_active=True)
+        db.session.add(st)
+        db.session.flush()
+        cos = Costume(name="RaceTutu", fee=45.00)
+        db.session.add(cos)
+        db.session.flush()
+        db.session.add(CostumeAssignment(costume_id=cos.id, student_id=st.id, charged=False))
+        db.session.commit()
+        sid, cosid = st.id, cos.id
+
+    barrier = threading.Barrier(2)
+
+    def worker():
+        with app.test_client() as c:
+            login(c, "admin", "admin123")
+            barrier.wait()
+            c.post(f"/api/costumes/{cosid}/charge")
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    with app.app_context():
+        n = Transaction.query.filter_by(student_id=sid, category="costumes").count()
+    record("Concurrent costume-fee charge posts to each dancer exactly once",
+           n == 1, f"costume charges={n} (want 1)", "P1")
+
+
 def run_registration_approve_capacity():
     """Approving a self-registration must respect class capacity like the manual
     enroll path — otherwise approving a registration for a popular fall class
@@ -3690,6 +3731,7 @@ def main():
     run_rfid_checkin_local_day()
     run_rfid_reuses_app()
     run_registration_approve_capacity()
+    run_costume_charge_race()
     run_full_mutation_fuzz()
     run_update_fuzz()
     run_get_queryparam_fuzz(ids)

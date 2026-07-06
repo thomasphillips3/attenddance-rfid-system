@@ -3897,24 +3897,27 @@ def charge_costume(cid):
     if fee <= 0:
         return jsonify({'error': 'Set a costume fee greater than $0 first'}), 400
     charged = 0
-    for a in c.assignments.filter_by(charged=False).all():
-        t = Transaction(
-            student_id=a.student_id,
-            type='charge',
-            amount=fee,
-            category='costumes',
-            payment_method='n/a',
-            description=f'Costume: {c.name}',
-            transaction_date=date.today(),
-            created_by=current_user.id,
-        )
-        db.session.add(t)
-        db.session.flush()
-        a.charged = True
-        a.transaction_id = t.id
-        charged += 1
-    AuditLog.record(current_user.id, 'costume.charge', f'Charged ${fee:.2f} for "{c.name}" to {charged} dancers')
-    db.session.commit()
+    # Serialize concurrent charge runs so the not-yet-charged read below can't be
+    # seen by two requests at once and double-charge (same guard as late fees).
+    with _costume_charge_lock:
+        for a in c.assignments.filter_by(charged=False).all():
+            t = Transaction(
+                student_id=a.student_id,
+                type='charge',
+                amount=fee,
+                category='costumes',
+                payment_method='n/a',
+                description=f'Costume: {c.name}',
+                transaction_date=date.today(),
+                created_by=current_user.id,
+            )
+            db.session.add(t)
+            db.session.flush()
+            a.charged = True
+            a.transaction_id = t.id
+            charged += 1
+        AuditLog.record(current_user.id, 'costume.charge', f'Charged ${fee:.2f} for "{c.name}" to {charged} dancers')
+        db.session.commit()
     return jsonify({'message': f'Charged {charged} dancers ${fee:.2f} each', 'count': charged})
 
 
@@ -4118,6 +4121,10 @@ def cron_run():
 # skip them. Valid because the app runs a single gunicorn worker (see the deploy
 # note); it would need a DB-level guard if workers were ever scaled up.
 _late_fee_lock = threading.Lock()
+# Same rationale for the other admin bulk-money op: two concurrent "charge costume
+# fee" calls (two tabs) could both read the same not-yet-charged assignments before
+# either commits and double-charge the dancers. Serialize them (single worker).
+_costume_charge_lock = threading.Lock()
 
 
 @bp.route('/balances/apply-late-fees', methods=['POST'])
