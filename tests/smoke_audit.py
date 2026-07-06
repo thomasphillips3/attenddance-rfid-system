@@ -1483,6 +1483,21 @@ def run_reminder_non_blocking():
            elapsed < 1.0, f"took {elapsed:.2f}s — sending appears to block the boot/request thread", "P1")
 
 
+def run_day_of_week_convention():
+    """`day_of_week` is 0=Monday .. 6=Sunday (matching Python's weekday()), and
+    DanceClass.day_name must agree. The calendar, take-attendance's "today's
+    classes", the RFID current-class matcher, and the parent-portal schedule all
+    rely on this — a flip would file every class under the wrong day."""
+    from app.models import DanceClass
+    expected = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    with app.app_context():
+        bad = [f"dow={dow} -> {DanceClass(day_of_week=dow).day_name} (want {name})"
+               for dow, name in enumerate(expected)
+               if DanceClass(day_of_week=dow).day_name != name]
+    record("day_of_week convention is 0=Monday..6=Sunday (calendar/attendance/portal rely on it)",
+           not bad, f"mismatches: {bad}", "P2")
+
+
 def run_attendance_default_local():
     """Defense-in-depth: the Attendance.check_in_time COLUMN DEFAULT must be
     studio-local. All creation paths set it explicitly today, but the default is
@@ -3981,6 +3996,7 @@ def main():
     run_message_blast_non_blocking()
     run_recurring_short_month_clamp()
     run_attendance_default_local()
+    run_day_of_week_convention()
     run_rfid_checkin_local_day()
     run_rfid_reuses_app()
     run_registration_approve_capacity()
