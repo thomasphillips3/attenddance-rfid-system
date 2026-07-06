@@ -11,11 +11,13 @@ item are in [ASSESSMENT.md](ASSESSMENT.md).
 These two are hard blockers. The app will refuse to boot in production without
 a real `SECRET_KEY`, and the seeded admin password is publicly known.
 
-- [ ] **Set a real signing secret** (also encrypts the Square token at rest):
+- [x] **Set a real signing secret** (also encrypts the Square token at rest):
   ```
   fly secrets set SECRET_KEY=$(python3 -c 'import secrets;print(secrets.token_hex(32))')
   ```
-  Safe to set now — Square isn't configured, so nothing encrypted gets orphaned.
+  ✅ **Done 2026-07-05** — `flyctl secrets list` shows SECRET_KEY Deployed; app
+  restarted healthy (200). Square wasn't configured, so nothing encrypted got
+  orphaned.
 
 - [ ] **Change the admin password.** After deploy, log in as `admin` and go to
   `/auth/change-password`. (Until then the default `admin123` is public.) The

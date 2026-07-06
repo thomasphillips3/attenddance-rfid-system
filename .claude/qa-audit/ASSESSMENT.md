@@ -23,7 +23,7 @@ Severity counts — original pass: **2 P0, 3 P1, 5 P2, 3 P3.** Now: **all resolv
 
 ## What remains (all yours — not code)
 
-1. **Ops (5 min, required):** `fly secrets set SECRET_KEY=…` and change the seeded `admin` password. See [GO-LIVE.md](GO-LIVE.md).
+1. **Ops (required):** ~~`fly secrets set SECRET_KEY=…`~~ ✅ **done 2026-07-05** (verified Deployed on Fly; app restarted healthy). Remaining: change the seeded `admin` password after the branch deploys (`/auth/change-password`). See [GO-LIVE.md](GO-LIVE.md).
 2. **Decision — teacher billing access:** `create_transaction` / `bulk_charge` / `create_recurring_charge` currently let a *teacher* (not just admin) post charges and set up billing (the nav shows them the Payments page). If only you + Carollette handle money, say so and I'll gate the whole billing area admin-only; if front-desk teachers take payments, it's already correct.
 3. **Decision — auto-pay:** the one substantive Jackrabbit gap (auto-charging saved cards). Moves real money, needs your live Square account. Scoped in [AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md). Fall can run without it (manual Zelle/Cash App reconciliation + the aging report); greenlight when you want it built.
 3b. **Decision — credit/refund/adjustment (lower priority, iter 162):** there's no first-class way to post a credit or refund — only `charge`/`payment`, and negative amounts are rejected. Upfront discounts work (charge the reduced amount); a *mid-session* credit or a refund to a withdrawing family doesn't, cleanly. Say the word and I'll add an `adjustment` transaction type that reduces a balance without counting as collected revenue (~half a day). Fine to defer for fall.
