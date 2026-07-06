@@ -4750,21 +4750,46 @@ def approve_registration(rid):
         class_ids = [cid for cid in class_ids if cid in caps]
     created = []
     full_skips = []
-    dup_skips = []
-    # Existing dancers in the (possibly reused) family, for duplicate detection.
-    existing_names = {
-        (st.first_name.strip().lower(), (st.last_name or '').strip().lower())
+    returning = []
+    # Existing dancers in the (possibly reused) family — a returning family
+    # re-registering for fall names the same children. Don't recreate them (that
+    # duplicates the dancer + splits the ledger); reuse the existing record.
+    existing_by_name = {
+        (st.first_name.strip().lower(), (st.last_name or '').strip().lower()): st
         for st in Student.query.filter_by(family_id=fam.id).all()
-    } if matched_existing else set()
+    } if matched_existing else {}
+
+    def _enroll(student):
+        """Enroll in the requested classes, capacity-checked, skipping ones the
+        dancer is already actively enrolled in (re-registration lists them)."""
+        for cid in class_ids:
+            if ClassEnrollment.query.filter_by(student_id=student.id, class_id=cid,
+                                               is_active=True).first():
+                continue
+            cap = caps.get(cid)
+            if cap and cap['capacity'] and cap['count'] >= cap['capacity']:
+                # Class is full — skip and report so the admin can raise the cap or
+                # waitlist this dancer, rather than silently overbooking.
+                full_skips.append(f"{student.full_name} → {cap['name']}")
+                continue
+            db.session.add(ClassEnrollment(student_id=student.id, class_id=cid))
+            if cap:
+                cap['count'] += 1
+
     for s in students:
         fn = (s.get('first_name') or '').strip()
         if not fn:
             continue
         ln = (s.get('last_name') or reg.parent_name.split()[-1]).strip()
-        if (fn.lower(), ln.lower()) in existing_names:
-            # Same child re-registered (double submission) — don't duplicate the
-            # dancer and their ledger; report so the admin knows it was skipped.
-            dup_skips.append(f'{fn} {ln}')
+        existing = existing_by_name.get((fn.lower(), ln.lower()))
+        if existing:
+            # Returning dancer: reactivate if withdrawn (last year's soft delete)
+            # and enroll them in the newly-requested classes — this is the fall
+            # re-enrollment path for existing families.
+            if not existing.is_active:
+                existing.is_active = True
+            _enroll(existing)
+            returning.append(f'{fn} {ln}')
             continue
         dob = None
         if s.get('dob'):
@@ -4779,18 +4804,9 @@ def approve_registration(rid):
         )
         db.session.add(student)
         db.session.flush()
-        for cid in class_ids:
-            cap = caps.get(cid)
-            if cap and cap['capacity'] and cap['count'] >= cap['capacity']:
-                # Class is full — skip and report so the admin can raise the cap or
-                # waitlist this dancer, rather than silently overbooking.
-                full_skips.append(f"{student.full_name} → {cap['name']}")
-                continue
-            db.session.add(ClassEnrollment(student_id=student.id, class_id=cid))
-            if cap:
-                cap['count'] += 1
+        _enroll(student)
         created.append(student.full_name)
-        existing_names.add((fn.lower(), ln.lower()))  # dedupe within one payload too
+        existing_by_name[(fn.lower(), ln.lower())] = student  # dedupe within one payload too
 
     # Atomically claim the registration — two concurrent approvals (double-click)
     # both pass the status check above and would otherwise each create a Family
@@ -4812,14 +4828,14 @@ def approve_registration(rid):
     msg = f'Created {len(created)} dancer(s) under {fam.name}'
     if matched_existing:
         msg += ' (matched the existing family by parent email — no duplicate family created)'
-    if dup_skips:
-        msg += (f' — {len(dup_skips)} dancer(s) already in the family, skipped: '
-                f'{", ".join(dup_skips)}')
+    if returning:
+        msg += (f' — {len(returning)} returning dancer(s) re-enrolled (not duplicated): '
+                f'{", ".join(returning)}')
     if full_skips:
         msg += (f' — {len(full_skips)} enrollment(s) skipped (class full): '
                 f'{"; ".join(full_skips)}. Raise the capacity or use the waitlist.')
     return jsonify({'message': msg, 'students': created, 'full_skipped': full_skips,
-                    'duplicate_skipped': dup_skips, 'matched_existing_family': matched_existing})
+                    'returning_dancers': returning, 'matched_existing_family': matched_existing})
 
 
 @bp.route('/registrations/<int:rid>/reject', methods=['POST'])

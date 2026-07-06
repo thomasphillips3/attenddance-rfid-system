@@ -2383,14 +2383,22 @@ def run_registration_field_caps():
 
 
 def run_registration_dedupe():
-    """Families register twice (June, then again in August). Approving both must
-    NOT create a second family or duplicate the dancer + split their ledger:
-    approval matches an existing active family by parent email, skips dancers
-    already in it (reported), and still adds genuinely new siblings."""
-    from app.models import Setting, Family, Student
+    """Returning families re-register for fall naming the same children. That
+    must NOT create a second family or duplicate the dancer + split their
+    ledger: approval matches an existing active family by parent email, treats
+    already-known dancers as RETURNING (re-enrolls them in the newly-requested
+    classes, reactivates them if withdrawn), and still adds new siblings."""
+    from datetime import time as _time
+    from app.models import Setting, Family, Student, DanceClass, ClassEnrollment, User
     with app.app_context():
         Setting.set("registration_open", "1")
+        instructor = User.query.filter_by(username="admin").first()
+        fall = DanceClass(name="Fall Dedupe Ballet", day_of_week=2,
+                          start_time=_time(17, 0), end_time=_time(18, 0),
+                          instructor_id=instructor.id, max_students=10)
+        db.session.add(fall)
         db.session.commit()
+        fall_id = fall.id
     email = "dedupe-fam@x.com"
     with app.test_client() as pub:
         pub.post("/api/register", json={
@@ -2399,7 +2407,8 @@ def run_registration_dedupe():
         pub.post("/api/register", json={
             "parent_name": "Dana Dedupe", "parent_email": email.upper(),  # case differs
             "students": [{"first_name": "Mia", "last_name": "Dedupe"},
-                         {"first_name": "Zoe", "last_name": "Dedupe"}]})
+                         {"first_name": "Zoe", "last_name": "Dedupe"}],
+            "class_ids": [fall_id]})
     with app.test_client() as c:
         login(c, "admin", "admin123")
         regs = (c.get("/api/registrations?status=pending").get_json() or {}).get("registrations", [])
@@ -2410,12 +2419,37 @@ def run_registration_dedupe():
                     if (f.primary_email or "").lower() == email)
         n_mia = Student.query.filter_by(first_name="Mia", last_name="Dedupe").count()
         n_zoe = Student.query.filter_by(first_name="Zoe", last_name="Dedupe").count()
+        mia = Student.query.filter_by(first_name="Mia", last_name="Dedupe").first()
+        mia_enrolled = ClassEnrollment.query.filter_by(
+            student_id=mia.id, class_id=fall_id, is_active=True).count() if mia else 0
+        mia_id = mia.id if mia else None
     second = results[1] if len(results) > 1 else {}
-    record("Double registration -> one family, no duplicate dancer, new sibling added",
-           n_fam == 1 and n_mia == 1 and n_zoe == 1
+    record("Re-registration -> one family, returning dancer re-enrolled (not duplicated), sibling added",
+           n_fam == 1 and n_mia == 1 and n_zoe == 1 and mia_enrolled == 1
            and second.get("matched_existing_family") is True
-           and "Mia Dedupe" in (second.get("duplicate_skipped") or []),
-           f"families={n_fam} mia={n_mia} zoe={n_zoe} second={second}", "P1")
+           and "Mia Dedupe" in (second.get("returning_dancers") or []),
+           f"families={n_fam} mia={n_mia} zoe={n_zoe} enrolled={mia_enrolled} second={second}", "P1")
+    # A WITHDRAWN dancer who re-registers comes back active (last year's soft
+    # delete must not block this fall's return).
+    with app.app_context():
+        mia = Student.query.get(mia_id)
+        mia.is_active = False
+        db.session.commit()
+    with app.test_client() as pub:
+        pub.post("/api/register", json={
+            "parent_name": "Dana Dedupe", "parent_email": email,
+            "students": [{"first_name": "Mia", "last_name": "Dedupe"}]})
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        regs = (c.get("/api/registrations?status=pending").get_json() or {}).get("registrations", [])
+        rid3 = max(r["id"] for r in regs if (r.get("parent_email") or "").lower() == email)
+        c.post(f"/api/registrations/{rid3}/approve")
+    with app.app_context():
+        mia = Student.query.get(mia_id)
+        n_mia_after = Student.query.filter_by(first_name="Mia", last_name="Dedupe").count()
+    record("Withdrawn dancer re-registering is reactivated, not duplicated",
+           mia.is_active is True and n_mia_after == 1,
+           f"active={mia.is_active} count={n_mia_after}", "P1")
 
 
 def run_registration_flow():
