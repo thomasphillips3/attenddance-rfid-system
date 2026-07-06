@@ -1089,9 +1089,10 @@ def run_leads():
 def run_timeclock():
     """Staff time clock feeds payroll. Verify: can't clock out without clocking
     in, no double clock-in, hours compute correctly, the report is admin-only and
-    aggregates hours, and displayed timestamps are UTC-marked ('Z') so the browser
-    shows the right local time instead of a UTC-shifted one."""
-    from datetime import datetime as _dt, time as _time
+    aggregates hours, punches are stored studio-local (so an evening shift stays
+    in the local-date report window), and displayed timestamps are emitted local
+    (no 'Z') so the log shows the real punch time."""
+    from datetime import datetime as _dt, date as _date, time as _time
     from app.models import User, DanceClass, Attendance, TimeClockEntry
     with app.test_client() as c:
         login(c, "admin", "admin123")  # admin is staff
@@ -1100,15 +1101,25 @@ def run_timeclock():
                f"got {r0.status_code}", "P3")
         r1 = c.post("/api/timeclock/clock-in")
         record(f"Clock-in -> {r1.status_code}", r1.status_code == 201, r1.get_data(as_text=True)[:60], "P2")
-        record("Clock-in timestamp is UTC-marked ('Z')",
-               str((r1.get_json() or {}).get("clock_in", "")).endswith("Z"),
-               f"got {(r1.get_json() or {}).get('clock_in')}", "P2")
+        cin = str((r1.get_json() or {}).get("clock_in", ""))
+        record("Clock-in timestamp is studio-local (no 'Z', dated today)",
+               bool(cin) and not cin.endswith("Z") and cin.startswith(_date.today().isoformat()),
+               f"got {cin!r}", "P2")
         r2 = c.post("/api/timeclock/clock-in")
         record(f"Double clock-in rejected -> {r2.status_code}", r2.status_code == 400,
                f"got {r2.status_code}", "P2")
         r3 = c.post("/api/timeclock/clock-out")
         record(f"Clock-out -> {r3.status_code} (hours present)",
                r3.status_code == 200 and "hours" in (r3.get_json() or {}), r3.get_data(as_text=True)[:60], "P2")
+        # Payroll-boundary: a shift punched now (possibly evening) must appear in a
+        # report ending today. A UTC-stored evening punch would roll to tomorrow
+        # and vanish from today's window.
+        today_iso = _date.today().isoformat()
+        rep_today = c.get(f"/api/timeclock/report?start={today_iso}&end={today_iso}").get_json()
+        record("Today's completed shift appears in a report ending today (local-date boundary)",
+               (rep_today or {}).get("total_hours", 0) >= 0 and any(
+                   r.get("shifts", 0) >= 1 for r in (rep_today or {}).get("report", [])),
+               f"report={str(rep_today)[:100]}", "P2")
         # Hours math: seed a known 2.5h shift, confirm the report sums it.
         with app.app_context():
             adm = User.query.filter_by(username="admin").first()

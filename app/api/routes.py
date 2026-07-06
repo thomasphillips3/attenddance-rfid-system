@@ -154,6 +154,13 @@ def _utc_iso(dt):
     return (dt.isoformat() + 'Z') if dt else None
 
 
+def _local_iso(dt):
+    """ISO-8601 for a naive *studio-local* datetime (no 'Z') — for timestamps
+    stored in the studio's timezone (time-clock punches, attendance). Emitting a
+    'Z' would tag the local wall-clock as UTC and shift it by the whole offset."""
+    return dt.isoformat() if dt else None
+
+
 def _opt_int(raw):
     """Coerce an optional FK id to a positive int, or None if absent/un-parseable.
     For links whose render path already null-guards the relationship (group_id,
@@ -5046,10 +5053,11 @@ def timeclock_me():
               .order_by(desc(TimeClockEntry.clock_in)).limit(20).all())
     return jsonify({
         'open': bool(open_entry),
-        'open_since': _utc_iso(open_entry.clock_in) if open_entry else None,
+        # Clock punches are studio-local — emit without 'Z' (see _local_iso).
+        'open_since': _local_iso(open_entry.clock_in) if open_entry else None,
         'entries': [{
-            'id': e.id, 'clock_in': _utc_iso(e.clock_in),
-            'clock_out': _utc_iso(e.clock_out), 'hours': e.hours,
+            'id': e.id, 'clock_in': _local_iso(e.clock_in),
+            'clock_out': _local_iso(e.clock_out), 'hours': e.hours,
         } for e in recent],
     })
 
@@ -5064,7 +5072,7 @@ def clock_in():
     e = TimeClockEntry(user_id=current_user.id)
     db.session.add(e)
     db.session.commit()
-    return jsonify({'message': 'Clocked in', 'clock_in': _utc_iso(e.clock_in)}), 201
+    return jsonify({'message': 'Clocked in', 'clock_in': _local_iso(e.clock_in)}), 201
 
 
 @bp.route('/timeclock/clock-out', methods=['POST'])
@@ -5075,7 +5083,11 @@ def clock_out():
     e = TimeClockEntry.query.filter_by(user_id=current_user.id, clock_out=None).first()
     if not e:
         return jsonify({'error': "You're not clocked in"}), 400
-    e.clock_out = datetime.utcnow()
+    # Local time (studio timezone) so it matches clock_in and the local-date
+    # bounds the payroll report filters on — datetime.utcnow() would push an
+    # evening shift's timestamps onto the next UTC day and slip it out of the
+    # report window. Duration (hours) is unaffected (both ends move together).
+    e.clock_out = datetime.now()
     db.session.commit()
     return jsonify({'message': f'Clocked out — {e.hours} hrs', 'hours': e.hours})
 

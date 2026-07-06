@@ -1058,7 +1058,10 @@ class TimeClockEntry(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    clock_in = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    # Studio-local (datetime.now, not utcnow): the payroll report filters punches
+    # by local date, so an evening shift stored in UTC would land on the next day
+    # and slip out of the report window. clock_out is set local to match.
+    clock_in = db.Column(db.DateTime, default=datetime.now, nullable=False)
     clock_out = db.Column(db.DateTime)
     note = db.Column(db.String(200))
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
