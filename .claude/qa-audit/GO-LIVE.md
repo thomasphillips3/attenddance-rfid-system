@@ -93,10 +93,25 @@ with a "copy these emails" fallback until SMTP is set). Turn them on as ready.
      ledger, recitals) as one `.db` file. Save it off-Fly (your computer, Google
      Drive). Do it before any big change and, say, monthly. This is also your
      data-portability path if you ever leave AttenDANCE.
-  2. **Automatic (verify once):** Fly takes daily volume snapshots (default ~5-day
-     retention). Confirm with `flyctl volumes snapshots list attenddance_data`.
-     If you want longer retention, raise it in Fly. The manual download is the
-     one you control, so don't rely on Fly snapshots alone.
+  2. **Automatic — ✅ verified live (2026-07-06):** Fly is taking daily snapshots
+     of `attenddance_data` (`vol_vjy1k1q7zjk60y9v`) — 5 on record, one per day.
+     **But retention is only 5 days**: a bad bulk operation noticed a week later
+     has no good snapshot left. Recommended one-liner (max is 60 days; cost is
+     negligible — snapshots are incremental, ~68 MiB stored total today):
+     ```
+     fly volumes update vol_vjy1k1q7zjk60y9v --snapshot-retention 60
+     ```
+     The manual download is still the one you control — don't rely on Fly
+     snapshots alone.
+- **Restore recipes (hope you never need them):**
+  - *From a Fly snapshot* (volume/machine loss): list snapshots
+    (`fly volumes snapshots list vol_vjy1k1q7zjk60y9v`), then
+    `fly volumes create attenddance_data --snapshot-id vs_… --region lax`;
+    destroy the old machine/volume and `fly deploy` — the new machine mounts the
+    restored volume by its `attenddance_data` name from `fly.toml` `[mounts]`.
+  - *From a downloaded `.db`* (logical restore / corruption): stop the machine,
+    `fly ssh sftp shell` → `put backup.db /data/attendance.db` (also delete any
+    stale `attendance.db-wal`/`-shm` next to it), restart.
 - **Regression safety:** every push/PR runs the full check suite (access control,
   billing math, input robustness, empty-state, the fall flows) via
   `.github/workflows/tests.yml`.
