@@ -4676,10 +4676,15 @@ def list_registrations():
         if r.class_ids:
             ids = [int(x) for x in r.class_ids.split(',') if x.isdigit()]
             class_names = [c.name for c in DanceClass.query.filter(DanceClass.id.in_(ids)).all()]
+        # Returning-family hint for the admin queue: same matcher approval uses,
+        # so the badge and the approve behavior can't disagree.
+        m_fam, m_students = _match_registration_family(r.parent_email)
         out.append({
             'id': r.id, 'parent_name': r.parent_name, 'parent_email': r.parent_email,
             'parent_phone': r.parent_phone, 'students': students, 'class_names': class_names,
             'note': r.note, 'status': r.status, 'created_at': _utc_iso(r.created_at),
+            'returning': m_fam is not None or bool(m_students),
+            'matched_family': m_fam.name if m_fam else None,
         })
     return jsonify({
         'registrations': out,
@@ -4688,6 +4693,31 @@ def list_registrations():
             'per_page': per_page, 'total': pagination.total,
         },
     })
+
+
+def _match_registration_family(parent_email):
+    """Find the existing family a registration belongs to: by the family's
+    primary_email, else via a student whose parent_email matches (the pilot-era
+    data holds the email on the student, and most students have no family).
+    Returns (family_or_None, email_matched_students). Shared by the pending
+    list (the 'returning' badge) and approval (the actual dedupe) so the hint
+    and the behavior can never disagree."""
+    if not parent_email:
+        return None, []
+    email_l = parent_email.lower()
+    fam = (Family.query
+           .filter(Family.is_active.is_(True),
+                   func.lower(Family.primary_email) == email_l)
+           .first())
+    email_students = (Student.query
+                      .filter(func.lower(Student.parent_email) == email_l)
+                      .all())
+    if not fam:
+        for st in email_students:
+            if st.family and st.family.is_active:
+                fam = st.family
+                break
+    return fam, email_students
 
 
 @bp.route('/registrations/count', methods=['GET'])
@@ -4720,26 +4750,9 @@ def approve_registration(rid):
     # duplicate. Families register twice (June and again in August, or a
     # double-submit days apart); approving both used to create two families
     # with the same children duplicated and the ledger split between them.
-    # The pilot-era data holds the email on Student.parent_email (families
-    # mostly have no primary_email, and most students have NO family), so also
-    # match by student email — otherwise every real returning family this fall
-    # would still get duplicated.
-    fam = None
-    email_students = []
-    if reg.parent_email:
-        email_l = reg.parent_email.lower()
-        fam = (Family.query
-               .filter(Family.is_active.is_(True),
-                       func.lower(Family.primary_email) == email_l)
-               .first())
-        email_students = (Student.query
-                          .filter(func.lower(Student.parent_email) == email_l)
-                          .all())
-        if not fam:
-            for st in email_students:
-                if st.family and st.family.is_active:
-                    fam = st.family
-                    break
+    # The matcher also handles the pilot-era shape (email on the student, no
+    # family) — see _match_registration_family.
+    fam, email_students = _match_registration_family(reg.parent_email)
     matched_existing = fam is not None
     if not fam:
         fam = Family(name=f'{reg.parent_name} Family', primary_email=reg.parent_email,

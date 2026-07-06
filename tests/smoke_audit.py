@@ -2534,7 +2534,12 @@ def run_registration_pilot_shape_dedupe():
     with app.test_client() as c:
         login(c, "admin", "admin123")
         regs = (c.get("/api/registrations?status=pending").get_json() or {}).get("registrations", [])
-        rid = max(r["id"] for r in regs if (r.get("parent_email") or "").lower() == "pilot-parent@x.com")
+        mine = [r for r in regs if (r.get("parent_email") or "").lower() == "pilot-parent@x.com"]
+        rid = max(r["id"] for r in mine)
+        # The queue flags it as returning BEFORE approval (same matcher).
+        record("Pending list flags the pilot-shape registration as returning",
+               all(r.get("returning") is True for r in mine),
+               f"returning flags: {[r.get('returning') for r in mine]}", "P3")
         res = c.post(f"/api/registrations/{rid}/approve").get_json() or {}
     with app.app_context():
         n_pilot = Student.query.filter_by(first_name="Pilot", last_name="Kid").count()

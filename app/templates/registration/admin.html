@@ -58,6 +58,7 @@ async function load(page){
                 <div>
                     <span class="font-bold text-ink">${esc(r.parent_name)}</span>
                     <span class="px-2.5 py-1 rounded-full text-xs font-bold ml-2 ${badge(r.status)}">${r.status}</span>
+                    ${r.returning?`<span class="px-2.5 py-1 rounded-full text-xs font-bold ml-1 bg-gold-300/50 text-gold-ink" title="Matches an existing family — approving re-enrolls their dancers instead of duplicating them">↩ Returning${r.matched_family?': '+esc(r.matched_family):''}</span>`:''}
                     <p class="text-sm text-ink-3">${esc(r.parent_email)}${r.parent_phone?' · '+esc(r.parent_phone):''} · ${new Date(r.created_at).toLocaleDateString()}</p>
                 </div>
                 ${r.status==='pending'?`<div class="flex gap-2">
