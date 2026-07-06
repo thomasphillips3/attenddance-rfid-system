@@ -2510,6 +2510,43 @@ def run_registration_dedupe():
            f"active={mia.is_active} count={n_mia_after}", "P1")
 
 
+def run_registration_pilot_shape_dedupe():
+    """The REAL prod data shape: pilot-era students carry parent_email but have
+    NO family (20 of 21), and the one family has no primary_email. A returning
+    family re-registering must still be recognized — matched by STUDENT email —
+    or every real family this fall gets duplicated. The dancer is adopted into
+    the family and the family email is backfilled so the fast path matches next
+    time."""
+    from app.models import Setting, Family, Student
+    with app.app_context():
+        Setting.set("registration_open", "1")
+        # Pilot shape: orphan student, parent_email set, no family anywhere.
+        orphan = Student(first_name="Pilot", last_name="Kid", family_id=None,
+                         parent_email="pilot-parent@x.com", is_active=True)
+        db.session.add(orphan)
+        db.session.commit()
+        orphan_id = orphan.id
+    with app.test_client() as pub:
+        pub.post("/api/register", json={
+            "parent_name": "Pia Pilot", "parent_email": "PILOT-PARENT@x.com",  # case differs
+            "students": [{"first_name": "Pilot", "last_name": "Kid"},
+                         {"first_name": "New", "last_name": "Sib"}]})
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        regs = (c.get("/api/registrations?status=pending").get_json() or {}).get("registrations", [])
+        rid = max(r["id"] for r in regs if (r.get("parent_email") or "").lower() == "pilot-parent@x.com")
+        res = c.post(f"/api/registrations/{rid}/approve").get_json() or {}
+    with app.app_context():
+        n_pilot = Student.query.filter_by(first_name="Pilot", last_name="Kid").count()
+        orphan = Student.query.get(orphan_id)
+        fam = orphan.family
+        fam_email_backfilled = fam is not None and (fam.primary_email or "").lower() == "pilot-parent@x.com"
+    record("Pilot-shape re-registration: orphan dancer matched by email, adopted, family email backfilled",
+           n_pilot == 1 and orphan.family_id is not None and fam_email_backfilled
+           and "Pilot Kid" in (res.get("returning_dancers") or []),
+           f"count={n_pilot} family_id={orphan.family_id} backfilled={fam_email_backfilled} res={res.get('returning_dancers')}", "P1")
+
+
 def run_registration_flow():
     """Public self-registration: gated when closed, validated, and admin
     approval actually creates a family + students. The key fall-enrollment path."""
@@ -4813,6 +4850,7 @@ def main():
     run_login_by_email()
     run_registration_flow()
     run_registration_dedupe()
+    run_registration_pilot_shape_dedupe()
     run_registration_field_caps()
     run_clean_str_backstop()
     run_amount_validation(ids)

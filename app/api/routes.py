@@ -4720,18 +4720,35 @@ def approve_registration(rid):
     # duplicate. Families register twice (June and again in August, or a
     # double-submit days apart); approving both used to create two families
     # with the same children duplicated and the ledger split between them.
+    # The pilot-era data holds the email on Student.parent_email (families
+    # mostly have no primary_email, and most students have NO family), so also
+    # match by student email — otherwise every real returning family this fall
+    # would still get duplicated.
     fam = None
+    email_students = []
     if reg.parent_email:
+        email_l = reg.parent_email.lower()
         fam = (Family.query
                .filter(Family.is_active.is_(True),
-                       func.lower(Family.primary_email) == reg.parent_email.lower())
+                       func.lower(Family.primary_email) == email_l)
                .first())
+        email_students = (Student.query
+                          .filter(func.lower(Student.parent_email) == email_l)
+                          .all())
+        if not fam:
+            for st in email_students:
+                if st.family and st.family.is_active:
+                    fam = st.family
+                    break
     matched_existing = fam is not None
     if not fam:
         fam = Family(name=f'{reg.parent_name} Family', primary_email=reg.parent_email,
                      primary_phone=reg.parent_phone)
         db.session.add(fam)
         db.session.flush()
+    elif not fam.primary_email:
+        # Backfill so the NEXT re-registration matches on the family fast path.
+        fam.primary_email = reg.parent_email
 
     class_ids = [int(x) for x in (reg.class_ids or '').split(',') if x.isdigit()]
     # Only enroll in classes that still exist — a class deleted between submit and
@@ -4751,13 +4768,18 @@ def approve_registration(rid):
     created = []
     full_skips = []
     returning = []
-    # Existing dancers in the (possibly reused) family — a returning family
-    # re-registering for fall names the same children. Don't recreate them (that
-    # duplicates the dancer + splits the ledger); reuse the existing record.
-    existing_by_name = {
-        (st.first_name.strip().lower(), (st.last_name or '').strip().lower()): st
-        for st in Student.query.filter_by(family_id=fam.id).all()
-    } if matched_existing else {}
+    # Existing dancers who could be returning: those already in the (possibly
+    # reused) family, plus any student whose parent_email matches — the pilot
+    # data has students with a matching email but NO family. Don't recreate a
+    # returning dancer (that duplicates them + splits the ledger).
+    existing_by_name = {}
+    if matched_existing:
+        for st in Student.query.filter_by(family_id=fam.id).all():
+            existing_by_name[(st.first_name.strip().lower(),
+                              (st.last_name or '').strip().lower())] = st
+    for st in email_students:
+        existing_by_name.setdefault(
+            (st.first_name.strip().lower(), (st.last_name or '').strip().lower()), st)
 
     def _enroll(student):
         """Enroll in the requested classes, capacity-checked, skipping ones the
@@ -4785,9 +4807,13 @@ def approve_registration(rid):
         if existing:
             # Returning dancer: reactivate if withdrawn (last year's soft delete)
             # and enroll them in the newly-requested classes — this is the fall
-            # re-enrollment path for existing families.
+            # re-enrollment path for existing families. A pilot-era dancer with
+            # no family (or one matched via email) is adopted into this family
+            # so siblings and family billing group correctly from now on.
             if not existing.is_active:
                 existing.is_active = True
+            if existing.family_id != fam.id:
+                existing.family_id = fam.id
             _enroll(existing)
             returning.append(f'{fn} {ln}')
             continue
