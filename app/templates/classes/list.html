@@ -7,9 +7,11 @@
         <h1 class="font-display text-3xl text-ink leading-tight mt-1">Classes</h1>
         <p class="mt-1 text-sm text-ink-2">Manage your weekly class schedule.</p>
     </div>
+    {% if current_user.is_admin %}{# class + enrollment mutations are admin-only #}
     <button onclick="openAddModal()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">
         <i class="fas fa-calendar-plus"></i>Add Class
     </button>
+    {% endif %}
 </div>
 
 <div id="classes-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -61,6 +63,12 @@
                         </select>
                     </div>
                     <div>
+                        <label class="{{ lbl }}">Instructor</label>
+                        <select id="instructor-id" class="{{ inp }}">
+                            <option value="">Me (default)</option>
+                        </select>
+                    </div>
+                    <div>
                         <label class="{{ lbl }}">Max Students</label>
                         <input type="number" id="max-students" value="20" min="1" class="{{ inp }}">
                     </div>
@@ -81,7 +89,7 @@
         <div class="relative bg-surface rounded-2xl shadow-pop max-w-lg w-full p-6">
             <div class="flex items-center justify-between mb-4">
                 <h3 id="enroll-modal-title" class="font-display text-2xl text-ink">Manage Students</h3>
-                <button onclick="closeEnrollModal()" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark"></i></button>
+                <button onclick="closeEnrollModal()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
             </div>
             <!-- Add students (batch) -->
             <div id="add-students-section" class="mb-4 hidden">
@@ -94,7 +102,7 @@
                     <button onclick="enrollSelected()" class="px-3 py-1.5 rounded-lg bg-primary-500 text-white text-sm font-bold hover:bg-primary-600">Enroll Selected</button>
                 </div>
             </div>
-            <div id="add-btn-row" class="mb-4">
+            <div id="add-btn-row" class="mb-4{% if not current_user.is_admin %} hidden{% endif %}">
                 <button onclick="toggleAddSection(true)" class="w-full inline-flex justify-center items-center gap-2 px-3 py-2 border border-dashed border-line-2 rounded-xl text-sm text-ink-2 hover:border-primary-400 hover:text-primary-600">
                     <i class="fas fa-plus"></i>Add Students
                 </button>
@@ -115,13 +123,16 @@
 
 {% block extra_js %}
 <script>
+const IS_ADMIN = {{ 'true' if current_user.is_admin else 'false' }};
 function esc(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
 
+let allClasses = [];
 async function loadClasses() {
     try {
         const res = await fetch('/api/classes');
         const data = await res.json();
-        renderClasses(data.classes);
+        allClasses = data.classes || [];
+        renderClasses(allClasses);
     } catch (err) {
         document.getElementById('classes-container').innerHTML = '<p class="text-danger col-span-full text-center py-8">Failed to load classes</p>';
     }
@@ -147,6 +158,10 @@ function renderClasses(classes) {
                 <button data-class-id="${cls.id}" data-class-name="${esc(cls.name)}" class="enroll-btn mt-4 w-full inline-flex justify-center items-center gap-2 px-3 py-2 rounded-xl border border-line-2 text-sm font-bold text-ink-2 hover:border-primary-300 hover:text-primary-700">
                     <i class="fas fa-user-plus"></i>Manage Students
                 </button>
+                ${IS_ADMIN ? `<div class="mt-2 flex gap-2">
+                    <button onclick="openEditModal(${cls.id})" class="flex-1 inline-flex justify-center items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-ink-2 hover:bg-surface-2"><i class="fas fa-pen"></i>Edit</button>
+                    <button onclick="cancelClass(${cls.id}, ${JSON.stringify(cls.name)})" class="flex-1 inline-flex justify-center items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-danger hover:bg-danger/5"><i class="fas fa-ban"></i>Cancel Class</button>
+                </div>` : ''}
             </div>
         </div>
     `).join('');
@@ -164,8 +179,28 @@ function openAddModal() {
 
 function closeModal() { document.getElementById('class-modal').classList.add('hidden'); }
 
+function openEditModal(id) {
+    const cls = allClasses.find(c => c.id === id);
+    if (!cls) return;
+    document.getElementById('modal-title').textContent = 'Edit Class';
+    document.getElementById('class-id').value = cls.id;
+    document.getElementById('class-name').value = cls.name || '';
+    document.getElementById('day-of-week').value = cls.day_of_week;
+    document.getElementById('start-time').value = cls.start_time || '';
+    document.getElementById('end-time').value = cls.end_time || '';
+    document.getElementById('level').value = cls.level || '';
+    document.getElementById('location-id').value = cls.location_id || '';
+    document.getElementById('instructor-id').value = cls.instructor_id || '';
+    document.getElementById('max-students').value = cls.max_students || 20;
+    document.getElementById('class-modal').classList.remove('hidden');
+}
+
 async function saveClass(e) {
     e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    if (btn && btn.disabled) return;
+    if (btn) btn.disabled = true;
+    const id = document.getElementById('class-id').value;
     const body = {
         name: document.getElementById('class-name').value,
         day_of_week: parseInt(document.getElementById('day-of-week').value),
@@ -175,10 +210,27 @@ async function saveClass(e) {
         location_id: document.getElementById('location-id').value || null,
         max_students: parseInt(document.getElementById('max-students').value) || 20,
     };
+    // Only send instructor_id when one is chosen — on create, an empty value must
+    // fall through to the endpoint's default (the current user), and on edit an
+    // empty value means "leave the instructor unchanged".
+    const instructorId = document.getElementById('instructor-id').value;
+    if (instructorId) body.instructor_id = parseInt(instructorId);
     try {
-        const res = await fetch('/api/classes', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-        if (res.ok) { closeModal(); loadClasses(); } else { const d = await res.json(); alert(d.error || 'Error saving class'); }
-    } catch (err) { alert('Network error'); }
+        const res = await fetch(id ? `/api/classes/${id}` : '/api/classes',
+            { method: id ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        if (res.ok) { closeModal(); loadClasses(); } else { const d = await res.json(); toast(d.error || 'Error saving class', false); }
+    } catch (err) { toast('Network error', false); }
+    finally { if (btn) btn.disabled = false; }
+}
+
+async function cancelClass(id, name) {
+    if (!confirm(`Cancel "${name}"? This deactivates the class and stops any auto-billing for it. Enrolled families keep their existing balances.`)) return;
+    try {
+        const res = await fetch(`/api/classes/${id}`, { method: 'DELETE' });
+        const d = await res.json();
+        if (res.ok) { loadClasses(); toast(d.message || 'Class cancelled', true); }
+        else { toast(d.error || 'Error', false); }
+    } catch (err) { toast('Network error', false); }
 }
 
 async function loadLocations() {
@@ -188,6 +240,16 @@ async function loadLocations() {
         const sel = document.getElementById('location-id');
         sel.innerHTML = '<option value="">No location</option>' +
             data.locations.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+    } catch (err) {}
+}
+
+async function loadInstructors() {
+    try {
+        const res = await fetch('/api/instructors');
+        const data = await res.json();
+        const sel = document.getElementById('instructor-id');
+        sel.innerHTML = '<option value="">Me (default)</option>' +
+            (data.instructors || []).map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('');
     } catch (err) {}
 }
 
@@ -213,17 +275,17 @@ async function loadWaitlist() {
         el.innerHTML = w.map(x => `
             <div class="flex items-center justify-between p-2 bg-gold-300/30 rounded-lg">
                 <span class="text-sm text-ink"><span class="text-xs text-gold-ink mr-2">#${x.position}</span>${esc(x.student_name)}</span>
-                <span>
+                ${IS_ADMIN ? `<span>
                     <button onclick="promoteWait(${x.id})" class="text-xs text-ok font-bold hover:underline mr-2">Enroll</button>
                     <button onclick="removeWait(${x.id})" class="text-xs text-danger hover:underline">Remove</button>
-                </span>
+                </span>` : ''}
             </div>`).join('');
     } catch { sec.classList.add('hidden'); }
 }
 
 async function waitlistSelected() {
     const checked = [...document.querySelectorAll('.student-cb:checked')].map(cb => parseInt(cb.value));
-    if (!checked.length) { alert('Select at least one student'); return; }
+    if (!checked.length) { toast('Select at least one student', false); return; }
     for (const sid of checked) {
         await fetch(`/api/classes/${currentClassId}/waitlist`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -238,6 +300,9 @@ async function promoteWait(id) {
     if (r.ok) { loadEnrollments(); loadWaitlist(); }
 }
 async function removeWait(id) {
+    // Confirm: re-adding puts them at the back of the waitlist, so an accidental
+    // remove loses their place in line.
+    if (!confirm('Remove this student from the waitlist? They lose their spot in line.')) return;
     const r = await fetch(`/api/waitlist/${id}`, { method: 'DELETE' });
     if (r.ok) loadWaitlist();
 }
@@ -252,14 +317,15 @@ async function toggleAddSection(show) {
     document.getElementById('add-students-section').classList.toggle('hidden', !show);
     document.getElementById('add-btn-row').classList.toggle('hidden', show);
     if (show) {
-        const [studentsRes, enrollRes] = await Promise.all([
-            fetch('/api/students?per_page=100'),
+        // fetchAllStudents (base.html) pages to the COMPLETE roster — fetching only
+        // page 1 would make students past the first 100 un-enrollable via this modal.
+        const [allStudents, enrollRes] = await Promise.all([
+            fetchAllStudents(),
             fetch(`/api/classes/${currentClassId}/enrollments`)
         ]);
-        const studentsData = await studentsRes.json();
         const enrollData = await enrollRes.json();
         const enrolledIds = new Set(enrollData.enrollments.map(e => e.student_id));
-        const available = studentsData.students.filter(s => !enrolledIds.has(s.id));
+        const available = allStudents.filter(s => !enrolledIds.has(s.id));
         const cl = document.getElementById('student-checklist');
         if (!available.length) {
             cl.innerHTML = '<p class="text-ink-3 text-sm py-2 text-center">All students are already enrolled.</p>';
@@ -294,7 +360,7 @@ async function loadEnrollments() {
                         <p class="text-xs text-ink-3">Enrolled ${e.enrolled_date}</p>
                     </div>
                 </div>
-                <button data-enrollment-id="${e.enrollment_id}" class="unenroll-btn text-danger hover:opacity-70 text-sm"><i class="fas fa-xmark"></i></button>
+                ${IS_ADMIN ? `<button aria-label="Remove from class" data-enrollment-id="${e.enrollment_id}" class="unenroll-btn text-danger hover:opacity-70 text-sm"><i class="fas fa-xmark"></i></button>` : ''}
             </div>
         `).join('');
         el.querySelectorAll('.unenroll-btn').forEach(btn => {
@@ -305,16 +371,20 @@ async function loadEnrollments() {
 
 async function enrollSelected() {
     const checked = [...document.querySelectorAll('.student-cb:checked')].map(cb => parseInt(cb.value));
-    if (!checked.length) { alert('Select at least one student'); return; }
+    if (!checked.length) { toast('Select at least one student', false); return; }
     try {
         const res = await fetch(`/api/classes/${currentClassId}/enroll`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ student_ids: checked })
         });
         const data = await res.json();
-        if (res.ok) { toggleAddSection(false); loadEnrollments(); }
-        else { alert(data.error || 'Enrollment failed'); }
-    } catch (err) { alert('Network error'); }
+        if (res.ok) {
+            toggleAddSection(false); loadEnrollments(); loadClasses();
+            // Surface the outcome — if some hit the cap, flag it (not silent).
+            if (data.message) toast(data.message, !(data.full && data.full.length));
+        }
+        else { toast(data.error || 'Enrollment failed', false); }
+    } catch (err) { toast('Network error', false); }
 }
 
 async function unenrollStudent(enrollmentId) {
@@ -325,5 +395,6 @@ async function unenrollStudent(enrollmentId) {
 
 loadClasses();
 loadLocations();
+loadInstructors();
 </script>
 {% endblock %}

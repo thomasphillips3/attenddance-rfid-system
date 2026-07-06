@@ -18,12 +18,13 @@
 
 <div id="msg" class="hidden mb-4 p-3 rounded-xl text-sm font-medium"></div>
 <div class="mb-4">
-    <select id="status-filter" onchange="load()" class="bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+    <select id="status-filter" onchange="load(1)" class="bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
         <option value="pending">Pending</option><option value="approved">Approved</option>
         <option value="rejected">Rejected</option><option value="all">All</option>
     </select>
 </div>
 <div id="list" class="space-y-4"><p class="text-ink-3">Loading…</p></div>
+<div id="reg-pagination" class="flex items-center justify-between gap-3 mt-4"></div>
 {% endblock %}
 
 {% block extra_js %}
@@ -41,11 +42,14 @@ async function toggleOpen(){
     msg(r.ok?('Registration '+(open?'opened':'closed')):'Error', r.ok);
 }
 
-async function load(){
+let regPage=1;
+async function load(page){
+    if(page)regPage=page;
     const status=document.getElementById('status-filter').value;
     const el=document.getElementById('list');
-    const data=await (await fetch('/api/registrations?status='+status)).json();
+    const data=await (await fetch('/api/registrations?status='+status+'&page='+regPage)).json();
     const rows=data.registrations||[];
+    renderRegPagination(data.pagination);
     if(!rows.length){el.innerHTML='<p class="text-ink-3">Nothing here.</p>';return;}
     const badge=s=>({pending:'bg-warn/10 text-warn',approved:'bg-ok/10 text-ok',rejected:'bg-surface-2 text-ink-2'}[s]||'');
     el.innerHTML=rows.map(r=>`
@@ -54,6 +58,7 @@ async function load(){
                 <div>
                     <span class="font-bold text-ink">${esc(r.parent_name)}</span>
                     <span class="px-2.5 py-1 rounded-full text-xs font-bold ml-2 ${badge(r.status)}">${r.status}</span>
+                    ${r.returning?`<span class="px-2.5 py-1 rounded-full text-xs font-bold ml-1 bg-gold-300/50 text-gold-ink" title="Matches an existing family — approving re-enrolls their dancers instead of duplicating them">↩ Returning${r.matched_family?': '+esc(r.matched_family):''}</span>`:''}
                     <p class="text-sm text-ink-3">${esc(r.parent_email)}${r.parent_phone?' · '+esc(r.parent_phone):''} · ${new Date(r.created_at).toLocaleDateString()}</p>
                 </div>
                 ${r.status==='pending'?`<div class="flex gap-2">
@@ -68,6 +73,19 @@ async function load(){
             ${(r.class_names||[]).length?`<div class="mt-1 text-sm"><span class="font-bold text-ink-2">Classes:</span> ${r.class_names.map(esc).join(', ')}</div>`:''}
             ${r.note?`<div class="mt-1 text-xs text-ink-3">"${esc(r.note)}"</div>`:''}
         </div>`).join('');
+}
+function renderRegPagination(p){
+    const el=document.getElementById('reg-pagination');
+    if(!el)return;
+    if(!p||p.pages<=1){el.innerHTML='';return;}
+    const start=(p.page-1)*p.per_page+1, end=Math.min(p.page*p.per_page,p.total);
+    const btn='px-3 py-1.5 rounded-lg border border-line-2 text-sm font-bold text-ink-2 hover:border-primary-300 disabled:opacity-40 disabled:cursor-not-allowed';
+    el.innerHTML=`<span class="text-sm text-ink-3">Showing ${start}–${end} of ${p.total}</span>
+        <div class="flex items-center gap-2">
+            <button class="${btn}" ${p.page<=1?'disabled':''} onclick="load(${p.page-1})">Prev</button>
+            <span class="px-1 text-sm text-ink-2">Page ${p.page} of ${p.pages}</span>
+            <button class="${btn}" ${p.page>=p.pages?'disabled':''} onclick="load(${p.page+1})">Next</button>
+        </div>`;
 }
 async function approve(id){if(!confirm('Approve and create these dancers + a family account?'))return;const r=await fetch(`/api/registrations/${id}/approve`,{method:'POST'});const d=await r.json();msg(r.ok?d.message:d.error,r.ok);if(r.ok)load();}
 async function reject(id){if(!confirm('Reject this registration?'))return;const r=await fetch(`/api/registrations/${id}/reject`,{method:'POST'});if(r.ok){msg('Rejected',true);load();}}

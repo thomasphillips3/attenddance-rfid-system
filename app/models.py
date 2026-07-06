@@ -46,11 +46,16 @@ class User(UserMixin, db.Model):
     
     @property
     def is_parent(self):
-        return self.role == 'parent'
+        # An admin is never treated as a parent, so a stale role can't route an
+        # admin into the read-only parent portal (defends the is_admin/role split
+        # that let the seeded admin's role drift to 'teacher').
+        return self.role == 'parent' and not self.is_admin
 
     @property
     def is_staff(self):
-        return self.role in ('admin', 'teacher')
+        # An admin is always staff regardless of role — the is_admin bool and the
+        # role string can't diverge into an "admin locked out of staff pages" state.
+        return self.is_admin or self.role in ('admin', 'teacher')
 
     def get_children(self):
         """Get students linked to this parent user."""
@@ -216,7 +221,8 @@ class Student(db.Model):
     def get_recent_attendance(self, days=30):
         """Get recent attendance records"""
         from datetime import timedelta
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        # Local (datetime.now) to match check_in_time, which is stored studio-local.
+        cutoff_date = datetime.now() - timedelta(days=days)
         return self.attendances.filter(Attendance.check_in_time >= cutoff_date).all()
     
     def __repr__(self):
@@ -317,8 +323,11 @@ class Attendance(db.Model):
     student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
     class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
     
-    # Attendance details
-    check_in_time = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    # Attendance details. check_in_time is studio-local (datetime.now, not utcnow):
+    # it's grouped/filtered by local date.today() and the unique-day index, so a
+    # UTC value would land an evening check-in on the next day. All creation paths
+    # set it explicitly; this default is the safety net for any future one.
+    check_in_time = db.Column(db.DateTime, default=datetime.now, nullable=False)
     check_out_time = db.Column(db.DateTime)
     
     # How they checked in
@@ -330,9 +339,12 @@ class Attendance(db.Model):
     # Status
     is_present = db.Column(db.Boolean, default=True, nullable=False)
     
-    # Unique constraint to prevent duplicate check-ins on same day
+    # Lookup index for the per-(student, class, day) dedup query. NOTE: this is a
+    # plain index, NOT a uniqueness guarantee — duplicate check-ins are prevented
+    # at the APPLICATION level (manual_checkin returns 400 if already present;
+    # toggle_attendance deletes-or-creates). Keep those checks; the DB won't.
     __table_args__ = (
-        db.Index('idx_attendance_date_student', 'student_id', 
+        db.Index('idx_attendance_date_student', 'student_id',
                 db.func.date('check_in_time'), 'class_id'),
     )
     
@@ -359,8 +371,9 @@ class RFIDLog(db.Model):
     rfid_uid = db.Column(db.String(50), nullable=False, index=True)
     student_id = db.Column(db.Integer, db.ForeignKey('students.id'))
     
-    # Scan details
-    scan_time = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    # Scan details. Studio-local (datetime.now) to match the check-in it records
+    # and the dashboard's server-side strftime display of the scan time.
+    scan_time = db.Column(db.DateTime, default=datetime.now, nullable=False)
     action_taken = db.Column(db.String(50))  # checkin, unknown_card, error
     
     # Results
@@ -1050,7 +1063,10 @@ class TimeClockEntry(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    clock_in = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    # Studio-local (datetime.now, not utcnow): the payroll report filters punches
+    # by local date, so an evening shift stored in UTC would land on the next day
+    # and slip out of the report window. clock_out is set local to match.
+    clock_in = db.Column(db.DateTime, default=datetime.now, nullable=False)
     clock_out = db.Column(db.DateTime)
     note = db.Column(db.String(200))
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)

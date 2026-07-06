@@ -5,7 +5,14 @@ import logging
 import os
 import threading
 
-from app import create_app
+# Configure logging at import time so it applies under BOTH gunicorn (which
+# imports `run:app`, so __main__ never runs) and the dev server. Without this,
+# production silently drops every INFO log — the operator can't confirm from the
+# logs that the automated engines ran (recurring charges, auto-reminders) or that
+# the app booted. basicConfig is a no-op if the root logger is already configured.
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+
+from app import create_app  # noqa: E402 — after logging setup so boot logs are captured
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +37,8 @@ def main():
             logger.info("RFID service not available (normal on non-Raspberry Pi hardware)")
 
     host = os.environ.get('FLASK_HOST', '0.0.0.0')
-    port = int(os.environ.get('FLASK_PORT', 5000))
+    # Honor PORT (12-factor / PaaS / preview harness) first, then FLASK_PORT.
+    port = int(os.environ.get('PORT') or os.environ.get('FLASK_PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
 
     logger.info("AttenDANCE starting on http://%s:%d (debug=%s)", host, port, debug)
@@ -44,5 +52,4 @@ def main():
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     main()

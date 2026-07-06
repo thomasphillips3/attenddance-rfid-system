@@ -137,9 +137,9 @@ function renderStaff(staff) {
             </td>
             <td class="px-5 py-3.5 whitespace-nowrap text-sm text-ink-3 tabular-nums">${s.last_login ? new Date(s.last_login).toLocaleDateString() : 'Never'}</td>
             <td class="px-5 py-3.5 whitespace-nowrap text-right text-sm font-medium">
-                <button data-id="${s.id}" class="edit-btn text-primary-600 hover:text-primary-700 mr-3" title="Edit"><i class="fas fa-edit"></i></button>
+                <button aria-label="Edit staff" data-id="${s.id}" class="edit-btn text-primary-600 hover:text-primary-700 mr-3" title="Edit"><i class="fas fa-edit"></i></button>
                 ${s.is_active
-                    ? `<button data-id="${s.id}" data-name="${esc(s.full_name)}" class="delete-btn text-danger hover:opacity-80" title="Deactivate"><i class="fas fa-user-slash"></i></button>`
+                    ? `<button aria-label="Deactivate staff" data-id="${s.id}" data-name="${esc(s.full_name)}" class="delete-btn text-danger hover:opacity-80" title="Deactivate"><i class="fas fa-user-slash"></i></button>`
                     : '<span class="text-xs text-ink-3">Inactive</span>'}
             </td>
         </tr>
@@ -203,7 +203,7 @@ async function saveStaff(e) {
     if (pw) body.password = pw;
 
     if (!id && !pw) {
-        alert('Password is required for new accounts');
+        toast('Password is required for new accounts', false);
         return;
     }
 
@@ -219,10 +219,10 @@ async function saveStaff(e) {
             loadStaff();
         } else {
             const d = await res.json();
-            alert(d.error || 'Error saving staff');
+            toast(d.error || 'Error saving staff', false);
         }
     } catch (err) {
-        alert('Network error');
+        toast('Network error', false);
     }
 }
 
@@ -234,10 +234,10 @@ async function deactivateStaff(id, name) {
             loadStaff();
         } else {
             const d = await res.json();
-            alert(d.error || 'Error deactivating staff');
+            toast(d.error || 'Error deactivating staff', false);
         }
     } catch (err) {
-        alert('Network error');
+        toast('Network error', false);
     }
 }
 

@@ -7,6 +7,8 @@ import time
 from datetime import date, datetime, timedelta
 from typing import Optional
 
+from sqlalchemy.exc import IntegrityError
+
 from rfid.reader import create_rfid_reader
 from app.models import Student, Attendance, DanceClass, RFIDLog
 from app import db
@@ -20,6 +22,7 @@ class RFIDService:
     def __init__(self):
         """Initialize RFID service"""
         self.reader = None
+        self._app = None
         self.running = False
         self.scan_interval = 0.5  # seconds between scans
         self.last_scan_uid = None
@@ -62,6 +65,17 @@ class RFIDService:
         """Stop the RFID listening service"""
         logger.info("Stopping RFID service...")
         self.running = False
+
+    def _get_app(self):
+        """Reuse ONE Flask app across scans. create_app() runs migrations, seeds
+        the admin, and kicks off startup jobs (recurring charges, reminder
+        threads) — calling it per card tap (as this did) re-ran all of that on
+        every scan and spawned a daemon thread each time, a slow resource leak
+        over a day of scanning. Build it once, lazily, and reuse it."""
+        if self._app is None:
+            from app import create_app
+            self._app = create_app()
+        return self._app
     
     def _scan_for_cards(self):
         """Scan for RFID cards and process them"""
@@ -113,10 +127,9 @@ class RFIDService:
             True if successful, False otherwise
         """
         try:
-            # Create Flask application context
-            from app import create_app
-            app = create_app()
-            
+            # Reuse the cached app (see _get_app) instead of building one per scan.
+            app = self._get_app()
+
             with app.app_context():
                 # Log the scan
                 self._log_rfid_scan(uid, "processing")
@@ -134,7 +147,7 @@ class RFIDService:
                 current_class = self._find_current_class(student)
                 
                 if not current_class:
-                    logger.warning(f"No current class found for student {student.full_name}")
+                    logger.warning(f"No current class found for student #{student.id}")
                     self._log_rfid_scan(uid, "no_class", success=False, 
                                       error="No current class found", student_id=student.id)
                     return False
@@ -148,26 +161,40 @@ class RFIDService:
                 ).first()
                 
                 if existing_attendance:
-                    logger.info(f"Student {student.full_name} already checked in today")
+                    logger.info(f"Student #{student.id} already checked in today")
                     self._log_rfid_scan(uid, "already_checked_in", success=True, 
                                       error="Already checked in today", student_id=student.id)
                     return True
                 
-                # Create attendance record
+                # Create attendance record. Local time (server runs in the studio
+                # timezone) so the date matches the `date.today()` used in the
+                # duplicate check above and the unique-day index — datetime.utcnow()
+                # would date an evening scan on the next UTC day, hiding it from
+                # today's roster. Same basis as the manual/toggle check-in paths.
                 attendance = Attendance(
                     student_id=student.id,
                     class_id=current_class.id,
-                    check_in_time=datetime.utcnow(),
+                    check_in_time=datetime.now(),
                     check_in_method='rfid',
                     is_present=True
                 )
-                
+
                 db.session.add(attendance)
-                db.session.commit()
-                
-                logger.info(f"✅ Student {student.full_name} checked in to {current_class.name}")
+                try:
+                    db.session.commit()
+                except IntegrityError:
+                    # A near-simultaneous scan (past the existing-check above) hit
+                    # the unique (student, class, day) index. The student is
+                    # already marked present — recover the session and treat it as
+                    # an already-checked-in success rather than wedging the reader.
+                    db.session.rollback()
+                    self._log_rfid_scan(uid, "already_checked_in", success=True,
+                                        error="Already checked in today", student_id=student.id)
+                    return True
+
+                logger.info(f"✅ Student #{student.id} checked in to {current_class.name}")
                 self._log_rfid_scan(uid, "checkin", success=True, student_id=student.id)
-                
+
                 return True
                 
         except Exception as e:
@@ -234,14 +261,13 @@ class RFIDService:
                       error: str = None, student_id: int = None):
         """Log RFID scan to database"""
         try:
-            from app import create_app
-            app = create_app()
-            
+            app = self._get_app()
+
             with app.app_context():
                 log_entry = RFIDLog(
                     rfid_uid=uid,
                     student_id=student_id,
-                    scan_time=datetime.utcnow(),
+                    scan_time=datetime.now(),  # studio-local, like the check-in it logs
                     action_taken=action,
                     success=success,
                     error_message=error

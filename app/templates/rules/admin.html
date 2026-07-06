@@ -7,9 +7,11 @@
         <h1 class="font-display text-3xl text-ink leading-tight mt-1">Rules &amp; Regulations</h1>
         <p class="text-sm text-ink-2 mt-1">Manage studio rules that parents must initial before enrollment</p>
     </div>
+    {% if current_user.is_admin %}{# rule mutations are admin-only; teachers view #}
     <button onclick="openAddRule()" class="inline-flex items-center px-4 py-2 rounded-xl text-sm font-bold text-white bg-primary-500 hover:bg-primary-600 shadow-sm">
         <i class="fas fa-plus mr-2"></i>Add Rule
     </button>
+    {% endif %}
 </div>
 
 <h2 class="font-display text-xl text-ink mb-3">Studio Rules</h2>
@@ -75,11 +77,12 @@ function renderRules(rules) {
                 <span class="flex-shrink-0 w-8 h-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-sm font-bold mr-3">${i + 1}</span>
                 <p class="text-sm text-ink pt-1">${esc(r.text)}</p>
             </div>
-            <button onclick="deleteRule(${r.id})" class="ml-3 text-danger hover:opacity-80 flex-shrink-0"><i class="fas fa-trash"></i></button>
+            ${IS_ADMIN ? `<button aria-label="Delete rule" onclick="deleteRule(${r.id})" class="ml-3 text-danger hover:opacity-80 flex-shrink-0"><i class="fas fa-trash"></i></button>` : ''}
         </div>
     `).join('');
 }
 
+const IS_ADMIN = {{ 'true' if current_user.is_admin else 'false' }};
 const studentIds = [{% for s in students %}{{ s.id }},{% endfor %}];
 const studentNames = { {% for s in students %}{{ s.id }}: '{{ s.full_name }}',{% endfor %} };
 
@@ -109,8 +112,8 @@ async function saveRule(e) {
     e.preventDefault();
     try {
         const res = await fetch('/api/rules', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ text: document.getElementById('rule-text').value }) });
-        if (res.ok) { closeRuleModal(); loadRules(); loadAckStatus(); } else { const d = await res.json(); alert(d.error || 'Error'); }
-    } catch (err) { alert('Network error'); }
+        if (res.ok) { closeRuleModal(); loadRules(); loadAckStatus(); } else { const d = await res.json(); toast(d.error || 'Error', false); }
+    } catch (err) { toast('Network error', false); }
 }
 
 async function deleteRule(id) {

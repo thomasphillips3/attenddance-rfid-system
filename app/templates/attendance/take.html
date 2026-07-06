@@ -184,7 +184,7 @@ async function toggleMark(el) {
         }
         updateCount();
     } catch (err) {
-        alert('Could not save. Check your connection.');
+        toast('Could not save. Check your connection.', false);
     }
 }
 

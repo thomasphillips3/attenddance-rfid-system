@@ -12,6 +12,33 @@
 
 <div id="msg" class="hidden mb-4 p-3 rounded-xl text-sm font-medium"></div>
 <div id="forms-list" class="space-y-4"><p class="text-ink-3">Loading…</p></div>
+
+{% set lbl = "block text-sm font-medium text-ink-2 mb-1" %}
+{% set fld = "block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
+<!-- Form template modal (create + edit) -->
+<div id="form-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="closeFormModal()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-lg w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 id="form-modal-title" class="font-display text-2xl text-ink">New form</h3>
+                <button onclick="closeFormModal()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div><label class="{{ lbl }}" for="fm-title">Title *</label><input id="fm-title" class="{{ fld }}" placeholder="e.g. Liability Waiver, Photo Release"></div>
+                <div><label class="{{ lbl }}" for="fm-body">Form text the parent reads &amp; agrees to *</label><textarea id="fm-body" rows="6" class="{{ fld }}"></textarea></div>
+                <label id="fm-decline-wrap" class="flex items-center gap-2 text-sm text-ink-2">
+                    <input type="checkbox" id="fm-decline" class="accent-primary-500">
+                    Allow parents to opt out while still signing <span class="text-ink-3">(e.g. photo release — leave off for mandatory forms)</span>
+                </label>
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+                <button onclick="closeFormModal()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="submitForm()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -46,19 +73,41 @@ async function load(){
     }).join('');
 }
 
-async function createTemplate(){
-    const title=prompt('Form title (e.g. Liability Waiver, Photo Release, Medical Authorization):');if(!title)return;
-    const body=prompt('Form text the parent will read & agree to:');if(!body)return;
-    const allow_decline=confirm('Allow parents to OPT OUT while still signing? (OK for photo release; Cancel for mandatory liability/medical)');
-    const r=await fetch('/api/waivers/templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,body,allow_decline})});
-    msg(r.ok?'Form created':'Error',r.ok);if(r.ok)load();
+let formEditId=null;
+function createTemplate(){
+    formEditId=null;
+    document.getElementById('form-modal-title').textContent='New form';
+    document.getElementById('fm-title').value='';
+    document.getElementById('fm-body').value='';
+    document.getElementById('fm-decline').checked=false;
+    document.getElementById('fm-decline-wrap').style.display='';
+    document.getElementById('form-modal').classList.remove('hidden');
+    document.getElementById('fm-title').focus();
 }
 async function editTemplate(id){
     const t=(await (await fetch('/api/waivers/templates?all=1')).json()).templates.find(x=>x.id===id);
-    const title=prompt('Title:',t.title);if(title===null)return;
-    const body=prompt('Form text:',t.body);if(body===null)return;
-    const r=await fetch(`/api/waivers/templates/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,body})});
-    msg(r.ok?'Saved':'Error',r.ok);if(r.ok)load();
+    if(!t)return;
+    formEditId=id;
+    document.getElementById('form-modal-title').textContent='Edit form';
+    document.getElementById('fm-title').value=t.title;
+    document.getElementById('fm-body').value=t.body;
+    // opt-out flag isn't editable on an existing form (would change signed semantics)
+    document.getElementById('fm-decline-wrap').style.display='none';
+    document.getElementById('form-modal').classList.remove('hidden');
+}
+function closeFormModal(){document.getElementById('form-modal').classList.add('hidden');}
+async function submitForm(){
+    const title=document.getElementById('fm-title').value.trim();
+    const body=document.getElementById('fm-body').value.trim();
+    if(!title||!body){msg('Title and form text are required',false);return;}
+    let r;
+    if(formEditId===null){
+        r=await fetch('/api/waivers/templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,body,allow_decline:document.getElementById('fm-decline').checked})});
+    }else{
+        r=await fetch(`/api/waivers/templates/${formEditId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,body})});
+    }
+    if(r.ok)closeFormModal();
+    msg(r.ok?(formEditId===null?'Form created':'Saved'):'Error',r.ok);if(r.ok)load();
 }
 async function archiveTemplate(id,title){if(!confirm(`Archive "${title}"? Existing signatures are kept.`))return;const r=await fetch(`/api/waivers/templates/${id}`,{method:'DELETE'});msg(r.ok?'Archived':'Error',r.ok);if(r.ok)load();}
 

@@ -120,12 +120,29 @@ def parent_dashboard():
         bal = calc_balance(child.id)
         recent_att = Attendance.query.filter_by(student_id=child.id).order_by(
             desc(Attendance.check_in_time)).limit(10).all()
+        # The child's current class schedule — active enrollments in still-active
+        # classes (a cancelled class's enrollment is deactivated, so it won't show).
+        enr = ClassEnrollment.query.filter_by(student_id=child.id, is_active=True).all()
+        # Order by weekday then start time so it reads like a weekly schedule,
+        # not DB insertion order.
+        active_enr = sorted(
+            (e for e in enr if e.dance_class and e.dance_class.is_active),
+            key=lambda e: (e.dance_class.day_of_week, e.dance_class.start_time),
+        )
+        child_classes = [{
+            'name': e.dance_class.name,
+            'day_name': e.dance_class.day_name,
+            'start_time': e.dance_class.start_time.strftime('%-I:%M %p'),
+            'end_time': e.dance_class.end_time.strftime('%-I:%M %p'),
+            'location': e.dance_class.location.name if e.dance_class.location else None,
+        } for e in active_enr]
         child_data.append({
             'student': child,
             'balance': bal['balance'],
             'total_charges': bal['total_charges'],
             'total_payments': bal['total_payments'],
             'recent_attendance': recent_att,
+            'classes': child_classes,
         })
         if child.family_id:
             g = family_groups.setdefault(child.family_id, {
@@ -143,7 +160,7 @@ def parent_dashboard():
 
 
 @bp.route('/transactions')
-@staff_required
+@admin_required
 def transactions():
     students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
     classes = DanceClass.query.filter_by(is_active=True).order_by(DanceClass.name).all()
@@ -153,19 +170,26 @@ def transactions():
 @bp.route('/students/<int:student_id>/detail')
 @staff_required
 def student_detail(student_id):
+    from app.models import ParentStudent, User
     student = Student.query.get_or_404(student_id)
     enrollments = ClassEnrollment.query.filter_by(student_id=student_id, is_active=True).all()
     classes = [e.dance_class for e in enrollments if e.dance_class]
     bal = calc_balance(student_id)
     recent_att = Attendance.query.filter_by(student_id=student_id).order_by(
         desc(Attendance.check_in_time)).limit(10).all()
+    # Parent portal accounts linked to this student (admin card: invite + reset).
+    portal_parents = (User.query
+                      .join(ParentStudent, ParentStudent.parent_id == User.id)
+                      .filter(ParentStudent.student_id == student_id)
+                      .order_by(User.first_name).all())
     return render_template('students/detail.html', student=student, classes=classes,
         balance=bal['balance'], total_charges=bal['total_charges'],
-        total_payments=bal['total_payments'], recent_attendance=recent_att)
+        total_payments=bal['total_payments'], recent_attendance=recent_att,
+        portal_parents=portal_parents)
 
 
 @bp.route('/students/<int:student_id>/ledger')
-@login_required
+@admin_required
 def student_ledger(student_id):
     student = Student.query.get_or_404(student_id)
     return render_template('transactions/ledger.html', student=student)
@@ -178,7 +202,7 @@ def families_page():
 
 
 @bp.route('/families/<int:family_id>/ledger')
-@staff_required
+@admin_required
 def family_ledger(family_id):
     family = Family.query.get_or_404(family_id)
     return render_template('families/ledger.html', family=family)
@@ -203,11 +227,13 @@ def rules_admin():
 @login_required
 def acknowledge_rules(student_id):
     student = Student.query.get_or_404(student_id)
+    if not _parent_owns(student):  # a parent may only act on their own child
+        return redirect(url_for('main.parent_dashboard'))
     return render_template('rules/acknowledge.html', student=student)
 
 
 @bp.route('/take-attendance')
-@login_required
+@staff_required
 def take_attendance():
     today = date.today()
     current_weekday = today.weekday()
@@ -222,7 +248,7 @@ def take_attendance():
 
 
 @bp.route('/take-attendance/<int:class_id>')
-@login_required
+@staff_required
 def take_attendance_class(class_id):
     """Card-based attendance for a class — prefetches all data in bulk."""
     dance_class = DanceClass.query.get_or_404(class_id)
@@ -382,7 +408,7 @@ def registrations_page():
 
 
 @bp.route('/calendar')
-@login_required
+@staff_required
 def calendar_page():
     return render_template('calendar/view.html')
 
@@ -431,6 +457,18 @@ def timeclock_page():
 @admin_required
 def analytics_page():
     return render_template('analytics/dashboard.html')
+
+
+@bp.route('/reports/aging')
+@admin_required
+def aging_report_page():
+    return render_template('reports/aging.html')
+
+
+@bp.route('/reports/revenue')
+@admin_required
+def revenue_report_page():
+    return render_template('reports/revenue.html')
 
 
 def _parent_owns(student):
@@ -528,4 +566,6 @@ def waivers_page():
 @login_required
 def sign_waivers_page(student_id):
     student = Student.query.get_or_404(student_id)
+    if not _parent_owns(student):  # a parent may only act on their own child
+        return redirect(url_for('main.parent_dashboard'))
     return render_template('waivers/sign.html', student=student)

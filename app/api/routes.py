@@ -3,11 +3,15 @@
 import logging
 import os
 import secrets
+import tempfile
+import threading
+import time
 from datetime import date, datetime, timedelta
 
-from flask import current_app, jsonify, request
+from flask import current_app, jsonify, request, send_file, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_
+from sqlalchemy.exc import IntegrityError
 
 from app import db, square_service
 from app.api import bp
@@ -15,6 +19,7 @@ from app.helpers import (
     allocate_family_payment,
     apply_student_fields,
     attendance_to_dict,
+    build_aging,
     build_ledger,
     calc_balance,
     calc_balance_bulk,
@@ -78,6 +83,215 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+# ── Authorization helpers ───────────────────────────────────────────
+# Staff = admin/teacher (User.is_staff). Parents may only touch students
+# and families they are linked to via ParentStudent. These return a
+# (json, status) error tuple to `return` on denial, else None.
+
+def _staff_only():
+    """Deny non-staff (parents). Return error tuple or None."""
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    return None
+
+
+def _child_ids(user) -> set:
+    """Student ids a parent is linked to (empty for staff — staff use _staff_only)."""
+    return {s.id for s in user.get_children()} if getattr(user, 'is_parent', False) else set()
+
+
+def _require_student_access(student_id):
+    """Allow staff, or a parent linked to this student. Error tuple or None.
+    A non-numeric id can't belong to any parent, so treat it as not-authorized
+    rather than letting int() raise a 500."""
+    if current_user.is_staff:
+        return None
+    try:
+        sid = int(student_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Not authorized for this student'}), 403
+    if current_user.is_parent and sid in _child_ids(current_user):
+        return None
+    return jsonify({'error': 'Not authorized for this student'}), 403
+
+
+def _require_family_access(family_id):
+    """Allow staff, or a parent with at least one child in this family. A
+    non-numeric id can't belong to any parent, so treat it as not-authorized."""
+    if current_user.is_staff:
+        return None
+    try:
+        fid = int(family_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Not authorized for this family'}), 403
+    if current_user.is_parent:
+        fam_ids = {s.family_id for s in current_user.get_children() if s.family_id}
+        if fid in fam_ids:
+            return None
+    return jsonify({'error': 'Not authorized for this family'}), 403
+
+
+def _require_student_money_access(student_id):
+    """Billing variant of _require_student_access: ADMIN or a linked parent.
+    Teachers are staff but must not read financial data (least privilege —
+    Thomas, 2026-07-06)."""
+    if current_user.is_admin:
+        return None
+    if current_user.is_staff:
+        return jsonify({'error': 'Admin access required'}), 403
+    return _require_student_access(student_id)
+
+
+def _require_family_money_access(family_id):
+    """Billing variant of _require_family_access: ADMIN or a linked parent."""
+    if current_user.is_admin:
+        return None
+    if current_user.is_staff:
+        return jsonify({'error': 'Admin access required'}), 403
+    return _require_family_access(family_id)
+
+
+def _valid_amount(raw):
+    """Coerce a money amount. Returns (value, None) or (None, (json, status)).
+    Rejects non-numeric, non-positive, and absurdly large values so a typo or
+    bad payload can't silently corrupt balances (a negative charge is a credit)."""
+    try:
+        amt = round(float(raw), 2)
+    except (TypeError, ValueError):
+        return None, (jsonify({'error': 'A valid amount is required'}), 400)
+    if amt <= 0:
+        return None, (jsonify({'error': 'Amount must be greater than zero'}), 400)
+    if amt > 1_000_000:
+        return None, (jsonify({'error': 'Amount is unreasonably large'}), 400)
+    return amt, None
+
+
+def _utc_iso(dt):
+    """ISO-8601 for a naive UTC datetime (datetime.utcnow), marked with a 'Z' so
+    the browser's `new Date()` converts it to local time. Without the suffix, JS
+    reads a naive datetime string as LOCAL, so a UTC time renders shifted by the
+    whole UTC offset (e.g. a 5pm clock-in shown as 9pm)."""
+    return (dt.isoformat() + 'Z') if dt else None
+
+
+def _local_iso(dt):
+    """ISO-8601 for a naive *studio-local* datetime (no 'Z') — for timestamps
+    stored in the studio's timezone (time-clock punches, attendance). Emitting a
+    'Z' would tag the local wall-clock as UTC and shift it by the whole offset."""
+    return dt.isoformat() if dt else None
+
+
+def _opt_int(raw):
+    """Coerce an optional FK id to a positive int, or None if absent/un-parseable.
+    For links whose render path already null-guards the relationship (group_id,
+    class_id on costumes/recital numbers), so a garbage id drops the link instead
+    of 500-ing the create request."""
+    if not raw:
+        return None
+    v, err = _valid_id(raw)
+    return v if not err else None
+
+
+def _opt_num(raw, default, is_float=False):
+    """Parse an optional numeric UPDATE field, keeping `default` (usually the
+    current value) if it's garbage — so a non-numeric body can't 500 a
+    get_or_404-then-int() update endpoint (the update-fuzz uses a nonexistent id
+    and 404s before reaching the parse, so these were unguarded)."""
+    try:
+        return round(float(raw), 2) if is_float else int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _resolve_student_id(raw, required=True):
+    """Validate that a student id is a positive int referring to a real student.
+    Returns (id_or_None, None) on success or (None, (json, status)) on error.
+    Prevents the recurring bug where a create endpoint stores an unchecked
+    student_id and orphans a row that then 500s its roster page. Pass
+    required=False for endpoints where the student link is optional."""
+    if raw in (None, '', 0):
+        if required:
+            return None, (jsonify({'error': 'student_id is required'}), 400)
+        return None, None
+    sid, err = _valid_id(raw)
+    if err:
+        return None, err
+    if Student.query.get(sid) is None:
+        return None, (jsonify({'error': 'student not found'}), 404)
+    return sid, None
+
+
+def _clean_str(value, maxlen=50_000):
+    """Coerce a JSON value to a trimmed string. Scalars (str/int/float) stringify;
+    None and non-scalars (list/dict) become '' so a `not name` guard still fires.
+    Guards every `.strip()` on client input against a non-string blowing up (a
+    JSON `name: 123` would otherwise raise AttributeError -> 500).
+
+    `maxlen` truncates the result. It DEFAULTS to a generous 50 KB backstop —
+    SQLite ignores VARCHAR(n) limits, so without a cap a client (esp. the public
+    registration) could stuff a multi-MB string into any field and bloat the DB
+    volume; no legitimate field (even a message-blast body) approaches 50 KB.
+    High-risk fields pass a much tighter cap; pass maxlen=None to opt out."""
+    if value is None or isinstance(value, (list, dict)):
+        return ''
+    s = str(value).strip()
+    return s[:maxlen] if maxlen else s
+
+
+def _valid_id(raw):
+    """Coerce a JSON id to a positive int. Returns (int, None) or (None, (json, status)).
+    Rejects non-numeric ('xyz'), non-positive (-1, 0), and null so a bad id can't
+    500 the endpoint or create an orphan row that then breaks its list page."""
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return None, (jsonify({'error': 'A valid id is required'}), 400)
+    if val <= 0:
+        return None, (jsonify({'error': 'A valid id is required'}), 400)
+    return val, None
+
+
+def _parse_txn_date(raw):
+    """Parse an optional YYYY-MM-DD date. Returns (date, None) or (None, (json, status))."""
+    if not raw:
+        return date.today(), None
+    try:
+        return datetime.strptime(raw, '%Y-%m-%d').date(), None
+    except (TypeError, ValueError):
+        return None, (jsonify({'error': 'Invalid date — use YYYY-MM-DD'}), 400)
+
+
+# Endpoints a parent may invoke with a mutating method. EVERY other write is
+# staff-only. This is default-deny / fail-closed: a newly added write endpoint
+# is automatically parent-forbidden until explicitly allowlisted here. The
+# allowlisted endpoints still perform their own per-student ownership checks.
+# Public-registration volume caps (circuit breakers on the one
+# unauthenticated write surface). Module-level so tests can patch them.
+_MAX_PENDING_PER_EMAIL = 3
+_MAX_PENDING_REGISTRATIONS = 500
+
+_PARENT_WRITE_ALLOWED = {
+    'api.api_logout',
+    'api.claim_payment',
+    'api.signup_for_audition',
+    'api.sign_waiver',
+    'api.create_ticket_order',
+    'api.create_makeup',
+    'api.create_donation',
+    'api.acknowledge_rule',
+}
+
+
+@bp.before_request
+def _restrict_parent_writes():
+    """Block parents from any mutating API call not on the allowlist."""
+    if request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
+        if current_user.is_authenticated and getattr(current_user, 'is_parent', False):
+            if request.endpoint not in _PARENT_WRITE_ALLOWED:
+                return jsonify({'error': 'Staff access required'}), 403
+    return None
+
+
 # ── Auth endpoints ──────────────────────────────────────────────────
 
 @bp.route('/auth/login', methods=['POST'])
@@ -102,7 +316,7 @@ def api_current_user():
         'first_name': current_user.first_name,
         'last_name': current_user.last_name,
         'is_admin': current_user.is_admin,
-        'last_login': current_user.last_login.isoformat() if current_user.last_login else None,
+        'last_login': _utc_iso(current_user.last_login),
     })
 
 
@@ -111,6 +325,9 @@ def api_current_user():
 @bp.route('/students', methods=['GET'])
 @login_required
 def get_students():
+    err = _staff_only()
+    if err:
+        return err
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)
     search = request.args.get('search', '').strip()
@@ -144,12 +361,18 @@ def get_students():
 @bp.route('/students/<int:student_id>', methods=['GET'])
 @login_required
 def get_student(student_id):
+    err = _require_student_access(student_id)
+    if err:
+        return err
     return jsonify(student_to_dict(Student.query.get_or_404(student_id)))
 
 
 @bp.route('/students', methods=['POST'])
 @login_required
 def create_student():
+    err = _admin_only()
+    if err:
+        return err
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -176,6 +399,9 @@ def create_student():
 @bp.route('/students/<int:student_id>', methods=['PUT'])
 @login_required
 def update_student(student_id):
+    err = _admin_only()
+    if err:
+        return err
     student = Student.query.get_or_404(student_id)
     data = request.get_json()
     if not data:
@@ -183,7 +409,7 @@ def update_student(student_id):
 
     # Check email uniqueness if changing
     if 'email' in data:
-        email = (data['email'] or '').strip() or None
+        email = _clean_str(data['email']) or None
         if email and email != student.email:
             if Student.query.filter_by(email=email).first():
                 return jsonify({'error': 'Email already exists'}), 400
@@ -202,9 +428,22 @@ def update_student(student_id):
 @bp.route('/students/<int:student_id>', methods=['DELETE'])
 @login_required
 def delete_student(student_id):
+    err = _admin_only()
+    if err:
+        return err
+    from app.models import WaitlistEntry
     student = Student.query.get_or_404(student_id)
     student.is_active = False
     student.updated_at = datetime.utcnow()
+    # Withdrawing a student cascades to their class participation: deactivate
+    # enrollments (else they linger on rosters AND keep occupying a capacity spot
+    # a replacement can't take) and clear their waitlist entries. Financial records
+    # (their balance, ledger, pending payments) are LEFT INTACT — a withdrawn
+    # student may still owe, and that must stay collectible (see the A/R report).
+    ClassEnrollment.query.filter_by(student_id=student_id, is_active=True).update(
+        {'is_active': False}, synchronize_session=False)
+    WaitlistEntry.query.filter_by(student_id=student_id, status='waiting').update(
+        {'status': 'removed'}, synchronize_session=False)
     db.session.commit()
     return jsonify({'message': 'Student deactivated successfully'})
 
@@ -212,9 +451,12 @@ def delete_student(student_id):
 @bp.route('/students/<int:student_id>/assign-rfid', methods=['POST'])
 @login_required
 def assign_rfid(student_id):
+    err = _staff_only()
+    if err:
+        return err
     student = Student.query.get_or_404(student_id)
     data = request.get_json()
-    rfid_uid = data.get('rfid_uid', '').strip() if data else ''
+    rfid_uid = _clean_str(data.get('rfid_uid')) if data else ''
     if not rfid_uid:
         return jsonify({'error': 'RFID UID is required'}), 400
 
@@ -234,6 +476,9 @@ def assign_rfid(student_id):
 @bp.route('/students/<int:student_id>/remove-rfid', methods=['POST'])
 @login_required
 def remove_rfid(student_id):
+    err = _staff_only()
+    if err:
+        return err
     student = Student.query.get_or_404(student_id)
     student.rfid_uid = None
     student.rfid_assigned_at = None
@@ -248,6 +493,9 @@ def remove_rfid(student_id):
 @bp.route('/classes', methods=['GET'])
 @login_required
 def get_classes():
+    err = _staff_only()  # full class list (instructors, rosters) is staff-only
+    if err:
+        return err
     active_only = request.args.get('active', 'true').lower() == 'true'
     query = DanceClass.query
     if active_only:
@@ -256,15 +504,36 @@ def get_classes():
     return jsonify({'classes': [class_to_dict(cls) for cls in query.all()]})
 
 
+@bp.route('/instructors', methods=['GET'])
+@login_required
+def list_instructors():
+    """Active teachers/admins (id + name only) for the class instructor picker.
+    Staff-accessible — instructor names already appear on class cards, so this
+    exposes nothing new (unlike /api/staff, which carries staff PII + is admin-only)."""
+    err = _staff_only()
+    if err:
+        return err
+    users = (User.query
+             .filter(User.role.in_(['admin', 'teacher']), User.is_active.is_(True))
+             .order_by(User.last_name, User.first_name).all())
+    return jsonify({'instructors': [{'id': u.id, 'name': u.full_name} for u in users]})
+
+
 @bp.route('/classes/<int:class_id>', methods=['GET'])
 @login_required
 def get_class(class_id):
+    err = _staff_only()  # instructor name + class internals are staff-only (matches get_classes)
+    if err:
+        return err
     return jsonify(class_to_dict(DanceClass.query.get_or_404(class_id)))
 
 
 @bp.route('/classes', methods=['POST'])
 @login_required
 def create_class():
+    err = _admin_only()
+    if err:
+        return err
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -272,18 +541,34 @@ def create_class():
         if field not in data:
             return jsonify({'error': f'{field} is required'}), 400
 
+    # Validate the optional location + instructor references (default instructor
+    # = the current user) so a bad id can't 500 or create a class whose bad
+    # instructor_id then dead-pages the whole class list.
+    location_id = None
+    if data.get('location_id'):
+        location_id, lerr = _valid_id(data.get('location_id'))
+        if lerr:
+            return lerr
+        if Location.query.get(location_id) is None:
+            return jsonify({'error': 'location not found'}), 404
+    instructor_id, ierr = _valid_id(data.get('instructor_id', current_user.id))
+    if ierr:
+        return ierr
+    if User.query.get(instructor_id) is None:
+        return jsonify({'error': 'instructor not found'}), 404
+
     try:
         dance_class = DanceClass(
-            name=data['name'].strip(),
-            description=data.get('description', '').strip() or None,
-            location_id=int(data['location_id']) if data.get('location_id') else None,
+            name=_clean_str(data['name']),
+            description=_clean_str(data.get('description')) or None,
+            location_id=location_id,
             day_of_week=int(data['day_of_week']),
             start_time=datetime.strptime(data['start_time'], '%H:%M').time(),
             end_time=datetime.strptime(data['end_time'], '%H:%M').time(),
-            instructor_id=int(data.get('instructor_id', current_user.id)),
+            instructor_id=instructor_id,
             max_students=data.get('max_students', 20),
-            level=data.get('level', '').strip() or None,
-            age_group=data.get('age_group', '').strip() or None,
+            level=_clean_str(data.get('level')) or None,
+            age_group=_clean_str(data.get('age_group')) or None,
         )
         db.session.add(dance_class)
         db.session.commit()
@@ -294,11 +579,101 @@ def create_class():
         return jsonify({'error': 'An internal error occurred'}), 500
 
 
+@bp.route('/classes/<int:class_id>', methods=['PUT', 'PATCH'])
+@login_required
+def update_class(class_id):
+    """Edit a class — the studio adjusts schedules/instructors/capacity mid-season."""
+    err = _admin_only()
+    if err:
+        return err
+    dc = DanceClass.query.get_or_404(class_id)
+    data = request.get_json() or {}
+    if data.get('name') is not None:
+        name = _clean_str(data['name'])
+        if not name:
+            return jsonify({'error': 'name cannot be empty'}), 400
+        dc.name = name
+    if 'description' in data:
+        dc.description = _clean_str(data.get('description')) or None
+    if data.get('location_id'):
+        loc_id, lerr = _valid_id(data.get('location_id'))
+        if lerr:
+            return lerr
+        if Location.query.get(loc_id) is None:
+            return jsonify({'error': 'location not found'}), 404
+        dc.location_id = loc_id
+    if data.get('instructor_id'):
+        inst_id, ierr = _valid_id(data.get('instructor_id'))
+        if ierr:
+            return ierr
+        if User.query.get(inst_id) is None:
+            return jsonify({'error': 'instructor not found'}), 404
+        dc.instructor_id = inst_id
+    if data.get('day_of_week') is not None:
+        try:
+            dc.day_of_week = int(data['day_of_week'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'invalid day_of_week'}), 400
+    for fld in ('start_time', 'end_time'):
+        if data.get(fld):
+            try:
+                setattr(dc, fld, datetime.strptime(data[fld], '%H:%M').time())
+            except (TypeError, ValueError):
+                return jsonify({'error': f'invalid {fld} (use HH:MM)'}), 400
+    if data.get('max_students') is not None:
+        try:
+            dc.max_students = int(data['max_students'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'invalid max_students'}), 400
+    if 'level' in data:
+        dc.level = _clean_str(data.get('level')) or None
+    if 'age_group' in data:
+        dc.age_group = _clean_str(data.get('age_group')) or None
+    try:
+        db.session.commit()
+        return jsonify(class_to_dict(dc))
+    except Exception:
+        db.session.rollback()
+        logger.exception("Failed to update class %d", class_id)
+        return jsonify({'error': 'An internal error occurred'}), 500
+
+
+@bp.route('/classes/<int:class_id>', methods=['DELETE'])
+@login_required
+def deactivate_class(class_id):
+    """Cancel a class (soft-delete). Cascades so the cancellation is complete:
+    - deactivate its recurring charges (else auto-billing keeps charging families
+      for a class that no longer runs);
+    - deactivate its enrollments (else the cancelled class lingers in every
+      student's enrolled-classes list, which filters by active enrollment);
+    - clear its waitlist (else those families are stuck waiting for a dead class).
+    Past attendance + ledger charges are left intact (history)."""
+    err = _admin_only()
+    if err:
+        return err
+    from app.models import RecurringCharge, WaitlistEntry
+    dc = DanceClass.query.get_or_404(class_id)
+    dc.is_active = False
+    stopped = RecurringCharge.query.filter_by(class_id=class_id, is_active=True).update(
+        {'is_active': False}, synchronize_session=False)
+    ClassEnrollment.query.filter_by(class_id=class_id, is_active=True).update(
+        {'is_active': False}, synchronize_session=False)
+    WaitlistEntry.query.filter_by(class_id=class_id, status='waiting').update(
+        {'status': 'removed'}, synchronize_session=False)
+    AuditLog.record(current_user.id, 'class.deactivate',
+                    f'Cancelled class "{dc.name}" ({stopped} recurring charge(s) stopped)')
+    db.session.commit()
+    return jsonify({'message': f'{dc.name} cancelled', 'recurring_charges_stopped': stopped})
+
+
 # ── Enrollment endpoints ────────────────────────────────────────────
 
 @bp.route('/classes/<int:class_id>/enrollments', methods=['GET'])
 @login_required
 def get_class_enrollments(class_id):
+    err = _staff_only()
+    if err:
+        return err
     dance_class = DanceClass.query.get_or_404(class_id)
     enrollments = (
         ClassEnrollment.query
@@ -323,50 +698,115 @@ def get_class_enrollments(class_id):
 @bp.route('/classes/<int:class_id>/enroll', methods=['POST'])
 @login_required
 def enroll_student(class_id):
+    err = _admin_only()
+    if err:
+        return err
     dance_class = DanceClass.query.get_or_404(class_id)
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
 
-    student_ids = data.get('student_ids', [])
-    if not student_ids and data.get('student_id'):
-        student_ids = [int(data['student_id'])]
+    student_ids = data.get('student_ids')
+    if not student_ids and data.get('student_id') is not None:
+        student_ids = [data.get('student_id')]
     if not student_ids:
         return jsonify({'error': 'student_id or student_ids is required'}), 400
+    if not isinstance(student_ids, list):  # tolerate a scalar; a non-list would TypeError the loop
+        student_ids = [student_ids]
+
+    # Enforce class capacity so a class can't be silently overbooked (the waitlist
+    # exists for exactly this). Enroll up to the cap and report who couldn't fit;
+    # the admin can then raise max_students (classes are editable) or waitlist them.
+    # max_students of 0/None means no limit.
+    capacity = dance_class.max_students or 0
+    active_count = ClassEnrollment.query.filter_by(class_id=class_id, is_active=True).count()
 
     enrolled = []
     skipped = []
-    for sid in student_ids:
-        student = Student.query.get(int(sid))
+    full = []
+    for raw in student_ids:
+        sid_val, id_err = _valid_id(raw)
+        if id_err:
+            continue  # skip un-parseable ids rather than 500 the whole batch
+        student = Student.query.get(sid_val)
         if not student:
             continue
         existing = ClassEnrollment.query.filter_by(
             student_id=student.id, class_id=class_id
         ).first()
+        if existing and existing.is_active:
+            skipped.append(student.full_name)
+            continue
+        if capacity and active_count >= capacity:
+            full.append(student.full_name)
+            continue
         if existing:
-            if existing.is_active:
-                skipped.append(student.full_name)
-                continue
             existing.is_active = True
             existing.enrolled_date = date.today()
         else:
             db.session.add(ClassEnrollment(student_id=student.id, class_id=class_id))
+        active_count += 1
         enrolled.append(student.full_name)
 
     db.session.commit()
     msg = f'{len(enrolled)} student(s) enrolled in {dance_class.name}'
     if skipped:
         msg += f' ({len(skipped)} already enrolled)'
-    return jsonify({'message': msg, 'enrolled': enrolled, 'skipped': skipped}), 201
+    if full:
+        msg += f' — {len(full)} not enrolled: class is full ({capacity} max). Raise the capacity or use the waitlist.'
+    return jsonify({'message': msg, 'enrolled': enrolled, 'skipped': skipped, 'full': full}), 201
 
 
 @bp.route('/enrollments/<int:enrollment_id>', methods=['DELETE'])
 @login_required
 def unenroll_student(enrollment_id):
+    err = _admin_only()
+    if err:
+        return err
     enrollment = ClassEnrollment.query.get_or_404(enrollment_id)
     enrollment.is_active = False
     db.session.commit()
     return jsonify({'message': 'Student unenrolled successfully'})
+
+
+# ── Global search (staff topbar) ────────────────────────────────────
+
+@bp.route('/search', methods=['GET'])
+@login_required
+def global_search():
+    """Staff topbar search across active students, families, and classes.
+
+    Names are matched case-insensitively; each result links to that entity's
+    page. Staff-only — a parent must not be able to enumerate the roster.
+    """
+    if not current_user.is_staff:
+        return jsonify({'error': 'Staff access required'}), 403
+    q = _clean_str(request.args.get('q'))
+    if len(q) < 2:
+        return jsonify({'students': [], 'families': [], 'classes': []})
+    like = f'%{q}%'
+    students = Student.query.filter(
+        Student.is_active.is_(True),
+        or_(
+            Student.first_name.ilike(like),
+            Student.last_name.ilike(like),
+            (Student.first_name + ' ' + Student.last_name).ilike(like),
+        ),
+    ).order_by(Student.first_name, Student.last_name).limit(8).all()
+    families = Family.query.filter(Family.name.ilike(like)).order_by(Family.name).limit(8).all()
+    classes = DanceClass.query.filter(
+        DanceClass.is_active.is_(True), DanceClass.name.ilike(like)
+    ).order_by(DanceClass.name).limit(8).all()
+    return jsonify({
+        'students': [{'id': s.id, 'name': s.full_name, 'url': f'/students/{s.id}/detail'}
+                     for s in students],
+        # Family results link to the ledger for admins; the ledger page is
+        # admin-only, so teachers land on the families card list instead.
+        'families': [{'id': f.id, 'name': f.name,
+                      'url': f'/families/{f.id}/ledger' if current_user.is_admin else '/families'}
+                     for f in families],
+        'classes': [{'id': c.id, 'name': c.name, 'url': '/classes'} for c in classes],
+    })
 
 
 # ── Attendance endpoints ────────────────────────────────────────────
@@ -377,13 +817,18 @@ def toggle_attendance():
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
-    student_id = data.get('student_id')
-    class_id = data.get('class_id')
-    if not all([student_id, class_id]):
-        return jsonify({'error': 'student_id and class_id required'}), 400
+    student_id, serr = _valid_id(data.get('student_id'))
+    if serr:
+        return serr
+    class_id, cerr = _valid_id(data.get('class_id'))
+    if cerr:
+        return cerr
+    # Validate the student and class exist (manual_checkin does this too) so a
+    # bad id can't create an orphan attendance row.
+    Student.query.get_or_404(student_id)
+    DanceClass.query.get_or_404(class_id)
 
-    att_date = data.get('date')
-    target_date = datetime.strptime(att_date, '%Y-%m-%d').date() if att_date else date.today()
+    target_date = _parse_date(data.get('date')) or date.today()
 
     existing = Attendance.query.filter(
         Attendance.student_id == student_id,
@@ -404,25 +849,37 @@ def toggle_attendance():
         is_present=True,
     )
     db.session.add(att)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # A concurrent double-tap raced us to the unique (student, class, day)
+        # index. The other request already marked them present — treat this as a
+        # no-op success rather than a 500 or a duplicate row.
+        db.session.rollback()
+        return jsonify({'present': True, 'message': 'Already marked present'})
     return jsonify({'present': True, 'message': 'Marked present'}), 201
 
 
 @bp.route('/attendance', methods=['GET'])
 @login_required
 def get_attendance():
+    err = _staff_only()
+    if err:
+        return err
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 50, type=int), 100)
-    date_from = request.args.get('date_from')
-    date_to = request.args.get('date_to')
+    # _parse_date returns None on a garbage/absent value, so a bad ?date_from=abc
+    # skips the filter instead of 500-ing on an uncaught strptime ValueError.
+    date_from = _parse_date(request.args.get('date_from'))
+    date_to = _parse_date(request.args.get('date_to'))
     class_id = request.args.get('class_id', type=int)
     student_id = request.args.get('student_id', type=int)
 
     query = Attendance.query
     if date_from:
-        query = query.filter(func.date(Attendance.check_in_time) >= datetime.strptime(date_from, '%Y-%m-%d').date())
+        query = query.filter(func.date(Attendance.check_in_time) >= date_from)
     if date_to:
-        query = query.filter(func.date(Attendance.check_in_time) <= datetime.strptime(date_to, '%Y-%m-%d').date())
+        query = query.filter(func.date(Attendance.check_in_time) <= date_to)
     if class_id:
         query = query.filter_by(class_id=class_id)
     if student_id:
@@ -446,6 +903,9 @@ def get_attendance():
 @bp.route('/attendance/today', methods=['GET'])
 @login_required
 def get_todays_attendance():
+    err = _staff_only()
+    if err:
+        return err
     today = date.today()
     class_id = request.args.get('class_id', type=int)
     query = Attendance.query.filter(func.date(Attendance.check_in_time) == today)
@@ -487,9 +947,14 @@ def manual_checkin():
         att = Attendance(
             student_id=student_id,
             class_id=class_id,
-            check_in_time=datetime.utcnow(),
+            # Local time (the server runs in the studio's timezone). Must match the
+            # `date.today()` used above and everywhere else the app groups by day —
+            # `datetime.utcnow()` would date an evening check-in on the next UTC day,
+            # hiding it from today's roster and tripping the unique-day index. Same
+            # basis as toggle_attendance.
+            check_in_time=datetime.now(),
             check_in_method='manual',
-            notes=data.get('notes', '').strip() or None,
+            notes=_clean_str(data.get('notes')) or None,
             is_present=True,
         )
         db.session.add(att)
@@ -498,6 +963,12 @@ def manual_checkin():
             'message': f'{student.full_name} checked in successfully',
             'attendance': attendance_to_dict(att),
         }), 201
+    except IntegrityError:
+        # A concurrent double-tap raced past the pre-check to the unique
+        # (student, class, day) index. They're already checked in — graceful
+        # no-op, not a 500 (mirrors toggle_attendance).
+        db.session.rollback()
+        return jsonify({'error': 'Student already checked in today'}), 400
     except Exception:
         db.session.rollback()
         logger.exception("Failed to check in student %d", student_id)
@@ -509,6 +980,9 @@ def manual_checkin():
 @bp.route('/rfid/status', methods=['GET'])
 @login_required
 def rfid_status():
+    err = _staff_only()
+    if err:
+        return err
     if not get_rfid_service:
         return jsonify({'service_running': False, 'message': 'RFID not available'})
     stats = get_rfid_service().get_stats()
@@ -517,7 +991,7 @@ def rfid_status():
         'total_scans': stats['total_scans'],
         'successful_checkins': stats['successful_checkins'],
         'failed_scans': stats['failed_scans'],
-        'last_scan_time': stats['last_scan_time'].isoformat() if stats['last_scan_time'] else None,
+        'last_scan_time': _utc_iso(stats['last_scan_time']),  # UTC -> 'Z' for correct local display
         'last_scan_uid': stats['last_scan_uid'],
     })
 
@@ -540,6 +1014,9 @@ def simulate_rfid_scan():
 @bp.route('/rfid/logs', methods=['GET'])
 @login_required
 def get_rfid_logs():
+    err = _staff_only()
+    if err:
+        return err
     from app.models import RFIDLog
 
     page = request.args.get('page', 1, type=int)
@@ -576,6 +1053,9 @@ def get_rfid_logs():
 @bp.route('/dashboard/stats', methods=['GET'])
 @login_required
 def dashboard_stats():
+    err = _staff_only()
+    if err:
+        return err
     from app.models import RFIDLog
 
     today = date.today()
@@ -589,7 +1069,8 @@ def dashboard_stats():
         func.date(Attendance.check_in_time) >= week_start
     ).count()
     recent_rfid_logs = RFIDLog.query.filter(
-        RFIDLog.scan_time >= datetime.utcnow() - timedelta(days=1)
+        # Local: scan_time is stored studio-local, so the cutoff must be too.
+        RFIDLog.scan_time >= datetime.now() - timedelta(days=1)
     ).count()
 
     return jsonify({
@@ -603,10 +1084,17 @@ def dashboard_stats():
 
 
 # ── Transaction endpoints ───────────────────────────────────────────
+# Billing is ADMIN-only (Thomas, 2026-07-06): teachers take attendance and see
+# rosters, but must not read the studio ledger or post charges/payments. Parents
+# keep their own-child financial views (ledger, plans, claims) via the
+# owner-checks inside those endpoints.
 
 @bp.route('/transactions', methods=['GET'])
 @login_required
 def get_transactions():
+    err = _admin_only()
+    if err:
+        return err
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 50, type=int), 100)
     student_id = request.args.get('student_id', type=int)
@@ -634,15 +1122,27 @@ def get_transactions():
 @bp.route('/transactions', methods=['POST'])
 @login_required
 def create_transaction():
+    err = _admin_only()
+    if err:
+        return err
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     txn_type = data.get('type', 'payment')
-    for field in ('student_id', 'amount', 'category'):
+    if txn_type not in ('charge', 'payment'):
+        return jsonify({'error': "type must be 'charge' or 'payment'"}), 400
+    for field in ('student_id', 'category'):
         if not data.get(field):
             return jsonify({'error': f'{field} is required'}), 400
     if txn_type == 'payment' and not data.get('payment_method'):
         return jsonify({'error': 'payment_method is required for payments'}), 400
+
+    amount, err = _valid_amount(data.get('amount'))
+    if err:
+        return err
+    txn_date, err = _parse_txn_date(data.get('transaction_date'))
+    if err:
+        return err
 
     student = Student.query.get(data['student_id'])
     if not student:
@@ -652,17 +1152,19 @@ def create_transaction():
         t = Transaction(
             student_id=student.id,
             type=txn_type,
-            amount=data['amount'],
+            amount=amount,
             category=data['category'],
             payment_method=data.get('payment_method') or 'n/a',
-            description=data.get('description', '').strip() or None,
-            transaction_date=(
-                datetime.strptime(data['transaction_date'], '%Y-%m-%d').date()
-                if data.get('transaction_date') else date.today()
-            ),
+            description=_clean_str(data.get('description')) or None,
+            transaction_date=txn_date,
             created_by=current_user.id,
         )
         db.session.add(t)
+        # Log money creation to the audit trail, same as deletion/confirmation —
+        # otherwise the trail shows who *removed* a charge but not who *posted* one
+        # (matters since staff, not only admins, can post charges).
+        AuditLog.record(current_user.id, 'transaction.create',
+                        f'{txn_type} ${float(amount):.2f} {data["category"]} for {student.full_name}')
         db.session.commit()
         return jsonify(transaction_to_dict(t)), 201
     except Exception:
@@ -675,7 +1177,21 @@ def create_transaction():
 @login_required
 def get_balances():
     """Balance summary for all active students — single SQL aggregate."""
+    err = _admin_only()
+    if err:
+        return err
     students = Student.query.filter_by(is_active=True).order_by(Student.last_name, Student.first_name).all()
+    # Include WITHDRAWN students who still owe so their debt stays visible in the
+    # main money view — a deactivated student's balance shouldn't disappear until
+    # it's settled. Only those with a positive balance (long-settled withdrawals
+    # don't clutter the roster).
+    inactive = Student.query.filter_by(is_active=False).order_by(Student.last_name, Student.first_name).all()
+    inactive_owing = []
+    if inactive:
+        inactive_bals = calc_balance_bulk([s.id for s in inactive])
+        inactive_owing = [s for s in inactive
+                          if inactive_bals.get(s.id, {}).get('balance', 0) > 0]
+    students = students + inactive_owing
     student_ids = [s.id for s in students]
     balances_map = calc_balance_bulk(student_ids)
 
@@ -685,6 +1201,7 @@ def get_balances():
         balances.append({
             'student_id': s.id,
             'student_name': s.full_name,
+            'withdrawn': not s.is_active,
             'total_charges': f'{bal["total_charges"]:.2f}',
             'total_payments': f'{bal["total_payments"]:.2f}',
             'balance': f'{bal["balance"]:.2f}',
@@ -692,10 +1209,309 @@ def get_balances():
     return jsonify({'balances': balances})
 
 
+def _compute_aging():
+    """Shared A/R aging computation for both the JSON report and the CSV export
+    so the two can never drift. Returns (rows, totals, as_of): per-student unpaid
+    balance bucketed by how overdue each charge is (0-30 / 31-60 / 61-90 / 90+),
+    owe-most first, amounts as 2dp strings."""
+    students = Student.query.filter_by(is_active=True).all()
+    # Include WITHDRAWN students who still owe: a deactivated student's unpaid
+    # balance must stay visible so the studio can collect it, not silently vanish
+    # from A/R. Only pull inactive students who actually have a balance (one bulk
+    # query) so long-settled withdrawals don't bloat the report.
+    inactive = Student.query.filter_by(is_active=False).all()
+    if inactive:
+        inactive_bals = calc_balance_bulk([s.id for s in inactive])
+        students += [s for s in inactive
+                     if inactive_bals.get(s.id, {}).get('balance', 0) > 0]
+    sid_ids = [s.id for s in students]
+    # One query for all transactions, grouped in memory (hundreds of rows).
+    txns_by_student: dict[int, list] = {sid: [] for sid in sid_ids}
+    if sid_ids:
+        for t in Transaction.query.filter(Transaction.student_id.in_(sid_ids)).all():
+            txns_by_student[t.student_id].append(t)
+
+    rows = []
+    totals = {'current': 0.0, 'd31_60': 0.0, 'd61_90': 0.0, 'd90_plus': 0.0, 'total': 0.0}
+    for s in students:
+        ag = build_aging(txns_by_student[s.id])
+        if ag['total'] <= 0:
+            continue  # only show entities that actually owe
+        for k in totals:
+            totals[k] = round(totals[k] + ag[k], 2)
+        rows.append({
+            'student_id': s.id,
+            'student_name': s.full_name,
+            'family_name': s.family.name if s.family else None,
+            'withdrawn': not s.is_active,
+            **{k: f'{ag[k]:.2f}' for k in ('current', 'd31_60', 'd61_90', 'd90_plus', 'total')},
+        })
+    # Owe-most first.
+    rows.sort(key=lambda r: float(r['total']), reverse=True)
+    return rows, totals, date.today().isoformat()
+
+
+@bp.route('/reports/aging', methods=['GET'])
+@login_required
+def aging_report():
+    """Accounts-receivable aging (JSON). Admin-only — it exposes every family's
+    debt, and the nav gates it behind is_admin."""
+    err = _admin_only()
+    if err:
+        return err
+    rows, totals, as_of = _compute_aging()
+    return jsonify({
+        'rows': rows,
+        'totals': {k: f'{totals[k]:.2f}' for k in totals},
+        'as_of': as_of,
+        'count': len(rows),
+    })
+
+
+def _csv_safe(value):
+    """Neutralize CSV/formula injection. Excel/Sheets execute a cell that starts
+    with = + @ (or a control char) as a formula — and some of this data (student
+    names) comes from public registration — so prefix those with a single quote to
+    force text. A leading '-' is only escaped when the cell isn't a plain number,
+    so legitimate negative amounts (-50.00) still render as numbers."""
+    import re as _re
+    s = '' if value is None else str(value)
+    if not s:
+        return s
+    if s[0] in ('=', '+', '@', '\t', '\r') or (s[0] == '-' and not _re.fullmatch(r'-?\d+(\.\d+)?', s)):
+        return "'" + s
+    return s
+
+
+def _csv_response(filename, header, rows):
+    """Build a downloadable CSV Response from a header + iterable of row lists."""
+    import csv
+    import io
+
+    from flask import Response
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(header)
+    for r in rows:
+        writer.writerow([_csv_safe(cell) for cell in r])
+    return Response(
+        buf.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
+@bp.route('/reports/students.csv', methods=['GET'])
+@login_required
+def export_students_csv():
+    """Roster export — for the accountant, mail-merge, or an owner-held backup.
+    The Balance column is admin-only (billing); a teacher's export is the plain
+    roster (class lists, allergy sheets)."""
+    err = _staff_only()
+    if err:
+        return err
+    students = Student.query.filter_by(is_active=True).order_by(
+        Student.last_name, Student.first_name).all()
+    header = ['Last name', 'First name', 'Family', 'Date of birth', 'Age',
+              'Parent email', 'Parent phone', 'Emergency contact', 'Emergency phone',
+              'Allergies', 'Special needs']
+    bals = None
+    if current_user.is_admin:
+        header = header + ['Balance']
+        bals = calc_balance_bulk([s.id for s in students])
+    rows = ([
+        s.last_name, s.first_name, s.family.name if s.family else '',
+        s.date_of_birth.isoformat() if s.date_of_birth else '', s.age if s.age is not None else '',
+        s.parent_email or '', s.parent_phone or '',
+        s.emergency_contact_name or '', s.emergency_contact_phone or '',
+        s.allergies or '', s.special_needs or '',
+    ] + ([f"{bals[s.id]['balance']:.2f}"] if bals is not None else [])
+        for s in students)
+    return _csv_response(f'students-{date.today().isoformat()}.csv', header, rows)
+
+
+@bp.route('/reports/transactions.csv', methods=['GET'])
+@login_required
+def export_transactions_csv():
+    """Transaction ledger export for bookkeeping/taxes. Optional ?start=&end= (YYYY-MM-DD)."""
+    err = _admin_only()
+    if err:
+        return err
+    q = Transaction.query
+    for param, op in (('start', '>='), ('end', '<=')):
+        val = request.args.get(param)
+        if val:
+            try:
+                d = datetime.strptime(val, '%Y-%m-%d').date()
+                q = q.filter(Transaction.transaction_date >= d if op == '>='
+                             else Transaction.transaction_date <= d)
+            except ValueError:
+                pass
+    txns = q.order_by(Transaction.transaction_date, Transaction.created_at).all()
+    header = ['Date', 'Student', 'Type', 'Category', 'Amount', 'Method', 'Description']
+    rows = ([
+        t.transaction_date.isoformat(), t.student.full_name if t.student else '',
+        t.type, t.category, f"{float(t.amount):.2f}",
+        t.payment_method if t.payment_method and t.payment_method != 'n/a' else '',
+        t.description or '',
+    ] for t in txns)
+    return _csv_response(f'transactions-{date.today().isoformat()}.csv', header, rows)
+
+
+@bp.route('/reports/aging.csv', methods=['GET'])
+@login_required
+def export_aging_csv():
+    """A/R aging export so the owner can work accounts offline or hand it to the
+    accountant. Admin-only — same debt exposure as the on-screen aging report."""
+    err = _admin_only()
+    if err:
+        return err
+    rows, totals, as_of = _compute_aging()
+    header = ['Student', 'Family', 'Status', 'Current (0-30)', '31-60', '61-90', '90+', 'Total']
+    body = [[
+        r['student_name'], r['family_name'] or '',
+        'Withdrawn' if r['withdrawn'] else 'Active',
+        r['current'], r['d31_60'], r['d61_90'], r['d90_plus'], r['total'],
+    ] for r in rows]
+    # Footer totals row so the export reconciles without re-summing by hand.
+    body.append(['TOTAL', '', '',
+                 f"{totals['current']:.2f}", f"{totals['d31_60']:.2f}",
+                 f"{totals['d61_90']:.2f}", f"{totals['d90_plus']:.2f}",
+                 f"{totals['total']:.2f}"])
+    return _csv_response(f'aging-{as_of}.csv', header, body)
+
+
+@bp.route('/admin/backup', methods=['GET'])
+@login_required
+def download_backup():
+    """Download a complete, consistent snapshot of the database (admin only).
+
+    The whole studio lives in one SQLite file on a Fly volume; this is the
+    studio's disaster-recovery + data-portability safety net — an owner can pull
+    a full backup anytime and store it off-Fly, or take their data if they ever
+    leave. Uses SQLite's online backup API for a point-in-time consistent copy
+    (a raw file copy could be torn mid-write); the snapshot is read fully into
+    memory (a studio DB is a few MB) and the temp file is always cleaned up."""
+    import sqlite3
+    from io import BytesIO
+    from sqlalchemy.engine import make_url
+
+    err = _admin_only()
+    if err:
+        return err
+
+    uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    db_path = make_url(uri).database if uri else None
+    if not uri.startswith('sqlite') or not db_path or db_path == ':memory:':
+        return jsonify({'error': 'Backup is only supported for a file-backed SQLite database'}), 400
+    if not os.path.exists(db_path):
+        return jsonify({'error': 'Database file not found'}), 404
+
+    tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+    tmp.close()
+    src = dst = None
+    try:
+        src = sqlite3.connect(db_path)
+        dst = sqlite3.connect(tmp.name)
+        with dst:
+            src.backup(dst)  # consistent point-in-time snapshot
+        dst.close()
+        dst = None
+        with open(tmp.name, 'rb') as fh:
+            payload = BytesIO(fh.read())
+    finally:
+        if src is not None:
+            src.close()
+        if dst is not None:
+            dst.close()
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+    try:
+        AuditLog.record(current_user.id, 'backup_downloaded',
+                        f'{payload.getbuffer().nbytes} bytes')
+        db.session.commit()
+    except Exception:  # audit is best-effort; never block the backup
+        db.session.rollback()
+
+    payload.seek(0)
+    return send_file(payload, mimetype='application/x-sqlite3', as_attachment=True,
+                     download_name=f'attendance-backup-{date.today().isoformat()}.db')
+
+
+def _month_buckets(n):
+    """(label, start, end) for the last n calendar months, oldest first."""
+    month_start = date.today().replace(day=1)
+    out = []
+    for i in range(n - 1, -1, -1):
+        year = month_start.year + (month_start.month - 1 - i) // 12
+        month = (month_start.month - 1 - i) % 12 + 1
+        ms = date(year, month, 1)
+        me = date(year + (month // 12), (month % 12) + 1, 1)
+        out.append((ms.strftime('%b %y'), ms, me))
+    return out
+
+
+@bp.route('/reports/revenue', methods=['GET'])
+@login_required
+def revenue_report():
+    """Money report for the owner: charged vs collected by month, collected by
+    category this year, and headline totals. Admin-only — aggregate studio
+    financials; the nav gates it behind is_admin."""
+    err = _admin_only()
+    if err:
+        return err
+
+    def _sum(type_, start=None, end=None):
+        q = db.session.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
+            Transaction.type == type_)
+        if start is not None:
+            q = q.filter(Transaction.transaction_date >= start)
+        if end is not None:
+            q = q.filter(Transaction.transaction_date < end)
+        return float(q.scalar() or 0)
+
+    monthly = [{
+        'month': label,
+        'charged': round(_sum('charge', ms, me), 2),
+        'collected': round(_sum('payment', ms, me), 2),
+    } for label, ms, me in _month_buckets(12)]
+
+    year_start = date.today().replace(month=1, day=1)
+    cat_rows = (db.session.query(Transaction.category, func.sum(Transaction.amount))
+                .filter(Transaction.type == 'payment', Transaction.transaction_date >= year_start)
+                .group_by(Transaction.category).all())
+    by_category = sorted(
+        [{'category': c or 'uncategorized', 'amount': round(float(a or 0), 2)} for c, a in cat_rows],
+        key=lambda x: x['amount'], reverse=True)
+
+    students = Student.query.filter_by(is_active=True).all()
+    bals = calc_balance_bulk([s.id for s in students])
+    outstanding = round(sum(b['balance'] for b in bals.values() if b['balance'] > 0), 2)
+    month_start = date.today().replace(day=1)
+
+    return jsonify({
+        'monthly': monthly,
+        'by_category': by_category,
+        'totals': {
+            'collected_this_month': round(_sum('payment', month_start), 2),
+            'collected_this_year': round(_sum('payment', year_start), 2),
+            'collected_all_time': round(_sum('payment'), 2),
+            'outstanding': outstanding,
+        },
+        'active_students': len(students),
+    })
+
+
 @bp.route('/students/<int:student_id>/ledger', methods=['GET'])
 @login_required
 def get_student_ledger(student_id):
     """Full ledger with running balance — single pass."""
+    err = _require_student_money_access(student_id)
+    if err:
+        return err
     student = Student.query.get_or_404(student_id)
     txns = Transaction.query.filter_by(student_id=student_id).order_by(
         Transaction.transaction_date, Transaction.created_at
@@ -711,12 +1527,22 @@ def get_student_ledger(student_id):
 @bp.route('/transactions/bulk-charge', methods=['POST'])
 @login_required
 def bulk_charge():
+    err = _admin_only()
+    if err:
+        return err
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
-    for field in ('class_id', 'amount', 'category'):
+    for field in ('class_id', 'category'):
         if not data.get(field):
             return jsonify({'error': f'{field} is required'}), 400
+
+    amount, err = _valid_amount(data.get('amount'))
+    if err:
+        return err
+    txn_date, err = _parse_txn_date(data.get('transaction_date'))
+    if err:
+        return err
 
     dance_class = DanceClass.query.get(data['class_id'])
     if not dance_class:
@@ -726,26 +1552,49 @@ def bulk_charge():
     if not enrollments:
         return jsonify({'error': 'No students enrolled in this class'}), 400
 
-    txn_date = (
-        datetime.strptime(data['transaction_date'], '%Y-%m-%d').date()
-        if data.get('transaction_date') else date.today()
-    )
     charged = []
     for e in enrollments:
         t = Transaction(
             student_id=e.student_id,
             type='charge',
-            amount=data['amount'],
+            amount=amount,
             category=data['category'],
             payment_method='n/a',
-            description=data.get('description', '').strip() or f'{dance_class.name} - {data["category"]}',
+            description=_clean_str(data.get('description')) or f'{dance_class.name} - {data["category"]}',
             transaction_date=txn_date,
             created_by=current_user.id,
         )
         db.session.add(t)
         charged.append(e.student_id)
+    AuditLog.record(current_user.id, 'bulk_charge',
+                    f'${float(amount):.2f} {data["category"]} to {len(charged)} students in {dance_class.name}')
     db.session.commit()
     return jsonify({'message': f'Charged {len(charged)} students', 'count': len(charged)}), 201
+
+
+@bp.route('/transactions/<int:tid>', methods=['DELETE'])
+@login_required
+def delete_transaction(tid):
+    """Delete a posted charge or payment (admin only) — the studio needs to fix
+    a fat-fingered amount, wrong student, or duplicate entry. Hard delete, but
+    audit-logged (the accountability trail) and any back-references from a
+    confirmed pending payment / Square invoice are cleared first so nothing is
+    left pointing at a deleted row."""
+    err = _admin_only()
+    if err:
+        return err
+    t = Transaction.query.get_or_404(tid)
+    detail = (f'{t.type} ${float(t.amount):.2f} {t.category} for '
+              f'{t.student.full_name if t.student else t.student_id} on {t.transaction_date}')
+    # Clear the two back-references that FK to transactions so nothing dangles.
+    PendingPayment.query.filter_by(transaction_id=t.id).update(
+        {'transaction_id': None}, synchronize_session=False)
+    CostumeAssignment.query.filter_by(transaction_id=t.id).update(
+        {'transaction_id': None}, synchronize_session=False)
+    db.session.delete(t)
+    AuditLog.record(current_user.id, 'transaction.delete', detail)
+    db.session.commit()
+    return jsonify({'message': 'Transaction deleted'})
 
 
 # ── Recurring charge endpoints ──────────────────────────────────────
@@ -753,6 +1602,9 @@ def bulk_charge():
 @bp.route('/recurring-charges', methods=['GET'])
 @login_required
 def get_recurring_charges():
+    err = _admin_only()
+    if err:
+        return err
     charges = RecurringCharge.query.order_by(RecurringCharge.created_at).all()
     return jsonify({'recurring_charges': [recurring_to_dict(rc) for rc in charges]})
 
@@ -760,6 +1612,9 @@ def get_recurring_charges():
 @bp.route('/recurring-charges', methods=['POST'])
 @login_required
 def create_recurring_charge():
+    err = _admin_only()
+    if err:
+        return err
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -767,19 +1622,32 @@ def create_recurring_charge():
         if not data.get(field):
             return jsonify({'error': f'{field} is required'}), 400
 
-    dance_class = DanceClass.query.get(data['class_id'])
+    class_id, cerr = _valid_id(data.get('class_id'))
+    if cerr:
+        return cerr
+    dance_class = DanceClass.query.get(class_id)
     if not dance_class:
         return jsonify({'error': 'Class not found'}), 404
 
-    day = int(data.get('day_of_month', 1))
+    # Validate the amount the SAME way one-off charges are — this fires every
+    # month automatically, so a negative (silent monthly credit), non-numeric, or
+    # absurd value is worse here than anywhere else.
+    amount, aerr = _valid_amount(data.get('amount'))
+    if aerr:
+        return aerr
+
+    try:
+        day = int(data.get('day_of_month', 1))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'day_of_month must be 1-28'}), 400
     if day < 1 or day > 28:
         return jsonify({'error': 'day_of_month must be 1-28'}), 400
 
     rc = RecurringCharge(
         class_id=dance_class.id,
-        amount=data['amount'],
-        category=data['category'],
-        description=data.get('description', '').strip() or None,
+        amount=amount,
+        category=_clean_str(data['category']),
+        description=_clean_str(data.get('description')) or None,
         day_of_month=day,
         created_by=current_user.id,
     )
@@ -788,9 +1656,50 @@ def create_recurring_charge():
     return jsonify(recurring_to_dict(rc)), 201
 
 
+@bp.route('/recurring-charges/<int:rc_id>', methods=['PUT', 'PATCH'])
+@login_required
+def update_recurring_charge(rc_id):
+    err = _admin_only()
+    if err:
+        return err
+    """Edit an auto-billing rule — the studio raises tuition or shifts the billing
+    day mid-year without having to delete and recreate (which risks a gap)."""
+    rc = RecurringCharge.query.get_or_404(rc_id)
+    data = request.get_json() or {}
+    if data.get('amount') is not None:
+        # Same validation as one-off charges — this fires monthly, so a negative
+        # (silent monthly credit) / non-numeric / absurd value is worst here.
+        amount, aerr = _valid_amount(data.get('amount'))
+        if aerr:
+            return aerr
+        rc.amount = amount
+    if data.get('category') is not None:
+        cat = _clean_str(data['category'])
+        if not cat:
+            return jsonify({'error': 'category cannot be empty'}), 400
+        rc.category = cat
+    if 'description' in data:
+        rc.description = _clean_str(data.get('description')) or None
+    if data.get('day_of_month') is not None:
+        try:
+            day = int(data['day_of_month'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'day_of_month must be 1-28'}), 400
+        if day < 1 or day > 28:
+            return jsonify({'error': 'day_of_month must be 1-28'}), 400
+        rc.day_of_month = day
+    db.session.commit()
+    return jsonify({'message': 'Auto-billing rule updated', 'id': rc.id,
+                    'amount': f'{float(rc.amount):.2f}', 'day_of_month': rc.day_of_month,
+                    'category': rc.category})
+
+
 @bp.route('/recurring-charges/<int:rc_id>', methods=['DELETE'])
 @login_required
 def delete_recurring_charge(rc_id):
+    err = _admin_only()
+    if err:
+        return err
     rc = RecurringCharge.query.get_or_404(rc_id)
     rc.is_active = False
     db.session.commit()
@@ -800,6 +1709,9 @@ def delete_recurring_charge(rc_id):
 @bp.route('/recurring-charges/process', methods=['POST'])
 @login_required
 def process_recurring_charges():
+    err = _admin_only()
+    if err:
+        return err
     from app import _process_recurring_charges
     _process_recurring_charges()
     return jsonify({'message': 'Recurring charges processed'})
@@ -810,12 +1722,18 @@ def process_recurring_charges():
 @bp.route('/square/status', methods=['GET'])
 @login_required
 def square_status():
+    err = _staff_only()
+    if err:
+        return err
     return jsonify({'configured': square_service.is_configured()})
 
 
 @bp.route('/students/<int:student_id>/send-invoice', methods=['POST'])
 @login_required
 def send_student_invoice(student_id):
+    err = _admin_only()
+    if err:
+        return err
     if not square_service.is_configured():
         return jsonify({'error': 'Square is not configured. Set SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID in environment.'}), 400
 
@@ -825,15 +1743,17 @@ def send_student_invoice(student_id):
     if bal['balance'] <= 0:
         return jsonify({'error': 'No outstanding balance to invoice'}), 400
 
-    # Build line items from charges
-    charges = Transaction.query.filter_by(student_id=student_id, type='charge').all()
+    # Square derives the order total from the SUM of line items (amount_cents is
+    # ignored by the SDK), so the line items must sum to the OUTSTANDING balance,
+    # not to gross charges — otherwise a family that has paid down their balance
+    # gets billed the full original amount. Invoice the net balance as one line.
+    amount_cents = int(round(bal['balance'] * 100))
     line_items = [{
-        'name': t.description or t.category,
-        'amount_cents': int(float(t.amount) * 100),
-    } for t in charges]
+        'name': 'Outstanding balance',
+        'amount_cents': amount_cents,
+    }]
 
     due = date.today() + timedelta(days=14)
-    amount_cents = int(round(bal['balance'] * 100))
     try:
         result = square_service.send_invoice(
             student=student,
@@ -861,7 +1781,11 @@ def send_student_invoice(student_id):
         })
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        # Log the full failure server-side so a "Square invoices aren't sending"
+        # report is diagnosable; return the studio's usual clean Square detail
+        # (matches square_service.test_connection) rather than a raw traceback.
+        logger.exception("Square invoice failed for student %d", student_id)
+        return jsonify({'error': f'Could not send the invoice: {square_service._error_detail(e)}'}), 500
 
 
 # ── Parent invite endpoints ─────────────────────────────────────────
@@ -869,8 +1793,10 @@ def send_student_invoice(student_id):
 @bp.route('/students/<int:student_id>/invite-parent', methods=['POST'])
 @login_required
 def invite_parent(student_id):
-    if current_user.is_parent:
-        return jsonify({'error': 'Only staff can generate invites'}), 403
+    # Parent-account onboarding is an admin operation (least privilege).
+    err = _admin_only()
+    if err:
+        return err
 
     student = Student.query.get_or_404(student_id)
 
@@ -916,6 +1842,10 @@ def invite_parent(student_id):
 def seed_demo_parent():
     if not current_user.is_admin:
         return jsonify({'error': 'Admin access required'}), 403
+    # Dev-only: this links a publicly-known password to a real student's records.
+    # Production boot also disables any previously-seeded demo account.
+    if not (current_app.debug or current_app.testing):
+        return jsonify({'error': 'Demo accounts are disabled in production'}), 403
 
     student = Student.query.first()
     if not student:
@@ -956,11 +1886,16 @@ def get_rules():
 @bp.route('/rules', methods=['POST'])
 @login_required
 def create_rule():
+    # Admin-only (least privilege, Thomas 2026-07-06): rules are studio policy —
+    # teachers can view them (the nav/page stay staff) but not change them.
+    err = _admin_only()
+    if err:
+        return err
     data = request.get_json()
     if not data or not data.get('text'):
         return jsonify({'error': 'text is required'}), 400
     max_order = db.session.query(func.max(Rule.display_order)).scalar() or 0
-    r = Rule(text=data['text'].strip(), display_order=max_order + 1)
+    r = Rule(text=_clean_str(data['text']), display_order=max_order + 1)
     db.session.add(r)
     db.session.commit()
     return jsonify({'id': r.id, 'text': r.text, 'display_order': r.display_order}), 201
@@ -969,12 +1904,18 @@ def create_rule():
 @bp.route('/rules/<int:rule_id>', methods=['PUT'])
 @login_required
 def update_rule(rule_id):
+    err = _admin_only()
+    if err:
+        return err
     r = Rule.query.get_or_404(rule_id)
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if data.get('text'):
-        r.text = data['text'].strip()
+        r.text = _clean_str(data['text'])
     if 'display_order' in data:
-        r.display_order = int(data['display_order'])
+        try:
+            r.display_order = int(data['display_order'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'display_order must be a number'}), 400
     db.session.commit()
     return jsonify({'id': r.id, 'text': r.text, 'display_order': r.display_order})
 
@@ -982,6 +1923,9 @@ def update_rule(rule_id):
 @bp.route('/rules/<int:rule_id>', methods=['DELETE'])
 @login_required
 def delete_rule(rule_id):
+    err = _admin_only()
+    if err:
+        return err
     r = Rule.query.get_or_404(rule_id)
     r.is_active = False
     db.session.commit()
@@ -991,6 +1935,9 @@ def delete_rule(rule_id):
 @bp.route('/students/<int:student_id>/rules-status', methods=['GET'])
 @login_required
 def get_student_rules_status(student_id):
+    err = _require_student_access(student_id)
+    if err:
+        return err
     student = Student.query.get_or_404(student_id)
     rules = Rule.query.filter_by(is_active=True).order_by(Rule.display_order).all()
     acks = RuleAcknowledgment.query.filter_by(student_id=student_id).all()
@@ -1003,7 +1950,7 @@ def get_student_rules_status(student_id):
             'rule_id': r.id, 'text': r.text, 'display_order': r.display_order,
             'acknowledged': ack is not None,
             'initials': ack.initials if ack else None,
-            'acknowledged_at': ack.acknowledged_at.isoformat() if ack else None,
+            'acknowledged_at': _utc_iso(ack.acknowledged_at) if ack else None,
         })
 
     active_rule_ids = {r.id for r in rules}
@@ -1025,9 +1972,13 @@ def acknowledge_rule(rule_id):
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     student_id = data.get('student_id')
-    initials = data.get('initials', '').strip()
+    initials = _clean_str(data.get('initials'))
     if not student_id or not initials:
         return jsonify({'error': 'student_id and initials are required'}), 400
+
+    err = _require_student_access(student_id)
+    if err:
+        return err
 
     Rule.query.get_or_404(rule_id)
     Student.query.get_or_404(student_id)
@@ -1052,15 +2003,73 @@ def acknowledge_rule(rule_id):
 @bp.route('/messages', methods=['GET'])
 @login_required
 def get_messages():
-    msgs = Message.query.order_by(desc(Message.created_at)).limit(50).all()
-    return jsonify({'messages': [{
-        'id': m.id, 'subject': m.subject, 'body': m.body,
-        'recipient_type': m.recipient_type, 'recipient_filter': m.recipient_filter,
-        'recipient_count': m.recipient_count, 'recipient_emails': m.recipient_emails,
-        'sent': m.sent, 'sent_at': m.sent_at.isoformat() if m.sent_at else None,
-        'created_by': m.creator.full_name if m.creator else None,
-        'created_at': m.created_at.isoformat(),
-    } for m in msgs]})
+    err = _staff_only()
+    if err:
+        return err
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 50, type=int), 100)
+    pagination = (Message.query.order_by(desc(Message.created_at))
+                  .paginate(page=page, per_page=per_page, error_out=False))
+    return jsonify({
+        'messages': [{
+            'id': m.id, 'subject': m.subject, 'body': m.body,
+            'recipient_type': m.recipient_type, 'recipient_filter': m.recipient_filter,
+            'recipient_count': m.recipient_count, 'recipient_emails': m.recipient_emails,
+            'sent': m.sent, 'sent_at': _utc_iso(m.sent_at),
+            'created_by': m.creator.full_name if m.creator else None,
+            'created_at': _utc_iso(m.created_at),
+        } for m in pagination.items],
+        'pagination': {
+            'page': page, 'pages': pagination.pages,
+            'per_page': per_page, 'total': pagination.total,
+        },
+    })
+
+
+def _send_email_async(emails, subject, body):
+    """Fire-and-forget a best-effort email off the request thread. Admin
+    notifications (a new pending payment, a new registration) are best-effort —
+    the user doesn't need them to land before their response, and the admins see
+    every item in the UI regardless. Sending inline couples the user's latency
+    (and, at worst, the 120s worker timeout) to Gmail's responsiveness, which is
+    wrong for a notification the user never sees. Resolve recipients before
+    calling this (a fast DB query); only the SMTP send is backgrounded."""
+    app = current_app._get_current_object()
+    recipients = list(emails)
+    if not recipients:
+        return
+
+    def _worker():
+        with app.app_context():
+            from app import email as email_service
+            try:
+                email_service.send_email(recipients, subject, body)
+            except Exception:
+                logger.exception("Async email send failed: %s", subject)
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
+def _send_message_blast(app, message_id, emails, subject, body):
+    """Background worker for a message blast. Runs off the request thread: a
+    whole-studio blast ('all' recipients) is one SMTP round-trip per family and
+    would exceed the 120s gunicorn worker timeout if sent inline (the same reason
+    balance reminders are threaded). The Message row is saved as unsent before
+    this starts and flipped to sent here on success."""
+    with app.app_context():
+        from app import email as email_service
+        try:
+            email_service.send_email(emails, subject, body)
+            m = Message.query.get(message_id)
+            if m:
+                m.sent = True
+                m.sent_at = datetime.utcnow()
+                db.session.commit()
+            logger.info("Message blast %s sent to %d recipient(s)", message_id, len(emails))
+        except Exception:
+            # Left as sent=False so the messages history shows it didn't go out;
+            # the saved recipient list stays on the row for a manual retry.
+            logger.exception("Message blast %s background send failed", message_id)
 
 
 @bp.route('/messages', methods=['POST'])
@@ -1069,11 +2078,16 @@ def send_message():
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
-    for field in ('subject', 'body', 'recipient_type'):
-        if not data.get(field):
-            return jsonify({'error': f'{field} is required'}), 400
+    subject = _clean_str(data.get('subject'))
+    body = _clean_str(data.get('body'))
+    rtype = _clean_str(data.get('recipient_type'))
+    if not subject or not body or not rtype:
+        return jsonify({'error': 'subject, body, and recipient_type are required'}), 400
+    if rtype == 'all' and not current_user.is_admin:
+        # Whole-studio blasts are admin-only (least privilege); teachers can
+        # still message a class or an individual family.
+        return jsonify({'error': 'Only an admin can message all parents'}), 403
 
-    rtype = data['recipient_type']
     emails = _resolve_recipient_emails(rtype, data.get('recipient_filter'))
     if isinstance(emails, tuple):
         return emails  # error response
@@ -1082,40 +2096,35 @@ def send_message():
         return jsonify({'error': 'No email addresses found for selected recipients'}), 400
 
     msg = Message(
-        subject=data['subject'].strip(),
-        body=data['body'].strip(),
+        subject=subject,
+        body=body,
         recipient_type=rtype,
         recipient_filter=str(data.get('recipient_filter', '')),
         recipient_count=len(emails),
         recipient_emails=', '.join(sorted(emails)),
         created_by=current_user.id,
+        sent=False,
     )
-
-    from app import email as email_service
-    if email_service.is_configured():
-        try:
-            email_service.send_email(emails, data['subject'].strip(), data['body'].strip())
-            msg.sent = True
-            msg.sent_at = datetime.utcnow()
-        except Exception as e:
-            msg.sent = False
-            db.session.add(msg)
-            db.session.commit()
-            return jsonify({
-                'error': f'SMTP send failed: {e}',
-                'message_id': msg.id,
-                'recipient_emails': sorted(emails),
-                'saved': True,
-            }), 500
-    else:
-        msg.sent = False
-
     db.session.add(msg)
     db.session.commit()
 
-    if msg.sent:
-        return jsonify({'message': f'Email sent to {len(emails)} recipient(s)', 'message_id': msg.id}), 201
+    from app import email as email_service
+    if email_service.is_configured():
+        # Send in a background thread and return immediately. Sending inline would
+        # blow the 120s gunicorn timeout on a whole-studio blast and 502 the
+        # request mid-send (partial delivery, sent-state lost). The row is saved
+        # as unsent above and marked sent by the worker.
+        app = current_app._get_current_object()
+        threading.Thread(target=_send_message_blast,
+                         args=(app, msg.id, sorted(emails), subject, body),
+                         daemon=True).start()
+        return jsonify({
+            'message': f'Sending to {len(emails)} recipient(s)…',
+            'message_id': msg.id,
+            'queued': len(emails),
+        }), 201
 
+    # SMTP not configured — hand the admin the addresses to send manually.
     reply_to = current_app.config.get('MAIL_REPLY_TO', '')
     return jsonify({
         'message': 'Message saved (SMTP not configured — copy emails below to send manually)',
@@ -1138,11 +2147,15 @@ def _resolve_recipient_emails(rtype: str, recipient_filter) -> set | tuple:
     elif rtype == 'class':
         if not recipient_filter:
             return jsonify({'error': 'recipient_filter (class_id) required for class type'}), 400
+        try:
+            cid = int(recipient_filter)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid class selection'}), 400
         # Use join to avoid N+1
         rows = (
             db.session.query(Student.parent_email, Student.email)
             .join(ClassEnrollment, ClassEnrollment.student_id == Student.id)
-            .filter(ClassEnrollment.class_id == int(recipient_filter), ClassEnrollment.is_active == True)  # noqa: E712
+            .filter(ClassEnrollment.class_id == cid, ClassEnrollment.is_active == True)  # noqa: E712
             .all()
         )
         for parent_email, student_email in rows:
@@ -1153,7 +2166,11 @@ def _resolve_recipient_emails(rtype: str, recipient_filter) -> set | tuple:
     elif rtype == 'individual':
         if not recipient_filter:
             return jsonify({'error': 'recipient_filter (student_id) required for individual type'}), 400
-        s = Student.query.get(int(recipient_filter))
+        try:
+            sid = int(recipient_filter)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid student selection'}), 400
+        s = Student.query.get(sid)
         if s and (s.parent_email or s.email):
             emails.add(s.parent_email or s.email)
     return emails
@@ -1165,6 +2182,9 @@ def _resolve_recipient_emails(rtype: str, recipient_filter) -> set | tuple:
 @login_required
 def get_families():
     """Get all families with balances — bulk query."""
+    err = _staff_only()
+    if err:
+        return err
     families = Family.query.filter_by(is_active=True).order_by(Family.name).all()
 
     # Collect all student IDs across all families
@@ -1181,30 +2201,40 @@ def get_families():
     result = []
     for f in families:
         students = family_students[f.id]
-        total_charges = sum(balances_map[s.id]['total_charges'] for s in students)
-        total_payments = sum(balances_map[s.id]['total_payments'] for s in students)
-        result.append({
+        row = {
             'id': f.id, 'name': f.name,
             'primary_email': f.primary_email, 'primary_phone': f.primary_phone,
             'student_count': len(students),
             'students': [{'id': s.id, 'full_name': s.full_name} for s in students],
-            'total_charges': f'{total_charges:.2f}',
-            'total_payments': f'{total_payments:.2f}',
-            'balance': f'{total_charges - total_payments:.2f}',
-        })
+        }
+        # Billing is admin-only: teachers get the family list (for forms and
+        # sibling context) but not the money columns.
+        if current_user.is_admin:
+            total_charges = sum(balances_map[s.id]['total_charges'] for s in students)
+            total_payments = sum(balances_map[s.id]['total_payments'] for s in students)
+            row.update({
+                'total_charges': f'{total_charges:.2f}',
+                'total_payments': f'{total_payments:.2f}',
+                'balance': f'{total_charges - total_payments:.2f}',
+            })
+        result.append(row)
     return jsonify({'families': result})
 
 
 @bp.route('/families', methods=['POST'])
 @login_required
 def create_family():
-    data = request.get_json()
-    if not data or not data.get('name'):
+    err = _admin_only()
+    if err:
+        return err
+    data = request.get_json() or {}
+    name = _clean_str(data.get('name'))
+    if not name:
         return jsonify({'error': 'name is required'}), 400
     f = Family(
-        name=data['name'].strip(),
-        primary_email=data.get('primary_email', '').strip() or None,
-        primary_phone=data.get('primary_phone', '').strip() or None,
+        name=name,
+        primary_email=_clean_str(data.get('primary_email')) or None,
+        primary_phone=_clean_str(data.get('primary_phone')) or None,
     )
     db.session.add(f)
     db.session.commit()
@@ -1215,6 +2245,9 @@ def create_family():
 @login_required
 def get_family_ledger(family_id):
     """Combined ledger for all students in a family — single pass."""
+    err = _require_family_money_access(family_id)
+    if err:
+        return err
     family = Family.query.get_or_404(family_id)
     students = family.students.filter_by(is_active=True).all()
     student_ids = [s.id for s in students]
@@ -1248,8 +2281,8 @@ def _staff_to_dict(u):
         'role': u.role,
         'is_admin': u.is_admin,
         'is_active': u.is_active,
-        'last_login': u.last_login.isoformat() if u.last_login else None,
-        'created_at': u.created_at.isoformat(),
+        'last_login': _utc_iso(u.last_login),
+        'created_at': _utc_iso(u.created_at),
     }
 
 
@@ -1276,9 +2309,9 @@ def create_staff():
         if not data.get(field):
             return jsonify({'error': f'{field} is required'}), 400
 
-    if User.query.filter_by(username=data['username'].strip()).first():
+    if User.query.filter_by(username=_clean_str(data['username'])).first():
         return jsonify({'error': 'Username already taken'}), 400
-    if User.query.filter_by(email=data['email'].strip()).first():
+    if User.query.filter_by(email=_clean_str(data['email'])).first():
         return jsonify({'error': 'Email already in use'}), 400
 
     role = data.get('role', 'teacher')
@@ -1286,11 +2319,11 @@ def create_staff():
         return jsonify({'error': 'Role must be admin or teacher'}), 400
 
     u = User(
-        username=data['username'].strip(),
-        email=data['email'].strip(),
-        first_name=data['first_name'].strip(),
-        last_name=data['last_name'].strip(),
-        phone=data.get('phone', '').strip() or None,
+        username=_clean_str(data['username']),
+        email=_clean_str(data['email']),
+        first_name=_clean_str(data['first_name']),
+        last_name=_clean_str(data['last_name']),
+        phone=_clean_str(data.get('phone')) or None,
         role=role,
         is_admin=(role == 'admin'),
         is_active=True,
@@ -1315,16 +2348,16 @@ def update_staff(user_id):
         return jsonify({'error': 'No data provided'}), 400
 
     if 'first_name' in data:
-        u.first_name = data['first_name'].strip()
+        u.first_name = _clean_str(data['first_name'])
     if 'last_name' in data:
-        u.last_name = data['last_name'].strip()
+        u.last_name = _clean_str(data['last_name'])
     if 'email' in data:
-        email = data['email'].strip()
+        email = _clean_str(data['email'])
         if email != u.email and User.query.filter_by(email=email).first():
             return jsonify({'error': 'Email already in use'}), 400
         u.email = email
     if 'phone' in data:
-        u.phone = data['phone'].strip() or None
+        u.phone = _clean_str(data['phone']) or None
     if 'role' in data:
         role = data['role']
         if role not in ('admin', 'teacher'):
@@ -1336,6 +2369,31 @@ def update_staff(user_id):
 
     db.session.commit()
     return jsonify(_staff_to_dict(u))
+
+
+@bp.route('/parents/<int:user_id>/reset-link', methods=['POST'])
+@login_required
+def parent_reset_link(user_id):
+    """Admin generates a single-use password-reset link for a PARENT account.
+    This is the no-SMTP recovery path: a parent who forgot their password calls
+    the studio, and the admin texts/reads them this link. Reuses the
+    forgot-password token — 1-hour expiry, invalidated by any password change,
+    rejected for inactive accounts."""
+    err = _admin_only()
+    if err:
+        return err
+    u = User.query.get_or_404(user_id)
+    if u.role != 'parent':
+        return jsonify({'error': 'Reset links are for parent accounts'}), 400
+    if not u.is_active:
+        return jsonify({'error': 'That account is deactivated'}), 400
+    from app.auth.routes import _reset_serializer
+    token = _reset_serializer().dumps({'uid': u.id, 'pw': (u.password_hash or '')[-16:]})
+    link = url_for('auth.reset_password', token=token, _external=True)
+    AuditLog.record(current_user.id, 'parent.reset_link',
+                    f'Password-reset link generated for {u.username}')
+    db.session.commit()
+    return jsonify({'reset_url': link, 'expires_in_minutes': 60})
 
 
 @bp.route('/staff/<int:user_id>', methods=['DELETE'])
@@ -1367,14 +2425,17 @@ def _location_to_dict(loc):
         'notes': loc.notes,
         'is_active': loc.is_active,
         'class_count': loc.classes.filter_by(is_active=True).count(),
-        'created_at': loc.created_at.isoformat(),
+        'created_at': _utc_iso(loc.created_at),
     }
 
 
 @bp.route('/locations', methods=['GET'])
 @login_required
 def get_locations():
-    """Get all locations."""
+    """Get all locations (staff only — carries internal notes/phone)."""
+    err = _staff_only()
+    if err:
+        return err
     locations = Location.query.filter_by(is_active=True).order_by(Location.name).all()
     return jsonify({'locations': [_location_to_dict(loc) for loc in locations]})
 
@@ -1385,18 +2446,19 @@ def create_location():
     """Create a new location (admin only)."""
     if not current_user.is_admin:
         return jsonify({'error': 'Admin access required'}), 403
-    data = request.get_json()
-    if not data or not data.get('name'):
+    data = request.get_json() or {}
+    name = _clean_str(data.get('name'))
+    if not name:
         return jsonify({'error': 'name is required'}), 400
 
     loc = Location(
-        name=data['name'].strip(),
-        address=data.get('address', '').strip() or None,
-        city=data.get('city', '').strip() or None,
-        state=data.get('state', '').strip() or None,
-        zip_code=data.get('zip_code', '').strip() or None,
-        phone=data.get('phone', '').strip() or None,
-        notes=data.get('notes', '').strip() or None,
+        name=name,
+        address=_clean_str(data.get('address')) or None,
+        city=_clean_str(data.get('city')) or None,
+        state=_clean_str(data.get('state')) or None,
+        zip_code=_clean_str(data.get('zip_code')) or None,
+        phone=_clean_str(data.get('phone')) or None,
+        notes=_clean_str(data.get('notes')) or None,
     )
     db.session.add(loc)
     db.session.commit()
@@ -1416,8 +2478,7 @@ def update_location(location_id):
 
     for field in ('name', 'address', 'city', 'state', 'zip_code', 'phone', 'notes'):
         if field in data:
-            val = data[field]
-            setattr(loc, field, val.strip() or None if val else None)
+            setattr(loc, field, _clean_str(data[field]) or None)
 
     db.session.commit()
     return jsonify(_location_to_dict(loc))
@@ -1556,14 +2617,19 @@ def upload_zelle_qr():
     if len(raw) > 2 * 1024 * 1024:
         return jsonify({'error': 'Image too large (max 2MB)'}), 400
 
+    # Whitelist the content type to EXACT values — never trust the raw mimetype.
+    # It comes from the client's multipart Content-Type header, so a prefix check
+    # (startswith 'image/') would let `image/png"><script>` through and into the
+    # data URI, which then renders in an unescaped src= (parent-portal XSS).
+    VALID_IMAGE_TYPES = {'image/png', 'image/jpeg', 'image/gif', 'image/webp'}
+    ext_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+               'gif': 'image/gif', 'webp': 'image/webp'}
     content_type = (f.mimetype or '').lower()
-    if not content_type.startswith('image/'):
-        # Fall back to extension sniffing
+    if content_type not in VALID_IMAGE_TYPES:
         ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
-        ext_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp'}
         content_type = ext_map.get(ext, '')
-        if not content_type:
-            return jsonify({'error': 'File must be an image (PNG, JPG, GIF, or WebP)'}), 400
+    if content_type not in VALID_IMAGE_TYPES:
+        return jsonify({'error': 'File must be an image (PNG, JPG, GIF, or WebP)'}), 400
 
     data_uri = f'data:{content_type};base64,' + base64.b64encode(raw).decode('ascii')
     Setting.set('payments_zelle_qr_data', data_uri)
@@ -1623,7 +2689,11 @@ def get_payment_options():
             'memo': Setting.get('payments_zelle_memo') or DEFAULT_ZELLE_MEMO,
         })
     if Setting.get_bool('payments_cashapp_enabled'):
-        tag = Setting.get('payments_cashapp_tag', '').lstrip('$')
+        # A Cash App cashtag is alphanumeric/underscore; strip anything else so an
+        # admin-set value can't inject into the unescaped href/URL it renders into
+        # on the parent portal (defense-in-depth against an admin-account compromise).
+        import re as _re
+        tag = _re.sub(r'[^A-Za-z0-9_]', '', Setting.get('payments_cashapp_tag', '').lstrip('$'))[:20]
         options.append({
             'type': 'cashapp',
             'tag': f'${tag}' if tag else '',
@@ -1652,7 +2722,7 @@ def get_audit_log():
         'action': r.action,
         'detail': r.detail,
         'user': r.user.full_name if r.user else 'System',
-        'created_at': r.created_at.isoformat(),
+        'created_at': _utc_iso(r.created_at),
     } for r in rows]})
 
 
@@ -1686,8 +2756,8 @@ def _pending_to_dict(p) -> dict:
         'note': p.note,
         'status': p.status,
         'admin_note': p.admin_note,
-        'created_at': p.created_at.isoformat(),
-        'reviewed_at': p.reviewed_at.isoformat() if p.reviewed_at else None,
+        'created_at': _utc_iso(p.created_at),
+        'reviewed_at': _utc_iso(p.reviewed_at),
         'reviewed_by': p.reviewer.full_name if p.reviewer else None,
     }
 
@@ -1708,10 +2778,11 @@ def _send_receipt(parent_email, who, amount, method):
         f"You can view your balance any time in the parent portal.\n\n"
         f"Thank you,\n{STUDIO_NAME}"
     )
-    try:
-        email_service.send_email(parent_email, f'Payment received — {STUDIO_NAME}', body)
-    except Exception:
-        logger.exception("Failed to send payment receipt to %s", parent_email)
+    # Fire-and-forget: the receipt is best-effort and must not make the admin's
+    # payment-confirm (or the Square webhook) wait on a slow SMTP send. Same
+    # pattern as the admin-notify emails. The payment is already committed by
+    # the time this runs, so a failed/slow receipt never affects the balance.
+    _send_email_async([parent_email], f'Payment received — {STUDIO_NAME}', body)
 
 
 @bp.route('/payments/claim', methods=['POST'])
@@ -1722,42 +2793,51 @@ def claim_payment():
     if not data:
         return jsonify({'error': 'No data provided'}), 400
 
-    method = (data.get('method') or '').strip().lower()
+    method = _clean_str(data.get('method')).lower()
     if method not in VALID_PAYMENT_METHODS:
         return jsonify({'error': f'Invalid payment method. One of: {", ".join(sorted(VALID_PAYMENT_METHODS))}'}), 400
 
-    try:
-        amount = round(float(data.get('amount')), 2)
-    except (TypeError, ValueError):
-        return jsonify({'error': 'A valid amount is required'}), 400
-    if amount <= 0:
-        return jsonify({'error': 'Amount must be greater than zero'}), 400
+    # Same amount validation as admin charges — including the upper cap, so a
+    # parent can't report an absurd (e.g. $999,999,999) payment into the inbox.
+    amount, aerr = _valid_amount(data.get('amount'))
+    if aerr:
+        return aerr
 
     student_id = data.get('student_id')
     family_id = data.get('family_id')
     if not student_id and not family_id:
         return jsonify({'error': 'student_id or family_id is required'}), 400
+    if student_id:
+        student_id, serr = _valid_id(student_id)
+        if serr:
+            return serr
+    if family_id:
+        family_id, ferr = _valid_id(family_id)
+        if ferr:
+            return ferr
 
     # Authorization: parents may only claim for their own children/families
     if current_user.is_parent:
         my_students = _parent_student_ids(current_user)
-        if student_id and int(student_id) not in my_students:
+        if student_id and student_id not in my_students:
             return jsonify({'error': 'Not authorized for this student'}), 403
         if family_id:
             my_families = {Student.query.get(sid).family_id for sid in my_students}
-            if int(family_id) not in my_families:
+            if family_id not in my_families:
                 return jsonify({'error': 'Not authorized for this family'}), 403
-    elif not current_user.is_staff:
+    elif not current_user.is_admin:
+        # Billing is admin-only: teachers can't record payment claims on a
+        # family's behalf (least privilege).
         return jsonify({'error': 'Not authorized'}), 403
 
     p = PendingPayment(
-        student_id=int(student_id) if student_id else None,
-        family_id=int(family_id) if family_id else None,
+        student_id=student_id if student_id else None,
+        family_id=family_id if family_id else None,
         parent_id=current_user.id,
         amount=amount,
         method=method,
-        reference=(data.get('reference') or '').strip() or None,
-        note=(data.get('note') or '').strip() or None,
+        reference=_clean_str(data.get('reference'), 100) or None,  # parent input — cap length
+        note=_clean_str(data.get('note'), 1000) or None,
     )
     db.session.add(p)
     db.session.commit()
@@ -1768,15 +2848,12 @@ def claim_payment():
         who = p.student.full_name if p.student else (p.family.name + ' (family)' if p.family else 'a family')
         admin_emails = {u.email for u in User.query.filter_by(role='admin', is_active=True).all() if u.email and '@' in u.email}
         if admin_emails:
-            try:
-                email_service.send_email(
-                    admin_emails,
-                    f'New payment to confirm — {who}',
-                    f'{current_user.full_name} reported a {method} payment of ${amount:.2f} for {who}.\n\n'
-                    f'Reference: {p.reference or "(none)"}\n\nConfirm it in the Pending Payments page.',
-                )
-            except Exception:
-                logger.exception("Failed to notify admins of pending payment")
+            _send_email_async(
+                admin_emails,
+                f'New payment to confirm — {who}',
+                f'{current_user.full_name} reported a {method} payment of ${amount:.2f} for {who}.\n\n'
+                f'Reference: {p.reference or "(none)"}\n\nConfirm it in the Pending Payments page.',
+            )
 
     return jsonify({'message': 'Payment reported — the studio will confirm it shortly.',
                     'pending_payment': _pending_to_dict(p)}), 201
@@ -1799,7 +2876,8 @@ def list_pending_payments():
 @bp.route('/pending-payments/count', methods=['GET'])
 @login_required
 def pending_payments_count():
-    if not current_user.is_staff:
+    # Billing badge is admin-only; the count leaks payment activity volume.
+    if not current_user.is_admin:
         return jsonify({'count': 0})
     return jsonify({'count': PendingPayment.query.filter_by(status='pending').count()})
 
@@ -1854,12 +2932,25 @@ def confirm_pending_payment(pid):
             db.session.flush()
             first_txn = t
 
-    p.status = 'confirmed'
-    p.reviewed_at = datetime.utcnow()
-    p.reviewed_by = current_user.id
-    p.transaction_id = first_txn.id if first_txn else None
-    if data.get('admin_note'):
-        p.admin_note = data['admin_note'].strip()
+    # Atomically claim this pending payment. Two concurrent confirms (an admin
+    # double-click, or two open tabs) both pass the status check above before
+    # either commits; without this guard both create payment transactions and
+    # the family is credited twice. The conditional UPDATE re-checks status in
+    # the DB at write time, so only the first confirm wins — the second matches
+    # 0 rows and rolls back (its just-inserted transactions included) instead of
+    # double-crediting.
+    note = _clean_str(data['admin_note']) if data.get('admin_note') else p.admin_note
+    claimed = db.session.query(PendingPayment).filter_by(
+        id=pid, status='pending').update({
+            'status': 'confirmed',
+            'reviewed_at': datetime.utcnow(),
+            'reviewed_by': current_user.id,
+            'transaction_id': first_txn.id if first_txn else None,
+            'admin_note': note,
+        }, synchronize_session=False)
+    if not claimed:
+        db.session.rollback()
+        return jsonify({'error': 'Already processed'}), 400
 
     AuditLog.record(current_user.id, 'payment.confirm',
                     f'Confirmed ${amount:.2f} {method_label} for {who}')
@@ -1880,7 +2971,7 @@ def reject_pending_payment(pid):
         return jsonify({'error': f'Already {p.status}'}), 400
     data = request.get_json(silent=True) or {}
     p.status = 'rejected'
-    p.admin_note = (data.get('admin_note') or '').strip() or None
+    p.admin_note = _clean_str(data.get('admin_note')) or None
     p.reviewed_at = datetime.utcnow()
     p.reviewed_by = current_user.id
     who = p.student.full_name if p.student else (p.family.name + ' (family)' if p.family else 'unknown')
@@ -1962,7 +3053,7 @@ def _notify_student_balance(s, balance, email_ok, sms_ok):
                 email_service.send_email(to, f'Balance reminder — {STUDIO_NAME}', body)
                 used.add('email')
             except Exception:
-                logger.exception("Reminder email failed for %s", s.full_name)
+                logger.exception("Reminder email failed for student #%s", s.id)
     if sms_ok:
         phone = _student_phone(s)
         if phone and sms_service.send_sms(phone, body):
@@ -1970,10 +3061,33 @@ def _notify_student_balance(s, balance, email_ok, sms_ok):
     return used
 
 
+def _send_reminders_to(app, student_ids, email_ok, sms_ok):
+    """Background worker for the manual 'remind everyone who owes' action. Runs
+    off the request thread because a large studio × (email + up to a 15s SMS)
+    would exceed the 120s gunicorn worker timeout if sent inline."""
+    with app.app_context():
+        try:
+            students = Student.query.filter(Student.id.in_(student_ids)).all()
+            balances = calc_balance_bulk([s.id for s in students])
+            notified = 0
+            for s in students:
+                bal = balances[s.id]['balance']
+                if bal <= 0:
+                    continue
+                if _notify_student_balance(s, bal, email_ok, sms_ok):
+                    notified += 1
+            logger.info("Manual balance reminders sent: %d", notified)
+        except Exception:
+            logger.exception("Manual reminder background send failed")
+
+
 @bp.route('/balances/send-reminders', methods=['POST'])
 @login_required
 def send_balance_reminders():
-    """Send a balance reminder to every student who owes, via email and/or SMS."""
+    """Queue a balance reminder to every student who owes, via email and/or SMS.
+    The actual sending runs in a background thread — for a large studio, sending
+    inline (an email plus a 15s-timeout SMS per family) would blow the 120s
+    gunicorn worker timeout and 502 the request."""
     err = _admin_only()
     if err:
         return err
@@ -1986,19 +3100,15 @@ def send_balance_reminders():
 
     students = Student.query.filter_by(is_active=True).all()
     balances = calc_balance_bulk([s.id for s in students])
-    sent, skipped = 0, 0
-    for s in students:
-        if balances[s.id]['balance'] <= 0:
-            continue
-        used = _notify_student_balance(s, balances[s.id]['balance'], email_ok, sms_ok)
-        if used:
-            sent += 1
-        else:
-            skipped += 1
+    owing = [s.id for s in students if balances[s.id]['balance'] > 0]
 
-    AuditLog.record(current_user.id, 'reminders.send', f'Sent {sent} balance reminders ({skipped} skipped)')
+    AuditLog.record(current_user.id, 'reminders.send', f'Queued {len(owing)} balance reminders')
     db.session.commit()
-    return jsonify({'message': f'Sent {sent} reminder(s), skipped {skipped}', 'sent': sent, 'skipped': skipped})
+
+    app = current_app._get_current_object()
+    threading.Thread(target=_send_reminders_to, args=(app, owing, email_ok, sms_ok),
+                     daemon=True).start()
+    return jsonify({'message': f'Sending reminders to {len(owing)} family(ies)…', 'queued': len(owing)})
 
 
 @bp.route('/students/<int:student_id>/send-reminder', methods=['POST'])
@@ -2041,19 +3151,24 @@ def square_webhook():
 
     raw_body = request.get_data()
 
-    # Verify signature if a key is configured
+    # Fail closed: never auto-record a payment from an UNVERIFIED webhook. This
+    # endpoint reduces a family's balance, so without a configured signature key
+    # we cannot trust the caller — an attacker who learned a real invoice id could
+    # otherwise forge a "PAID" event and credit an account. Return 200 so Square
+    # doesn't retry; the studio must set the signature key to enable auto-reconcile
+    # (until then, Square payments are reconciled manually via /pending-payments).
     from app.crypto import decrypt
     sig_key = decrypt(Setting.get('payments_square_webhook_signature_key', ''))
-    if sig_key:
-        provided = request.headers.get('x-square-hmacsha256-signature', '')
-        mac = hmac.new(sig_key.encode('utf-8'), (request.url + raw_body.decode('utf-8')).encode('utf-8'),
-                       hashlib.sha256)
-        expected = base64.b64encode(mac.digest()).decode('ascii')
-        if not hmac.compare_digest(expected, provided):
-            logger.warning("Square webhook signature mismatch")
-            return jsonify({'error': 'Invalid signature'}), 403
-    else:
-        logger.warning("Square webhook received but no signature key configured — skipping verification")
+    if not sig_key:
+        logger.warning("Square webhook received but no signature key configured — not auto-recording")
+        return jsonify({'status': 'unverified_ignored'}), 200
+    provided = request.headers.get('x-square-hmacsha256-signature', '')
+    mac = hmac.new(sig_key.encode('utf-8'), (request.url + raw_body.decode('utf-8')).encode('utf-8'),
+                   hashlib.sha256)
+    expected = base64.b64encode(mac.digest()).decode('ascii')
+    if not hmac.compare_digest(expected, provided):
+        logger.warning("Square webhook signature mismatch")
+        return jsonify({'error': 'Invalid signature'}), 403
 
     try:
         event = json.loads(raw_body or b'{}')
@@ -2065,7 +3180,12 @@ def square_webhook():
     invoice_id = invoice.get('id')
     status = invoice.get('status', '')
 
-    if not invoice_id or status not in ('PAID', 'PARTIALLY_PAID'):
+    # Only auto-record a FULLY paid invoice. A PARTIALLY_PAID event must be
+    # ignored — recording it here would book the whole invoice amount (not the
+    # partial payment) AND set paid_at, which would then swallow the eventual
+    # PAID event. Partial payments are handled by the later PAID event (once the
+    # invoice is fully settled) or by manual reconciliation.
+    if not invoice_id or status != 'PAID':
         return jsonify({'status': 'ignored'}), 200
 
     rec = SquareInvoice.query.filter_by(invoice_id=invoice_id).first()
@@ -2091,8 +3211,19 @@ def square_webhook():
         created_by=None,
     )
     db.session.add(t)
-    rec.status = status
-    rec.paid_at = datetime.utcnow()
+    # Atomically claim the invoice so a duplicate PAID delivery can't double-credit
+    # the family. Square delivers webhooks at-least-once, so two identical PAID
+    # events can be processed concurrently by different worker threads — both would
+    # pass the paid_at pre-check above and each insert a payment. The conditional
+    # UPDATE re-checks paid_at IS NULL at write time: only the first wins; the loser
+    # matches 0 rows and rolls back its just-inserted payment (autoflushed before
+    # the UPDATE runs). Same pattern as the pending-payment confirm race.
+    claimed = db.session.query(SquareInvoice).filter(
+        SquareInvoice.id == rec.id, SquareInvoice.paid_at.is_(None)).update(
+        {'status': status, 'paid_at': datetime.utcnow()}, synchronize_session=False)
+    if not claimed:
+        db.session.rollback()
+        return jsonify({'status': 'already_recorded'}), 200
     AuditLog.record(None, 'payment.square_webhook',
                     f'Auto-recorded ${amount:.2f} for {student.full_name} (invoice {invoice_id})')
     db.session.commit()
@@ -2146,9 +3277,10 @@ def create_group():
     if err:
         return err
     data = request.get_json() or {}
-    if not data.get('name'):
+    name = _clean_str(data.get('name'))
+    if not name:
         return jsonify({'error': 'name is required'}), 400
-    g = PerformanceGroup(name=data['name'].strip(), description=(data.get('description') or '').strip() or None)
+    g = PerformanceGroup(name=name, description=_clean_str(data.get('description')) or None)
     db.session.add(g)
     db.session.commit()
     return jsonify(_group_to_dict(g)), 201
@@ -2162,10 +3294,10 @@ def update_group(gid):
         return err
     g = PerformanceGroup.query.get_or_404(gid)
     data = request.get_json() or {}
-    if 'name' in data and data['name'].strip():
-        g.name = data['name'].strip()
+    if 'name' in data and _clean_str(data['name']):
+        g.name = _clean_str(data['name'])
     if 'description' in data:
-        g.description = (data['description'] or '').strip() or None
+        g.description = _clean_str(data['description']) or None
     db.session.commit()
     return jsonify(_group_to_dict(g))
 
@@ -2192,7 +3324,7 @@ def list_group_members(gid):
     return jsonify({'members': [{
         'id': m.id,
         'student_id': m.student_id,
-        'student_name': m.student.full_name,
+        'student_name': m.student.full_name if m.student else None,
         'role': m.role,
         'joined_date': m.joined_date.isoformat() if m.joined_date else None,
     } for m in members]})
@@ -2206,15 +3338,18 @@ def add_group_member(gid):
         return err
     g = PerformanceGroup.query.get_or_404(gid)
     data = request.get_json() or {}
-    if not data.get('student_id'):
-        return jsonify({'error': 'student_id is required'}), 400
-    existing = CompanyMembership.query.filter_by(group_id=gid, student_id=data['student_id']).first()
+    student_id, serr = _valid_id(data.get('student_id'))
+    if serr:
+        return serr
+    if Student.query.get(student_id) is None:
+        return jsonify({'error': 'student not found'}), 404
+    existing = CompanyMembership.query.filter_by(group_id=gid, student_id=student_id).first()
     if existing:
         existing.is_active = True
         existing.role = (data.get('role') or existing.role).strip()
         db.session.commit()
         return jsonify({'message': 'Member reactivated'}), 200
-    m = CompanyMembership(group_id=gid, student_id=int(data['student_id']),
+    m = CompanyMembership(group_id=gid, student_id=student_id,
                           role=(data.get('role') or 'Member').strip())
     db.session.add(m)
     db.session.commit()
@@ -2262,12 +3397,11 @@ def create_audition():
     if not data.get('title'):
         return jsonify({'error': 'title is required'}), 400
     a = Audition(
-        group_id=int(data['group_id']) if data.get('group_id') else None,
-        title=data['title'].strip(),
-        audition_date=(datetime.strptime(data['audition_date'], '%Y-%m-%d').date()
-                       if data.get('audition_date') else None),
-        location_text=(data.get('location_text') or '').strip() or None,
-        description=(data.get('description') or '').strip() or None,
+        group_id=_opt_int(data.get('group_id')),
+        title=_clean_str(data['title']),
+        audition_date=_parse_date(data.get('audition_date')),
+        location_text=_clean_str(data.get('location_text')) or None,
+        description=_clean_str(data.get('description')) or None,
         is_open=bool(data.get('is_open', True)),
     )
     db.session.add(a)
@@ -2283,16 +3417,16 @@ def update_audition(aid):
         return err
     a = Audition.query.get_or_404(aid)
     data = request.get_json() or {}
-    if 'title' in data and data['title'].strip():
-        a.title = data['title'].strip()
+    if 'title' in data and _clean_str(data['title']):
+        a.title = _clean_str(data['title'])
     if 'group_id' in data:
-        a.group_id = int(data['group_id']) if data['group_id'] else None
+        a.group_id = _opt_int(data.get('group_id'))
     if 'audition_date' in data:
-        a.audition_date = datetime.strptime(data['audition_date'], '%Y-%m-%d').date() if data['audition_date'] else None
+        a.audition_date = _parse_date(data.get('audition_date'))
     if 'location_text' in data:
-        a.location_text = (data['location_text'] or '').strip() or None
+        a.location_text = _clean_str(data['location_text']) or None
     if 'description' in data:
-        a.description = (data['description'] or '').strip() or None
+        a.description = _clean_str(data['description']) or None
     if 'is_open' in data:
         a.is_open = bool(data['is_open'])
     db.session.commit()
@@ -2321,10 +3455,10 @@ def list_audition_signups(aid):
     return jsonify({'signups': [{
         'id': s.id,
         'student_id': s.student_id,
-        'student_name': s.student.full_name,
+        'student_name': s.student.full_name if s.student else None,
         'status': s.status,
         'notes': s.notes,
-        'created_at': s.created_at.isoformat(),
+        'created_at': _utc_iso(s.created_at),
     } for s in a.signups.order_by(AuditionSignup.created_at).all()]})
 
 
@@ -2336,15 +3470,17 @@ def signup_for_audition(aid):
     if not a.is_open:
         return jsonify({'error': 'This audition is closed'}), 400
     data = request.get_json() or {}
-    student_id = data.get('student_id')
-    if not student_id:
-        return jsonify({'error': 'student_id is required'}), 400
-    if current_user.is_parent and int(student_id) not in _parent_student_ids(current_user):
+    student_id, err = _valid_id(data.get('student_id'))
+    if err:
+        return err
+    if Student.query.get(student_id) is None:
+        return jsonify({'error': 'student not found'}), 404
+    if current_user.is_parent and student_id not in _parent_student_ids(current_user):
         return jsonify({'error': 'Not authorized for this student'}), 403
     if AuditionSignup.query.filter_by(audition_id=aid, student_id=student_id).first():
         return jsonify({'error': 'Already signed up'}), 400
-    s = AuditionSignup(audition_id=aid, student_id=int(student_id), parent_id=current_user.id,
-                       notes=(data.get('notes') or '').strip() or None)
+    s = AuditionSignup(audition_id=aid, student_id=student_id, parent_id=current_user.id,
+                       notes=_clean_str(data.get('notes')) or None)
     db.session.add(s)
     db.session.commit()
     return jsonify({'message': 'Signed up for audition'}), 201
@@ -2358,7 +3494,7 @@ def set_signup_status(sid):
         return err
     s = AuditionSignup.query.get_or_404(sid)
     data = request.get_json() or {}
-    status = (data.get('status') or '').strip()
+    status = _clean_str(data.get('status'))
     if status not in ('signed_up', 'accepted', 'declined', 'waitlist'):
         return jsonify({'error': 'Invalid status'}), 400
     s.status = status
@@ -2392,13 +3528,12 @@ def create_performance():
     if not data.get('title'):
         return jsonify({'error': 'title is required'}), 400
     p = Performance(
-        group_id=int(data['group_id']) if data.get('group_id') else None,
-        title=data['title'].strip(),
-        performance_date=(datetime.strptime(data['performance_date'], '%Y-%m-%d').date()
-                          if data.get('performance_date') else None),
-        call_time=(data.get('call_time') or '').strip() or None,
-        venue=(data.get('venue') or '').strip() or None,
-        description=(data.get('description') or '').strip() or None,
+        group_id=_opt_int(data.get('group_id')),
+        title=_clean_str(data['title']),
+        performance_date=_parse_date(data.get('performance_date')),
+        call_time=_clean_str(data.get('call_time')) or None,
+        venue=_clean_str(data.get('venue')) or None,
+        description=_clean_str(data.get('description')) or None,
     )
     db.session.add(p)
     db.session.commit()
@@ -2413,18 +3548,18 @@ def update_performance(pid):
         return err
     p = Performance.query.get_or_404(pid)
     data = request.get_json() or {}
-    if 'title' in data and data['title'].strip():
-        p.title = data['title'].strip()
+    if 'title' in data and _clean_str(data['title']):
+        p.title = _clean_str(data['title'])
     if 'group_id' in data:
-        p.group_id = int(data['group_id']) if data['group_id'] else None
+        p.group_id = _opt_int(data.get('group_id'))
     if 'performance_date' in data:
-        p.performance_date = datetime.strptime(data['performance_date'], '%Y-%m-%d').date() if data['performance_date'] else None
+        p.performance_date = _parse_date(data.get('performance_date'))
     if 'call_time' in data:
-        p.call_time = (data['call_time'] or '').strip() or None
+        p.call_time = _clean_str(data['call_time']) or None
     if 'venue' in data:
-        p.venue = (data['venue'] or '').strip() or None
+        p.venue = _clean_str(data['venue']) or None
     if 'description' in data:
-        p.description = (data['description'] or '').strip() or None
+        p.description = _clean_str(data['description']) or None
     db.session.commit()
     return jsonify(_performance_to_dict(p))
 
@@ -2436,7 +3571,14 @@ def delete_performance(pid):
     if err:
         return err
     p = Performance.query.get_or_404(pid)
-    PerformanceAssignment.query.filter_by(performance_id=pid).delete()
+    # Delete children whose FK to the performance (or its ticket types) is NOT
+    # NULL — otherwise SQLAlchemy tries to null them on delete and hits the
+    # constraint (a performance with ticket types couldn't be deleted at all).
+    PerformanceAssignment.query.filter_by(performance_id=pid).delete(synchronize_session=False)
+    tt_ids = [t.id for t in TicketType.query.filter_by(performance_id=pid).all()]
+    if tt_ids:
+        TicketOrder.query.filter(TicketOrder.ticket_type_id.in_(tt_ids)).delete(synchronize_session=False)
+        TicketType.query.filter_by(performance_id=pid).delete(synchronize_session=False)
     db.session.delete(p)
     db.session.commit()
     return jsonify({'message': 'Performance deleted'})
@@ -2451,7 +3593,7 @@ def list_assignments(pid):
     return jsonify({'assignments': [{
         'id': a.id,
         'student_id': a.student_id,
-        'student_name': a.student.full_name,
+        'student_name': a.student.full_name if a.student else None,
         'notes': a.notes,
     } for a in p.assignments.all()]})
 
@@ -2473,12 +3615,15 @@ def add_assignment(pid):
                 added += 1
         db.session.commit()
         return jsonify({'message': f'Assigned {added} group members'}), 201
-    if not data.get('student_id'):
-        return jsonify({'error': 'student_id is required'}), 400
-    if PerformanceAssignment.query.filter_by(performance_id=pid, student_id=data['student_id']).first():
+    student_id, serr = _valid_id(data.get('student_id'))
+    if serr:
+        return serr
+    if Student.query.get(student_id) is None:
+        return jsonify({'error': 'student not found'}), 404
+    if PerformanceAssignment.query.filter_by(performance_id=pid, student_id=student_id).first():
         return jsonify({'error': 'Already assigned'}), 400
-    a = PerformanceAssignment(performance_id=pid, student_id=int(data['student_id']),
-                              notes=(data.get('notes') or '').strip() or None)
+    a = PerformanceAssignment(performance_id=pid, student_id=student_id,
+                              notes=_clean_str(data.get('notes')) or None)
     db.session.add(a)
     db.session.commit()
     return jsonify({'message': 'Assigned', 'id': a.id}), 201
@@ -2512,7 +3657,7 @@ def my_company():
     group_ids = {m.group_id for m in memberships}
     members_out = [{
         'student_id': m.student_id,
-        'student_name': m.student.full_name,
+        'student_name': m.student.full_name if m.student else None,
         'group_name': m.group.name,
         'role': m.role,
     } for m in memberships]
@@ -2589,8 +3734,8 @@ def create_waiver_template():
     if not data.get('title') or not data.get('body'):
         return jsonify({'error': 'title and body are required'}), 400
     t = WaiverTemplate(
-        title=data['title'].strip(),
-        body=data['body'].strip(),
+        title=_clean_str(data['title']),
+        body=_clean_str(data['body']),
         allow_decline=bool(data.get('allow_decline', False)),
         display_order=int(data.get('display_order', 0)),
     )
@@ -2607,14 +3752,14 @@ def update_waiver_template(tid):
         return err
     t = WaiverTemplate.query.get_or_404(tid)
     data = request.get_json() or {}
-    if 'title' in data and data['title'].strip():
-        t.title = data['title'].strip()
-    if 'body' in data and data['body'].strip():
-        t.body = data['body'].strip()
+    if 'title' in data and _clean_str(data['title']):
+        t.title = _clean_str(data['title'])
+    if 'body' in data and _clean_str(data['body']):
+        t.body = _clean_str(data['body'])
     if 'allow_decline' in data:
         t.allow_decline = bool(data['allow_decline'])
     if 'display_order' in data:
-        t.display_order = int(data['display_order'])
+        t.display_order = _opt_num(data['display_order'], t.display_order)
     if 'is_active' in data:
         t.is_active = bool(data['is_active'])
     db.session.commit()
@@ -2646,8 +3791,15 @@ def waiver_compliance():
     for t in templates:
         signed = {s.student_id: s for s in t.signatures.all()}
         unsigned = [{'student_id': s.id, 'student_name': s.full_name} for s in students if s.id not in signed]
-        declined = [{'student_id': sid, 'student_name': Student.query.get(sid).full_name}
-                    for sid, sig in signed.items() if not sig.consent]
+        # Guard the student deref: a signature whose student was removed would
+        # otherwise 500 this staff page (same orphan-safety as the rosters).
+        declined = []
+        for sid, sig in signed.items():
+            if sig.consent:
+                continue
+            st = sig.student if sig.student is not None else Student.query.get(sid)
+            declined.append({'student_id': sid,
+                             'student_name': st.full_name if st else '(removed student)'})
         out.append({
             'id': t.id,
             'title': t.title,
@@ -2679,7 +3831,7 @@ def get_student_waivers(student_id):
             'signed': sig is not None,
             'consent': sig.consent if sig else None,
             'signed_name': sig.signed_name if sig else None,
-            'signed_at': sig.signed_at.isoformat() if sig else None,
+            'signed_at': _utc_iso(sig.signed_at) if sig else None,
         })
     return jsonify({'student_id': student.id, 'student_name': student.full_name, 'waivers': out})
 
@@ -2692,7 +3844,7 @@ def sign_waiver(student_id, template_id):
     Student.query.get_or_404(student_id)
     t = WaiverTemplate.query.get_or_404(template_id)
     data = request.get_json() or {}
-    signed_name = (data.get('signed_name') or '').strip()
+    signed_name = _clean_str(data.get('signed_name'))
     if not signed_name:
         return jsonify({'error': 'A typed signature (your name) is required'}), 400
     consent = bool(data.get('consent', True))
@@ -2758,12 +3910,12 @@ def create_costume():
     if not data.get('name'):
         return jsonify({'error': 'name is required'}), 400
     c = Costume(
-        name=data['name'].strip(),
-        class_id=int(data['class_id']) if data.get('class_id') else None,
-        group_id=int(data['group_id']) if data.get('group_id') else None,
-        vendor=(data.get('vendor') or '').strip() or None,
+        name=_clean_str(data['name']),
+        class_id=_opt_int(data.get('class_id')),
+        group_id=_opt_int(data.get('group_id')),
+        vendor=_clean_str(data.get('vendor')) or None,
         fee=data.get('fee') or 0,
-        notes=(data.get('notes') or '').strip() or None,
+        notes=_clean_str(data.get('notes')) or None,
     )
     db.session.add(c)
     db.session.commit()
@@ -2778,18 +3930,21 @@ def update_costume(cid):
         return err
     c = Costume.query.get_or_404(cid)
     data = request.get_json() or {}
-    if 'name' in data and data['name'].strip():
-        c.name = data['name'].strip()
+    if 'name' in data and _clean_str(data['name']):
+        c.name = _clean_str(data['name'])
     if 'vendor' in data:
-        c.vendor = (data['vendor'] or '').strip() or None
+        c.vendor = _clean_str(data['vendor']) or None
     if 'fee' in data:
-        c.fee = data['fee'] or 0
+        try:  # 0 is valid (free costume); garbage -> 400 via the existing guard
+            c.fee = round(float(data['fee'] or 0), 2)
+        except (TypeError, ValueError):
+            pass
     if 'class_id' in data:
-        c.class_id = int(data['class_id']) if data['class_id'] else None
+        c.class_id = _opt_int(data['class_id'])
     if 'group_id' in data:
-        c.group_id = int(data['group_id']) if data['group_id'] else None
+        c.group_id = _opt_int(data['group_id'])
     if 'notes' in data:
-        c.notes = (data['notes'] or '').strip() or None
+        c.notes = _clean_str(data['notes']) or None
     db.session.commit()
     return jsonify(_costume_to_dict(c))
 
@@ -2854,12 +4009,15 @@ def add_costume_assignment(cid):
         db.session.commit()
         return jsonify({'message': f'Assigned {added} dancers'}), 201
 
-    if not data.get('student_id'):
-        return jsonify({'error': 'student_id is required'}), 400
-    if CostumeAssignment.query.filter_by(costume_id=cid, student_id=data['student_id']).first():
+    student_id, serr = _valid_id(data.get('student_id'))
+    if serr:
+        return serr
+    if Student.query.get(student_id) is None:
+        return jsonify({'error': 'student not found'}), 404
+    if CostumeAssignment.query.filter_by(costume_id=cid, student_id=student_id).first():
         return jsonify({'error': 'Already assigned'}), 400
-    a = CostumeAssignment(costume_id=cid, student_id=int(data['student_id']),
-                          size=(data.get('size') or '').strip() or None)
+    a = CostumeAssignment(costume_id=cid, student_id=student_id,
+                          size=_clean_str(data.get('size')) or None)
     db.session.add(a)
     db.session.commit()
     return jsonify({'message': 'Assigned', 'id': a.id}), 201
@@ -2874,7 +4032,7 @@ def update_costume_assignment(aid):
     a = CostumeAssignment.query.get_or_404(aid)
     data = request.get_json() or {}
     if 'size' in data:
-        a.size = (data['size'] or '').strip() or None
+        a.size = _clean_str(data['size']) or None
     if 'paid' in data:
         a.paid = bool(data['paid'])
         a.paid_at = datetime.utcnow() if a.paid else None
@@ -2906,24 +4064,27 @@ def charge_costume(cid):
     if fee <= 0:
         return jsonify({'error': 'Set a costume fee greater than $0 first'}), 400
     charged = 0
-    for a in c.assignments.filter_by(charged=False).all():
-        t = Transaction(
-            student_id=a.student_id,
-            type='charge',
-            amount=fee,
-            category='costumes',
-            payment_method='n/a',
-            description=f'Costume: {c.name}',
-            transaction_date=date.today(),
-            created_by=current_user.id,
-        )
-        db.session.add(t)
-        db.session.flush()
-        a.charged = True
-        a.transaction_id = t.id
-        charged += 1
-    AuditLog.record(current_user.id, 'costume.charge', f'Charged ${fee:.2f} for "{c.name}" to {charged} dancers')
-    db.session.commit()
+    # Serialize concurrent charge runs so the not-yet-charged read below can't be
+    # seen by two requests at once and double-charge (same guard as late fees).
+    with _costume_charge_lock:
+        for a in c.assignments.filter_by(charged=False).all():
+            t = Transaction(
+                student_id=a.student_id,
+                type='charge',
+                amount=fee,
+                category='costumes',
+                payment_method='n/a',
+                description=f'Costume: {c.name}',
+                transaction_date=date.today(),
+                created_by=current_user.id,
+            )
+            db.session.add(t)
+            db.session.flush()
+            a.charged = True
+            a.transaction_id = t.id
+            charged += 1
+        AuditLog.record(current_user.id, 'costume.charge', f'Charged ${fee:.2f} for "{c.name}" to {charged} dancers')
+        db.session.commit()
     return jsonify({'message': f'Charged {charged} dancers ${fee:.2f} each', 'count': charged})
 
 
@@ -2939,7 +4100,7 @@ def my_costumes():
     rows = (CostumeAssignment.query
             .filter(CostumeAssignment.student_id.in_(student_ids)).all())
     out = [{
-        'student_name': a.student.full_name,
+        'student_name': a.student.full_name if a.student else None,
         'costume_name': a.costume.name,
         'size': a.size,
         'fee': f'{float(a.costume.fee):.2f}',
@@ -2971,7 +4132,8 @@ def create_ticket_type(pid):
     data = request.get_json() or {}
     if not data.get('name'):
         return jsonify({'error': 'name is required'}), 400
-    t = TicketType(performance_id=pid, name=data['name'].strip(), price=data.get('price') or 0)
+    t = TicketType(performance_id=pid, name=_clean_str(data['name']),
+                   price=_opt_num(data.get('price'), 0, is_float=True))  # garbage -> 0, not a DB StatementError
     db.session.add(t)
     db.session.commit()
     return jsonify({'id': t.id, 'name': t.name, 'price': f'{float(t.price):.2f}'}), 201
@@ -2993,7 +4155,7 @@ def delete_ticket_type(tid):
 @bp.route('/performances/<int:pid>/ticket-orders', methods=['GET'])
 @login_required
 def list_ticket_orders(pid):
-    if not current_user.is_staff:
+    if not current_user.is_admin:
         return jsonify({'error': 'Staff access required'}), 403
     Performance.query.get_or_404(pid)
     type_ids = [t.id for t in TicketType.query.filter_by(performance_id=pid).all()]
@@ -3011,7 +4173,7 @@ def list_ticket_orders(pid):
             'amount': f'{float(o.amount):.2f}',
             'paid': o.paid,
             'note': o.note,
-            'created_at': o.created_at.isoformat(),
+            'created_at': _utc_iso(o.created_at),
         } for o in orders],
         'summary': {'total_tickets': total_qty, 'revenue': f'{revenue:.2f}', 'pending': f'{pending:.2f}'},
     })
@@ -3032,22 +4194,29 @@ def create_ticket_order(pid):
         return jsonify({'error': 'Invalid quantity'}), 400
 
     student_id = data.get('student_id')
+    if student_id:
+        student_id, serr = _valid_id(student_id)
+        if serr:
+            return serr
     if current_user.is_parent:
-        if student_id and int(student_id) not in _parent_student_ids(current_user):
+        if student_id and student_id not in _parent_student_ids(current_user):
             return jsonify({'error': 'Not authorized for this student'}), 403
         paid = False  # parent requests are unpaid until the studio confirms
+    elif not current_user.is_admin:
+        # Ticket sales are money — admin-only on the staff side (least privilege).
+        return jsonify({'error': 'Admin access required'}), 403
     else:
         paid = bool(data.get('paid', False))
 
     o = TicketOrder(
         ticket_type_id=tt.id,
         parent_id=current_user.id if current_user.is_parent else None,
-        student_id=int(student_id) if student_id else None,
+        student_id=student_id if student_id else None,
         quantity=qty,
         amount=round(float(tt.price) * qty, 2),
         paid=paid,
         paid_at=datetime.utcnow() if paid else None,
-        note=(data.get('note') or '').strip() or None,
+        note=_clean_str(data.get('note')) or None,
     )
     db.session.add(o)
     db.session.commit()
@@ -3098,12 +4267,35 @@ def cron_run():
     and auto-reminders. Token from Setting 'cron_token' or env CRON_TOKEN."""
     token = Setting.get('cron_token', '') or current_app.config.get('CRON_TOKEN') or os.environ.get('CRON_TOKEN', '')
     provided = request.args.get('token') or request.headers.get('X-Cron-Token', '')
-    if not token or provided != token:
+    # Constant-time compare to avoid leaking the token via response timing; an
+    # unset token (`not token`) always rejects rather than accepting an empty one.
+    if not token or not secrets.compare_digest(str(provided), str(token)):
         return jsonify({'error': 'Invalid or missing cron token'}), 403
     from app import _process_auto_reminders, _process_recurring_charges
-    _process_recurring_charges()
-    _process_auto_reminders()
-    return jsonify({'status': 'ran recurring charges + auto reminders'})
+    ran = []
+    for name, fn in (('recurring_charges', _process_recurring_charges),
+                     ('auto_reminders', _process_auto_reminders)):
+        try:
+            fn()
+            ran.append(name)
+        except Exception:
+            db.session.rollback()
+            logger.exception("Cron: %s failed", name)
+    return jsonify({'status': 'ok', 'ran': ran})
+
+
+# Serializes concurrent late-fee runs. The per-student "already charged this
+# month?" check below is idempotent for a *sequential* re-run, but two
+# *concurrent* runs (a double-click) both read the pre-charge state and each
+# charge every over-threshold family — double late fees. Holding this lock across
+# the check+commit makes the second run see the first's committed charges and
+# skip them. Valid because the app runs a single gunicorn worker (see the deploy
+# note); it would need a DB-level guard if workers were ever scaled up.
+_late_fee_lock = threading.Lock()
+# Same rationale for the other admin bulk-money op: two concurrent "charge costume
+# fee" calls (two tabs) could both read the same not-yet-charged assignments before
+# either commits and double-charge the dancers. Serialize them (single worker).
+_costume_charge_lock = threading.Lock()
 
 
 @bp.route('/balances/apply-late-fees', methods=['POST'])
@@ -3123,22 +4315,38 @@ def apply_late_fees():
     if amount <= 0:
         return jsonify({'error': 'Set a late fee amount greater than $0'}), 400
 
-    students = Student.query.filter_by(is_active=True).all()
-    balances = calc_balance_bulk([s.id for s in students])
-    applied = 0
-    for s in students:
-        if balances[s.id]['balance'] <= min_balance:
-            continue
-        db.session.add(Transaction(
-            student_id=s.id, type='charge', amount=amount, category='late fee',
-            payment_method='n/a', description='Late fee', transaction_date=date.today(),
-            created_by=current_user.id,
-        ))
-        applied += 1
-    AuditLog.record(current_user.id, 'late_fee.apply',
-                    f'Applied ${amount:.2f} late fee to {applied} students (balance > ${min_balance:.2f})')
-    db.session.commit()
-    return jsonify({'message': f'Applied ${amount:.2f} late fee to {applied} students', 'count': applied})
+    with _late_fee_lock:
+        students = Student.query.filter_by(is_active=True).all()
+        balances = calc_balance_bulk([s.id for s in students])
+        month_start = date.today().replace(day=1)
+        applied = 0
+        skipped = 0
+        for s in students:
+            if balances[s.id]['balance'] <= min_balance:
+                continue
+            # Idempotency: never stack a second late fee on a student in the same
+            # calendar month. Without this, a double-click or a refresh that
+            # re-POSTs charges every over-threshold family twice.
+            already = Transaction.query.filter_by(
+                student_id=s.id, type='charge', category='late fee',
+            ).filter(Transaction.transaction_date >= month_start).first()
+            if already:
+                skipped += 1
+                continue
+            db.session.add(Transaction(
+                student_id=s.id, type='charge', amount=amount, category='late fee',
+                payment_method='n/a', description='Late fee', transaction_date=date.today(),
+                created_by=current_user.id,
+            ))
+            applied += 1
+        AuditLog.record(current_user.id, 'late_fee.apply',
+                        f'Applied ${amount:.2f} late fee to {applied} students '
+                        f'({skipped} already charged this month; balance > ${min_balance:.2f})')
+        db.session.commit()
+    msg = f'Applied ${amount:.2f} late fee to {applied} students'
+    if skipped:
+        msg += f' ({skipped} already had one this month — skipped)'
+    return jsonify({'message': msg, 'count': applied, 'skipped': skipped})
 
 
 # ── Payment plans ───────────────────────────────────────────────────
@@ -3158,7 +4366,7 @@ def _plan_to_dict(p):
     return {
         'id': p.id,
         'student_id': p.student_id,
-        'student_name': p.student.full_name,
+        'student_name': p.student.full_name if p.student else None,
         'installment_amount': f'{float(p.installment_amount):.2f}',
         'num_installments': p.num_installments,
         'day_of_month': p.day_of_month,
@@ -3186,8 +4394,9 @@ def list_payment_plans():
 @bp.route('/students/<int:student_id>/payment-plan', methods=['GET'])
 @login_required
 def get_payment_plan(student_id):
-    if current_user.is_parent and student_id not in _parent_student_ids(current_user):
-        return jsonify({'error': 'Not authorized'}), 403
+    err = _require_student_money_access(student_id)
+    if err:
+        return err
     plan = PaymentPlan.query.filter_by(student_id=student_id, is_active=True).order_by(desc(PaymentPlan.created_at)).first()
     return jsonify({'plan': _plan_to_dict(plan) if plan else None})
 
@@ -3213,7 +4422,7 @@ def create_payment_plan(student_id):
     PaymentPlan.query.filter_by(student_id=student_id, is_active=True).update({'is_active': False})
 
     plan = PaymentPlan(student_id=student_id, installment_amount=amount, num_installments=num,
-                       day_of_month=day, note=(data.get('note') or '').strip() or None,
+                       day_of_month=day, note=_clean_str(data.get('note')) or None,
                        created_by=current_user.id)
     db.session.add(plan)
     db.session.flush()
@@ -3301,8 +4510,8 @@ def create_donation():
         donor_name=(data.get('donor_name') or (current_user.full_name if is_parent else '')).strip() or None,
         donor_email=(data.get('donor_email') or (current_user.email if is_parent else '')).strip() or None,
         amount=amount,
-        method=(data.get('method') or '').strip().lower() or None,
-        note=(data.get('note') or '').strip() or None,
+        method=_clean_str(data.get('method')).lower() or None,
+        note=_clean_str(data.get('note')) or None,
         status='pending' if is_parent else 'recorded',
         parent_id=current_user.id if is_parent else None,
         donation_date=date.today(),
@@ -3361,44 +4570,104 @@ def registration_open_info():
     })
 
 
+# Throttle admin "new registration" notifications. The public submit is
+# unauthenticated and emailed the admins on EVERY submission, so a scripted flood
+# (possible while registration is open) could email-bomb the studio — getting the
+# account rate-limited by Gmail and burying real alerts. Admins see every request
+# on the (paginated) Registrations page regardless; this is only the nudge, so at
+# most one every _REG_NOTIFY_WINDOW seconds is plenty. Process-local (single worker).
+_REG_NOTIFY_WINDOW = 120
+_last_reg_notify = [0.0]
+
+
+def _notify_admins_new_registration():
+    now = time.time()
+    if now - _last_reg_notify[0] < _REG_NOTIFY_WINDOW:
+        return
+    from app import email as email_service
+    if not email_service.is_configured():
+        return
+    admins = {u.email for u in User.query.filter_by(role='admin', is_active=True).all()
+              if u.email and '@' in u.email}
+    if not admins:
+        return
+    _last_reg_notify[0] = now  # mark before sending so a burst doesn't all fire
+    _send_email_async(
+        admins, 'New enrollment request(s)',
+        'One or more new registration requests were received. '
+        'Review them on the Registrations page.')
+
+
 @bp.route('/register', methods=['POST'])
 def submit_registration():
     """Public: submit an enrollment request for admin review."""
     import json
     if not Setting.get_bool('registration_open'):
         return jsonify({'error': 'Registration is currently closed'}), 403
-    data = request.get_json() or {}
-    parent_name = (data.get('parent_name') or '').strip()
-    parent_email = (data.get('parent_email') or '').strip()
-    students = data.get('students') or []
+    # Public + unauthenticated: never trust the shape of the payload. Coerce every
+    # field so a non-string name or a non-list `students` can't 500 the endpoint.
+    data = request.get_json(silent=True) or {}
+    # Unauthenticated input — cap every field length (SQLite ignores VARCHAR(n),
+    # so uncapped a scripted submit could store multi-MB values and bloat the DB).
+    parent_name = _clean_str(data.get('parent_name'), 120)
+    parent_email = _clean_str(data.get('parent_email'), 200)
     if not parent_name or not parent_email:
         return jsonify({'error': 'Parent name and email are required'}), 400
-    students = [s for s in students if (s.get('first_name') or '').strip()]
+    if '@' not in parent_email or '.' not in parent_email.split('@')[-1]:
+        return jsonify({'error': 'Please enter a valid email address'}), 400
+    # Volume circuit breakers for the one unauthenticated write surface (the
+    # remote IP isn't usable behind the proxy, so throttle on what we have):
+    # a parent re-submitting is fine a couple of times, but unbounded submits
+    # would bury the admin queue; the global cap stops a bot from making the
+    # queue unusable / bloating the DB. Both are friendly-fail — the studio's
+    # contact info is the fallback path.
+    if Registration.query.filter(Registration.status == 'pending',
+                                 func.lower(Registration.parent_email) == parent_email.lower()
+                                 ).count() >= _MAX_PENDING_PER_EMAIL:
+        return jsonify({'error': 'You already have a registration waiting for review — '
+                                 'the studio will reach out soon.'}), 429
+    if Registration.query.filter_by(status='pending').count() >= _MAX_PENDING_REGISTRATIONS:
+        logger.warning("Registration circuit breaker tripped: pending queue at cap")
+        return jsonify({'error': 'Registration is temporarily unavailable — '
+                                 'please contact the studio directly.'}), 429
+    raw_students = data.get('students')
+    if not isinstance(raw_students, list):
+        raw_students = []
+    # Store only cleaned, expected fields (not the raw dicts) so a non-string
+    # last_name/dob can't 500 the admin approve flow later, and cap the count so
+    # a scripted submit can't stuff thousands of rows into one registration.
+    students = []
+    for s in raw_students:
+        if not isinstance(s, dict):
+            continue
+        fn = _clean_str(s.get('first_name'), 80)
+        if not fn:
+            continue
+        students.append({
+            'first_name': fn,
+            'last_name': _clean_str(s.get('last_name'), 80),
+            'dob': _clean_str(s.get('dob'), 20),
+            'allergies': _clean_str(s.get('allergies'), 500),
+        })
+        if len(students) >= 30:
+            break
     if not students:
         return jsonify({'error': 'Add at least one dancer'}), 400
+    raw_class_ids = data.get('class_ids')
+    if not isinstance(raw_class_ids, list):
+        raw_class_ids = []
 
     reg = Registration(
         parent_name=parent_name,
         parent_email=parent_email,
-        parent_phone=(data.get('parent_phone') or '').strip() or None,
+        parent_phone=_clean_str(data.get('parent_phone'), 40) or None,
         students_json=json.dumps(students),
-        class_ids=','.join(str(int(c)) for c in (data.get('class_ids') or []) if str(c).isdigit()),
-        note=(data.get('note') or '').strip() or None,
+        class_ids=','.join(str(int(c)) for c in raw_class_ids[:50] if str(c).isdigit()),
+        note=_clean_str(data.get('note'), 2000) or None,
     )
     db.session.add(reg)
     db.session.commit()
-
-    # Notify admins
-    from app import email as email_service
-    if email_service.is_configured():
-        admins = {u.email for u in User.query.filter_by(role='admin', is_active=True).all() if u.email and '@' in u.email}
-        if admins:
-            try:
-                email_service.send_email(admins, 'New registration request',
-                                         f'{parent_name} ({parent_email}) registered {len(students)} dancer(s). '
-                                         f'Review it in the Registrations page.')
-            except Exception:
-                logger.exception("Failed to notify admins of registration")
+    _notify_admins_new_registration()
     return jsonify({'message': "Thanks! Your registration was received — the studio will reach out soon."}), 201
 
 
@@ -3410,12 +4679,15 @@ def list_registrations():
         return err
     import json
     status = request.args.get('status', 'pending').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 50, type=int), 100)
     q = Registration.query
     if status and status != 'all':
         q = q.filter_by(status=status)
-    rows = q.order_by(desc(Registration.created_at)).limit(200).all()
+    pagination = (q.order_by(desc(Registration.created_at))
+                  .paginate(page=page, per_page=per_page, error_out=False))
     out = []
-    for r in rows:
+    for r in pagination.items:
         try:
             students = json.loads(r.students_json or '[]')
         except ValueError:
@@ -3424,12 +4696,48 @@ def list_registrations():
         if r.class_ids:
             ids = [int(x) for x in r.class_ids.split(',') if x.isdigit()]
             class_names = [c.name for c in DanceClass.query.filter(DanceClass.id.in_(ids)).all()]
+        # Returning-family hint for the admin queue: same matcher approval uses,
+        # so the badge and the approve behavior can't disagree.
+        m_fam, m_students = _match_registration_family(r.parent_email)
         out.append({
             'id': r.id, 'parent_name': r.parent_name, 'parent_email': r.parent_email,
             'parent_phone': r.parent_phone, 'students': students, 'class_names': class_names,
-            'note': r.note, 'status': r.status, 'created_at': r.created_at.isoformat(),
+            'note': r.note, 'status': r.status, 'created_at': _utc_iso(r.created_at),
+            'returning': m_fam is not None or bool(m_students),
+            'matched_family': m_fam.name if m_fam else None,
         })
-    return jsonify({'registrations': out})
+    return jsonify({
+        'registrations': out,
+        'pagination': {
+            'page': page, 'pages': pagination.pages,
+            'per_page': per_page, 'total': pagination.total,
+        },
+    })
+
+
+def _match_registration_family(parent_email):
+    """Find the existing family a registration belongs to: by the family's
+    primary_email, else via a student whose parent_email matches (the pilot-era
+    data holds the email on the student, and most students have no family).
+    Returns (family_or_None, email_matched_students). Shared by the pending
+    list (the 'returning' badge) and approval (the actual dedupe) so the hint
+    and the behavior can never disagree."""
+    if not parent_email:
+        return None, []
+    email_l = parent_email.lower()
+    fam = (Family.query
+           .filter(Family.is_active.is_(True),
+                   func.lower(Family.primary_email) == email_l)
+           .first())
+    email_students = (Student.query
+                      .filter(func.lower(Student.parent_email) == email_l)
+                      .all())
+    if not fam:
+        for st in email_students:
+            if st.family and st.family.is_active:
+                fam = st.family
+                break
+    return fam, email_students
 
 
 @bp.route('/registrations/count', methods=['GET'])
@@ -3458,16 +4766,90 @@ def approve_registration(rid):
     if not students:
         return jsonify({'error': 'No dancers on this registration'}), 400
 
-    fam = Family(name=f'{reg.parent_name} Family', primary_email=reg.parent_email,
-                 primary_phone=reg.parent_phone)
-    db.session.add(fam)
-    db.session.flush()
+    # Reuse an existing family with this parent email instead of creating a
+    # duplicate. Families register twice (June and again in August, or a
+    # double-submit days apart); approving both used to create two families
+    # with the same children duplicated and the ledger split between them.
+    # The matcher also handles the pilot-era shape (email on the student, no
+    # family) — see _match_registration_family.
+    fam, email_students = _match_registration_family(reg.parent_email)
+    matched_existing = fam is not None
+    if not fam:
+        fam = Family(name=f'{reg.parent_name} Family', primary_email=reg.parent_email,
+                     primary_phone=reg.parent_phone)
+        db.session.add(fam)
+        db.session.flush()
+    elif not fam.primary_email:
+        # Backfill so the NEXT re-registration matches on the family fast path.
+        fam.primary_email = reg.parent_email
 
     class_ids = [int(x) for x in (reg.class_ids or '').split(',') if x.isdigit()]
+    # Only enroll in classes that still exist — a class deleted between submit and
+    # approval would otherwise leave a dangling enrollment that 500s when the
+    # roster later tries to read its class name. Capture each class's capacity and
+    # current headcount so approval respects capacity like the manual-enroll path
+    # (otherwise approving registrations silently overbooks popular fall classes).
+    caps = {}
+    if class_ids:
+        for c in DanceClass.query.filter(DanceClass.id.in_(class_ids)).all():
+            caps[c.id] = {
+                'capacity': c.max_students or 0,
+                'count': ClassEnrollment.query.filter_by(class_id=c.id, is_active=True).count(),
+                'name': c.name,
+            }
+        class_ids = [cid for cid in class_ids if cid in caps]
     created = []
+    created_objs = []
+    full_skips = []
+    returning = []
+    # Existing dancers who could be returning: those already in the (possibly
+    # reused) family, plus any student whose parent_email matches — the pilot
+    # data has students with a matching email but NO family. Don't recreate a
+    # returning dancer (that duplicates them + splits the ledger).
+    existing_by_name = {}
+    if matched_existing:
+        for st in Student.query.filter_by(family_id=fam.id).all():
+            existing_by_name[(st.first_name.strip().lower(),
+                              (st.last_name or '').strip().lower())] = st
+    for st in email_students:
+        existing_by_name.setdefault(
+            (st.first_name.strip().lower(), (st.last_name or '').strip().lower()), st)
+
+    def _enroll(student):
+        """Enroll in the requested classes, capacity-checked, skipping ones the
+        dancer is already actively enrolled in (re-registration lists them)."""
+        for cid in class_ids:
+            if ClassEnrollment.query.filter_by(student_id=student.id, class_id=cid,
+                                               is_active=True).first():
+                continue
+            cap = caps.get(cid)
+            if cap and cap['capacity'] and cap['count'] >= cap['capacity']:
+                # Class is full — skip and report so the admin can raise the cap or
+                # waitlist this dancer, rather than silently overbooking.
+                full_skips.append(f"{student.full_name} → {cap['name']}")
+                continue
+            db.session.add(ClassEnrollment(student_id=student.id, class_id=cid))
+            if cap:
+                cap['count'] += 1
+
     for s in students:
         fn = (s.get('first_name') or '').strip()
         if not fn:
+            continue
+        ln = (s.get('last_name') or reg.parent_name.split()[-1]).strip()
+        existing = existing_by_name.get((fn.lower(), ln.lower()))
+        if existing:
+            # Returning dancer: reactivate if withdrawn (last year's soft delete)
+            # and enroll them in the newly-requested classes — this is the fall
+            # re-enrollment path for existing families. A pilot-era dancer with
+            # no family (or one matched via email) is adopted into this family
+            # so siblings and family billing group correctly from now on.
+            if not existing.is_active:
+                existing.is_active = True
+            if existing.family_id != fam.id:
+                existing.family_id = fam.id
+            _enroll(existing)
+            returning.append(f'{fn} {ln}')
             continue
         dob = None
         if s.get('dob'):
@@ -3476,23 +4858,65 @@ def approve_registration(rid):
             except ValueError:
                 dob = None
         student = Student(
-            first_name=fn, last_name=(s.get('last_name') or reg.parent_name.split()[-1]).strip(),
+            first_name=fn, last_name=ln,
             family_id=fam.id, parent_email=reg.parent_email, parent_phone=reg.parent_phone,
             date_of_birth=dob, allergies=(s.get('allergies') or '').strip() or None,
         )
         db.session.add(student)
         db.session.flush()
-        for cid in class_ids:
-            db.session.add(ClassEnrollment(student_id=student.id, class_id=cid))
+        _enroll(student)
         created.append(student.full_name)
+        created_objs.append(student)
+        existing_by_name[(fn.lower(), ln.lower())] = student  # dedupe within one payload too
 
-    reg.status = 'approved'
-    reg.reviewed_at = _dt.utcnow()
-    reg.reviewed_by = current_user.id
+    # Link newly-created dancers to the family's existing portal accounts.
+    # Without this, a returning family's new sibling never appears on the
+    # parent's portal — approval created the dancer with no ParentStudent link,
+    # and register-with-code can't be reused by an existing account. The
+    # registering parent listed the child themselves, so linkage is intended.
+    # (Returning dancers keep their existing links untouched.)
+    portal_linked = 0
+    if created_objs:
+        sibling_ids = [st.id for st in Student.query.filter_by(family_id=fam.id).all()
+                       if st.id not in {c.id for c in created_objs}]
+        parent_ids = {ps.parent_id for ps in ParentStudent.query.filter(
+            ParentStudent.student_id.in_(sibling_ids)).all()} if sibling_ids else set()
+        for pid in parent_ids:
+            for st in created_objs:
+                if not ParentStudent.query.filter_by(parent_id=pid, student_id=st.id).first():
+                    db.session.add(ParentStudent(parent_id=pid, student_id=st.id))
+                    portal_linked += 1
+
+    # Atomically claim the registration — two concurrent approvals (double-click)
+    # both pass the status check above and would otherwise each create a Family
+    # with its own students + enrollments (duplicate family). The conditional
+    # UPDATE re-checks status in the DB; the loser matches 0 rows and rolls back
+    # the family/students it just inserted.
+    claimed = db.session.query(Registration).filter_by(
+        id=rid, status='pending').update({
+            'status': 'approved',
+            'reviewed_at': _dt.utcnow(),
+            'reviewed_by': current_user.id,
+        }, synchronize_session=False)
+    if not claimed:
+        db.session.rollback()
+        return jsonify({'error': 'Already processed'}), 400
     AuditLog.record(current_user.id, 'registration.approve',
                     f'Approved {reg.parent_name}: {", ".join(created)}')
     db.session.commit()
-    return jsonify({'message': f'Created {len(created)} dancer(s) under {fam.name}', 'students': created})
+    msg = f'Created {len(created)} dancer(s) under {fam.name}'
+    if matched_existing:
+        msg += ' (matched the existing family by parent email — no duplicate family created)'
+    if returning:
+        msg += (f' — {len(returning)} returning dancer(s) re-enrolled (not duplicated): '
+                f'{", ".join(returning)}')
+    if portal_linked:
+        msg += " — new dancer(s) linked to the family's portal account"
+    if full_skips:
+        msg += (f' — {len(full_skips)} enrollment(s) skipped (class full): '
+                f'{"; ".join(full_skips)}. Raise the capacity or use the waitlist.')
+    return jsonify({'message': msg, 'students': created, 'full_skipped': full_skips,
+                    'returning_dancers': returning, 'matched_existing_family': matched_existing})
 
 
 @bp.route('/registrations/<int:rid>/reject', methods=['POST'])
@@ -3520,20 +4944,25 @@ def get_waitlist(class_id):
     rows = (WaitlistEntry.query.filter_by(class_id=class_id, status='waiting')
             .order_by(WaitlistEntry.created_at).all())
     return jsonify({'waitlist': [{
-        'id': w.id, 'student_id': w.student_id, 'student_name': w.student.full_name,
-        'position': i + 1, 'created_at': w.created_at.isoformat(),
+        'id': w.id, 'student_id': w.student_id, 'student_name': w.student.full_name if w.student else None,
+        'position': i + 1, 'created_at': _utc_iso(w.created_at),
     } for i, w in enumerate(rows)]})
 
 
 @bp.route('/classes/<int:class_id>/waitlist', methods=['POST'])
 @login_required
 def add_to_waitlist(class_id):
+    err = _admin_only()
+    if err:
+        return err
     DanceClass.query.get_or_404(class_id)
     data = request.get_json() or {}
-    student_id = data.get('student_id')
-    if not student_id:
-        return jsonify({'error': 'student_id is required'}), 400
-    if current_user.is_parent and int(student_id) not in _parent_student_ids(current_user):
+    student_id, serr = _valid_id(data.get('student_id'))
+    if serr:
+        return serr
+    if Student.query.get(student_id) is None:
+        return jsonify({'error': 'student not found'}), 404
+    if current_user.is_parent and student_id not in _parent_student_ids(current_user):
         return jsonify({'error': 'Not authorized for this student'}), 403
     if ClassEnrollment.query.filter_by(class_id=class_id, student_id=student_id, is_active=True).first():
         return jsonify({'error': 'Already enrolled in this class'}), 400
@@ -3544,7 +4973,7 @@ def add_to_waitlist(class_id):
         existing.status = 'waiting'
         existing.created_at = datetime.utcnow()
     else:
-        db.session.add(WaitlistEntry(class_id=class_id, student_id=int(student_id),
+        db.session.add(WaitlistEntry(class_id=class_id, student_id=student_id,
                                      parent_id=current_user.id if current_user.is_parent else None))
     db.session.commit()
     return jsonify({'message': 'Added to the waitlist'}), 201
@@ -3557,7 +4986,17 @@ def promote_waitlist(wid):
     if err:
         return err
     w = WaitlistEntry.query.get_or_404(wid)
-    if not ClassEnrollment.query.filter_by(class_id=w.class_id, student_id=w.student_id, is_active=True).first():
+    already = ClassEnrollment.query.filter_by(
+        class_id=w.class_id, student_id=w.student_id, is_active=True).first()
+    if not already:
+        # Respect capacity — promoting into a still-full class would overbook and
+        # defeat the point of the waitlist. Free a spot (unenroll) or raise the cap first.
+        cls = w.dance_class
+        capacity = (cls.max_students or 0) if cls else 0
+        if capacity and ClassEnrollment.query.filter_by(
+                class_id=w.class_id, is_active=True).count() >= capacity:
+            return jsonify({'error': f'{cls.name} is full ({capacity} max). '
+                                     'Free a spot or raise the capacity before promoting.'}), 400
         db.session.add(ClassEnrollment(student_id=w.student_id, class_id=w.class_id))
     w.status = 'enrolled'
     AuditLog.record(current_user.id, 'waitlist.promote',
@@ -3569,6 +5008,9 @@ def promote_waitlist(wid):
 @bp.route('/waitlist/<int:wid>', methods=['DELETE'])
 @login_required
 def remove_waitlist(wid):
+    err = _admin_only()
+    if err:
+        return err
     w = WaitlistEntry.query.get_or_404(wid)
     if current_user.is_parent and w.parent_id != current_user.id:
         return jsonify({'error': 'Not authorized'}), 403
@@ -3603,11 +5045,20 @@ def create_skill():
     if err:
         return err
     data = request.get_json() or {}
-    if not data.get('name'):
+    name = _clean_str(data.get('name'))
+    if not name:
         return jsonify({'error': 'name is required'}), 400
-    s = Skill(name=data['name'].strip(), category=(data.get('category') or '').strip() or None,
-              class_id=int(data['class_id']) if data.get('class_id') else None,
-              display_order=int(data.get('display_order', 0)))
+    class_id = None
+    if data.get('class_id'):
+        class_id, cerr = _valid_id(data.get('class_id'))
+        if cerr:
+            return cerr
+    try:
+        display_order = int(data.get('display_order') or 0)
+    except (TypeError, ValueError):
+        display_order = 0
+    s = Skill(name=name, category=_clean_str(data.get('category')) or None,
+              class_id=class_id, display_order=display_order)
     db.session.add(s)
     db.session.commit()
     return jsonify({'id': s.id, 'name': s.name}), 201
@@ -3636,7 +5087,7 @@ def get_student_skills(student_id):
     return jsonify({'skills': [{
         'id': s.id, 'name': s.name, 'category': s.category,
         'achieved': s.id in achieved,
-        'achieved_at': achieved[s.id].achieved_at.isoformat() if s.id in achieved else None,
+        'achieved_at': _utc_iso(achieved[s.id].achieved_at) if s.id in achieved else None,
     } for s in skills]})
 
 
@@ -3665,14 +5116,14 @@ def _makeup_to_dict(m):
     return {
         'id': m.id,
         'student_id': m.student_id,
-        'student_name': m.student.full_name,
+        'student_name': m.student.full_name if m.student else None,
         'missed_class': m.missed_class.name if m.missed_class else None,
         'missed_date': m.missed_date.isoformat() if m.missed_date else None,
         'makeup_class': m.makeup_class.name if m.makeup_class else None,
         'makeup_date': m.makeup_date.isoformat() if m.makeup_date else None,
         'status': m.status,
         'note': m.note,
-        'created_at': m.created_at.isoformat(),
+        'created_at': _utc_iso(m.created_at),
     }
 
 
@@ -3694,7 +5145,18 @@ def _parse_date(v):
         return None
     try:
         return datetime.strptime(v, '%Y-%m-%d').date()
-    except ValueError:
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_time(v):
+    """Parse an HH:MM time string, or None on garbage/absent — so a bad
+    start_time/end_time in a request body can't 500 an unguarded strptime."""
+    if not v:
+        return None
+    try:
+        return datetime.strptime(v, '%H:%M').time()
+    except (ValueError, TypeError):
         return None
 
 
@@ -3702,19 +5164,28 @@ def _parse_date(v):
 @login_required
 def create_makeup():
     data = request.get_json() or {}
-    student_id = data.get('student_id')
-    if not student_id:
-        return jsonify({'error': 'student_id is required'}), 400
-    if current_user.is_parent and int(student_id) not in _parent_student_ids(current_user):
+    student_id, err = _valid_id(data.get('student_id'))
+    if err:
+        return err
+    if Student.query.get(student_id) is None:
+        return jsonify({'error': 'student not found'}), 404
+    if current_user.is_parent and student_id not in _parent_student_ids(current_user):
         return jsonify({'error': 'Not authorized for this student'}), 403
+
+    def _opt_id(raw):  # optional class id: blank -> None, garbage -> None (don't 500)
+        if not raw:
+            return None
+        val, e = _valid_id(raw)
+        return val if not e else None
+
     m = MakeupClass(
-        student_id=int(student_id),
-        missed_class_id=int(data['missed_class_id']) if data.get('missed_class_id') else None,
+        student_id=student_id,
+        missed_class_id=_opt_id(data.get('missed_class_id')),
         missed_date=_parse_date(data.get('missed_date')),
-        makeup_class_id=int(data['makeup_class_id']) if data.get('makeup_class_id') else None,
+        makeup_class_id=_opt_id(data.get('makeup_class_id')),
         makeup_date=_parse_date(data.get('makeup_date')),
         status='requested' if current_user.is_parent else (data.get('status') or 'scheduled'),
-        note=(data.get('note') or '').strip() or None,
+        note=_clean_str(data.get('note')) or None,
         requested_by=current_user.id,
     )
     db.session.add(m)
@@ -3733,11 +5204,11 @@ def update_makeup(mid):
     if 'status' in data and data['status'] in ('requested', 'scheduled', 'completed', 'cancelled'):
         m.status = data['status']
     if 'makeup_class_id' in data:
-        m.makeup_class_id = int(data['makeup_class_id']) if data['makeup_class_id'] else None
+        m.makeup_class_id = _opt_int(data.get('makeup_class_id'))  # garbage -> None, not 500
     if 'makeup_date' in data:
         m.makeup_date = _parse_date(data['makeup_date'])
     if 'note' in data:
-        m.note = (data['note'] or '').strip() or None
+        m.note = _clean_str(data['note']) or None
     db.session.commit()
     return jsonify(_makeup_to_dict(m))
 
@@ -3773,7 +5244,7 @@ def _lead_to_dict(l):
         'id': l.id, 'name': l.name, 'email': l.email, 'phone': l.phone,
         'interest': l.interest, 'source': l.source, 'status': l.status,
         'trial_date': l.trial_date.isoformat() if l.trial_date else None,
-        'note': l.note, 'created_at': l.created_at.isoformat(),
+        'note': l.note, 'created_at': _utc_iso(l.created_at),
     }
 
 
@@ -3798,14 +5269,15 @@ def create_lead():
     if err:
         return err
     data = request.get_json() or {}
-    if not data.get('name'):
+    name = _clean_str(data.get('name'))
+    if not name:
         return jsonify({'error': 'name is required'}), 400
-    l = Lead(name=data['name'].strip(), email=(data.get('email') or '').strip() or None,
-             phone=(data.get('phone') or '').strip() or None,
-             interest=(data.get('interest') or '').strip() or None,
-             source=(data.get('source') or '').strip() or None,
+    l = Lead(name=name, email=_clean_str(data.get('email')) or None,
+             phone=_clean_str(data.get('phone')) or None,
+             interest=_clean_str(data.get('interest')) or None,
+             source=_clean_str(data.get('source')) or None,
              trial_date=_parse_date(data.get('trial_date')),
-             note=(data.get('note') or '').strip() or None)
+             note=_clean_str(data.get('note')) or None)
     db.session.add(l)
     db.session.commit()
     return jsonify(_lead_to_dict(l)), 201
@@ -3821,7 +5293,10 @@ def update_lead(lid):
     data = request.get_json() or {}
     for f in ('name', 'email', 'phone', 'interest', 'source', 'note'):
         if f in data:
-            setattr(l, f, (data[f] or '').strip() or None)
+            val = _clean_str(data[f]) or None
+            if f == 'name' and not val:
+                return jsonify({'error': 'name cannot be empty'}), 400  # NOT NULL column
+            setattr(l, f, val)
     if 'status' in data and data['status'] in ('new', 'contacted', 'trial_scheduled', 'converted', 'lost'):
         l.status = data['status']
     if 'trial_date' in data:
@@ -3849,7 +5324,11 @@ def convert_lead(lid):
     if err:
         return err
     l = Lead.query.get_or_404(lid)
-    parts = l.name.split(' ', 1)
+    if l.status == 'converted':
+        # Idempotent: a double-click (or converting an already-converted lead)
+        # must not create a second duplicate family + student.
+        return jsonify({'error': 'This lead was already converted'}), 400
+    parts = (_clean_str(l.name) or 'New Dancer').split(' ', 1)
     fam = Family(name=f'{l.name} Family', primary_email=l.email, primary_phone=l.phone)
     db.session.add(fam)
     db.session.flush()
@@ -3874,10 +5353,11 @@ def timeclock_me():
               .order_by(desc(TimeClockEntry.clock_in)).limit(20).all())
     return jsonify({
         'open': bool(open_entry),
-        'open_since': open_entry.clock_in.isoformat() if open_entry else None,
+        # Clock punches are studio-local — emit without 'Z' (see _local_iso).
+        'open_since': _local_iso(open_entry.clock_in) if open_entry else None,
         'entries': [{
-            'id': e.id, 'clock_in': e.clock_in.isoformat(),
-            'clock_out': e.clock_out.isoformat() if e.clock_out else None, 'hours': e.hours,
+            'id': e.id, 'clock_in': _local_iso(e.clock_in),
+            'clock_out': _local_iso(e.clock_out), 'hours': e.hours,
         } for e in recent],
     })
 
@@ -3892,7 +5372,7 @@ def clock_in():
     e = TimeClockEntry(user_id=current_user.id)
     db.session.add(e)
     db.session.commit()
-    return jsonify({'message': 'Clocked in', 'clock_in': e.clock_in.isoformat()}), 201
+    return jsonify({'message': 'Clocked in', 'clock_in': _local_iso(e.clock_in)}), 201
 
 
 @bp.route('/timeclock/clock-out', methods=['POST'])
@@ -3903,7 +5383,11 @@ def clock_out():
     e = TimeClockEntry.query.filter_by(user_id=current_user.id, clock_out=None).first()
     if not e:
         return jsonify({'error': "You're not clocked in"}), 400
-    e.clock_out = datetime.utcnow()
+    # Local time (studio timezone) so it matches clock_in and the local-date
+    # bounds the payroll report filters on — datetime.utcnow() would push an
+    # evening shift's timestamps onto the next UTC day and slip it out of the
+    # report window. Duration (hours) is unaffected (both ends move together).
+    e.clock_out = datetime.now()
     db.session.commit()
     return jsonify({'message': f'Clocked out — {e.hours} hrs', 'hours': e.hours})
 
@@ -3923,7 +5407,8 @@ def timeclock_report():
                .all())
     by_user = {}
     for e in entries:
-        by_user.setdefault(e.user_id, {'name': e.user.full_name, 'hours': 0.0, 'shifts': 0})
+        by_user.setdefault(e.user_id, {
+            'name': e.user.full_name if e.user else '(removed user)', 'hours': 0.0, 'shifts': 0})
         by_user[e.user_id]['hours'] += e.hours or 0
         by_user[e.user_id]['shifts'] += 1
     report = sorted(by_user.values(), key=lambda x: -x['hours'])
@@ -3943,7 +5428,8 @@ def analytics_retention():
         return err
     today = date.today()
     month_start = today.replace(day=1)
-    cutoff_30 = datetime.utcnow() - timedelta(days=30)
+    # Local: compared against Attendance.check_in_time, which is stored studio-local.
+    cutoff_30 = datetime.now() - timedelta(days=30)
 
     active = Student.query.filter_by(is_active=True).count()
     inactive = Student.query.filter_by(is_active=False).count()
@@ -4043,7 +5529,7 @@ def _number_to_dict(n, with_cast=True):
     if with_cast:
         rows = [{
             'id': c.id, 'student_id': c.student_id,
-            'student_name': c.student.full_name, 'part': c.part,
+            'student_name': c.student.full_name if c.student else None, 'part': c.part,
         } for c in cast]
         rows.sort(key=lambda x: (x['part'] or '￿', x['student_name']))
         d['cast'] = rows
@@ -4122,12 +5608,11 @@ def create_recital():
         return jsonify({'error': 'year must be a number'}), 400
     r = Recital(
         year=year,
-        title=data['title'].strip(),
-        theme=(data.get('theme') or '').strip() or None,
-        recital_date=(datetime.strptime(data['recital_date'], '%Y-%m-%d').date()
-                      if data.get('recital_date') else None),
-        show_times=(data.get('show_times') or '').strip() or None,
-        venue=(data.get('venue') or '').strip() or None,
+        title=_clean_str(data['title']),
+        theme=_clean_str(data.get('theme')) or None,
+        recital_date=_parse_date(data.get('recital_date')),
+        show_times=_clean_str(data.get('show_times')) or None,
+        venue=_clean_str(data.get('venue')) or None,
     )
     # First recital created becomes active automatically
     if Recital.query.count() == 0:
@@ -4146,28 +5631,27 @@ def update_recital(rid):
         return err
     r = Recital.query.get_or_404(rid)
     data = request.get_json() or {}
-    if 'title' in data and data['title'].strip():
-        r.title = data['title'].strip()
+    if 'title' in data and _clean_str(data['title']):
+        r.title = _clean_str(data['title'])
     if 'year' in data and data['year']:
         try:
             r.year = int(data['year'])
         except (TypeError, ValueError):
             return jsonify({'error': 'year must be a number'}), 400
     if 'theme' in data:
-        r.theme = (data['theme'] or '').strip() or None
+        r.theme = _clean_str(data['theme']) or None
     if 'recital_date' in data:
-        r.recital_date = (datetime.strptime(data['recital_date'], '%Y-%m-%d').date()
-                          if data['recital_date'] else None)
+        r.recital_date = _parse_date(data.get('recital_date'))
     if 'show_times' in data:
-        r.show_times = (data['show_times'] or '').strip() or None
+        r.show_times = _clean_str(data['show_times']) or None
     if 'venue' in data:
-        r.venue = (data['venue'] or '').strip() or None
+        r.venue = _clean_str(data['venue']) or None
     if 'director_note' in data:
-        r.director_note = (data['director_note'] or '').strip() or None
+        r.director_note = _clean_str(data['director_note']) or None
     if 'acknowledgments' in data:
-        r.acknowledgments = (data['acknowledgments'] or '').strip() or None
+        r.acknowledgments = _clean_str(data['acknowledgments']) or None
     if 'ad_pricing_note' in data:
-        r.ad_pricing_note = (data['ad_pricing_note'] or '').strip() or None
+        r.ad_pricing_note = _clean_str(data['ad_pricing_note']) or None
     if 'is_locked' in data:
         r.is_locked = bool(data['is_locked'])
     db.session.commit()
@@ -4232,7 +5716,14 @@ def upload_recital_cover(rid):
 
 
 def _image_data_uri_from_request(max_mb=2):
-    """Shared multipart image -> data-URI helper (mirrors the Zelle QR upload)."""
+    """Shared multipart image -> data-URI helper (mirrors the Zelle QR upload).
+
+    The content type is whitelisted to EXACT values, never prefix-checked: the
+    mimetype comes from the client's multipart Content-Type header, so a prefix
+    check (startswith 'image/') would let `image/png"><script>` through and into
+    the data URI. These URIs render into an <img src=> in the booklet (Jinja
+    autoescapes there today) — the exact whitelist keeps them structurally
+    injection-proof regardless of the render context, matching the QR endpoint."""
     import base64
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -4242,14 +5733,15 @@ def _image_data_uri_from_request(max_mb=2):
     raw = f.read()
     if len(raw) > max_mb * 1024 * 1024:
         return jsonify({'error': f'Image too large (max {max_mb}MB)'}), 400
+    VALID_IMAGE_TYPES = {'image/png', 'image/jpeg', 'image/gif', 'image/webp'}
+    ext_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+               'gif': 'image/gif', 'webp': 'image/webp'}
     content_type = (f.mimetype or '').lower()
-    if not content_type.startswith('image/'):
+    if content_type not in VALID_IMAGE_TYPES:
         ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
-        ext_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
-                   'gif': 'image/gif', 'webp': 'image/webp'}
         content_type = ext_map.get(ext, '')
-        if not content_type:
-            return jsonify({'error': 'File must be an image (PNG, JPG, GIF, or WebP)'}), 400
+    if content_type not in VALID_IMAGE_TYPES:
+        return jsonify({'error': 'File must be an image (PNG, JPG, GIF, or WebP)'}), 400
     return f'data:{content_type};base64,' + base64.b64encode(raw).decode('ascii')
 
 
@@ -4280,11 +5772,11 @@ def create_recital_number(rid):
     n = RecitalNumber(
         recital_id=r.id,
         order_index=(last.order_index + 1) if last else 1,
-        title=data['title'].strip(),
-        class_id=int(data['class_id']) if data.get('class_id') else None,
-        group_id=int(data['group_id']) if data.get('group_id') else None,
-        style=(data.get('style') or '').strip() or None,
-        act=(data.get('act') or '').strip() or None,
+        title=_clean_str(data['title']),
+        class_id=_opt_int(data.get('class_id')),
+        group_id=_opt_int(data.get('group_id')),
+        style=_clean_str(data.get('style')) or None,
+        act=_clean_str(data.get('act')) or None,
     )
     db.session.add(n)
     db.session.commit()
@@ -4308,14 +5800,14 @@ def update_recital_number(nid):
     data = request.get_json() or {}
     for field in NUMBER_TEXT_FIELDS:
         if field in data:
-            val = (data[field] or '').strip()
+            val = _clean_str(data[field])
             if field == 'title' and not val:
                 continue  # never blank the title
             setattr(n, field, val or None)
     if 'class_id' in data:
-        n.class_id = int(data['class_id']) if data['class_id'] else None
+        n.class_id = _opt_int(data['class_id'])
     if 'group_id' in data:
-        n.group_id = int(data['group_id']) if data['group_id'] else None
+        n.group_id = _opt_int(data['group_id'])
     if 'is_finale' in data:
         n.is_finale = bool(data['is_finale'])
     db.session.commit()
@@ -4376,6 +5868,10 @@ def add_recital_cast(nid):
     data = request.get_json() or {}
 
     def _add(sid, part=None):
+        # Only cast students that actually exist (skip bad ids) so we don't
+        # orphan a RecitalCast row that then 500s the number's cast display.
+        if Student.query.get(sid) is None:
+            return 0
         if not RecitalCast.query.filter_by(number_id=nid, student_id=sid).first():
             db.session.add(RecitalCast(number_id=nid, student_id=sid, part=part))
             return 1
@@ -4395,13 +5891,22 @@ def add_recital_cast(nid):
         return jsonify({'message': f'Added {added} dancers', 'number': _number_to_dict(n)}), 201
 
     if data.get('student_ids'):
-        added = sum(_add(int(s)) for s in data['student_ids'])
+        raw_ids = data['student_ids']
+        if not isinstance(raw_ids, list):  # a non-list (e.g. int) would TypeError the loop
+            return jsonify({'error': 'student_ids must be a list'}), 400
+        ids = []
+        for s in raw_ids:
+            v, _e = _valid_id(s)
+            if not _e:
+                ids.append(v)
+        added = sum(_add(s) for s in ids)
         db.session.commit()
         return jsonify({'message': f'Added {added} dancers', 'number': _number_to_dict(n)}), 201
 
-    if not data.get('student_id'):
-        return jsonify({'error': 'student_id is required'}), 400
-    added = _add(int(data['student_id']), (data.get('part') or '').strip() or None)
+    student_id, serr = _resolve_student_id(data.get('student_id'))
+    if serr:
+        return serr
+    added = _add(student_id, _clean_str(data.get('part')) or None)
     if not added:
         return jsonify({'error': 'Dancer already in this number'}), 400
     db.session.commit()
@@ -4417,7 +5922,7 @@ def update_recital_cast(cid):
     c = RecitalCast.query.get_or_404(cid)
     data = request.get_json() or {}
     if 'part' in data:
-        c.part = (data['part'] or '').strip() or None
+        c.part = _clean_str(data['part']) or None
     db.session.commit()
     return jsonify({'message': 'Updated'})
 
@@ -4457,14 +5962,17 @@ def create_recital_award(rid):
     data = request.get_json() or {}
     if not data.get('title'):
         return jsonify({'error': 'title is required'}), 400
+    award_student_id, serr = _resolve_student_id(data.get('student_id'), required=False)
+    if serr:
+        return serr
     last = r.awards.order_by(RecitalAward.order_index.desc()).first()
     a = RecitalAward(
         recital_id=r.id,
-        title=data['title'].strip(),
-        category=(data.get('category') or '').strip() or None,
-        student_id=int(data['student_id']) if data.get('student_id') else None,
-        recipient_text=(data.get('recipient_text') or '').strip() or None,
-        description=(data.get('description') or '').strip() or None,
+        title=_clean_str(data['title']),
+        category=_clean_str(data.get('category')) or None,
+        student_id=award_student_id,
+        recipient_text=_clean_str(data.get('recipient_text')) or None,
+        description=_clean_str(data.get('description')) or None,
         order_index=(last.order_index + 1) if last else 1,
     )
     db.session.add(a)
@@ -4480,16 +5988,16 @@ def update_recital_award(aid):
         return err
     a = RecitalAward.query.get_or_404(aid)
     data = request.get_json() or {}
-    if 'title' in data and data['title'].strip():
-        a.title = data['title'].strip()
+    if 'title' in data and _clean_str(data['title']):
+        a.title = _clean_str(data['title'])
     if 'category' in data:
-        a.category = (data['category'] or '').strip() or None
+        a.category = _clean_str(data['category']) or None
     if 'student_id' in data:
-        a.student_id = int(data['student_id']) if data['student_id'] else None
+        a.student_id = _opt_int(data.get('student_id'))
     if 'recipient_text' in data:
-        a.recipient_text = (data['recipient_text'] or '').strip() or None
+        a.recipient_text = _clean_str(data['recipient_text']) or None
     if 'description' in data:
-        a.description = (data['description'] or '').strip() or None
+        a.description = _clean_str(data['description']) or None
     if 'order_index' in data:
         try:
             a.order_index = int(data['order_index'])
@@ -4537,19 +6045,22 @@ def create_recital_ad(rid):
     data = request.get_json() or {}
     if not data.get('advertiser'):
         return jsonify({'error': 'advertiser is required'}), 400
+    ad_student_id, serr = _resolve_student_id(data.get('student_id'), required=False)
+    if serr:
+        return serr
     size = (data.get('size') or 'shout_out').strip()
     if size not in AD_SIZES:
         size = 'shout_out'
     last = r.ads.order_by(RecitalAd.order_index.desc()).first()
     a = RecitalAd(
         recital_id=r.id,
-        advertiser=data['advertiser'].strip(),
+        advertiser=_clean_str(data['advertiser']),
         size=size,
         price=data.get('price') or 0,
-        content=(data.get('content') or '').strip() or None,
-        contact_name=(data.get('contact_name') or '').strip() or None,
-        contact_email=(data.get('contact_email') or '').strip() or None,
-        student_id=int(data['student_id']) if data.get('student_id') else None,
+        content=_clean_str(data.get('content')) or None,
+        contact_name=_clean_str(data.get('contact_name')) or None,
+        contact_email=_clean_str(data.get('contact_email')) or None,
+        student_id=ad_student_id,
         status=(data.get('status') or 'submitted').strip(),
         paid=bool(data.get('paid')),
         order_index=(last.order_index + 1) if last else 1,
@@ -4569,22 +6080,25 @@ def update_recital_ad(aid):
         return err
     a = RecitalAd.query.get_or_404(aid)
     data = request.get_json() or {}
-    if 'advertiser' in data and data['advertiser'].strip():
-        a.advertiser = data['advertiser'].strip()
+    if 'advertiser' in data and _clean_str(data['advertiser']):
+        a.advertiser = _clean_str(data['advertiser'])
     if 'size' in data and data['size'] in AD_SIZES:
         a.size = data['size']
     if 'price' in data:
-        a.price = data['price'] or 0
+        try:
+            a.price = round(float(data['price'] or 0), 2)
+        except (TypeError, ValueError):
+            pass  # bad price keeps the old value (never let it reach the Numeric column)
     if 'content' in data:
-        a.content = (data['content'] or '').strip() or None
+        a.content = _clean_str(data['content']) or None
     if 'contact_name' in data:
-        a.contact_name = (data['contact_name'] or '').strip() or None
+        a.contact_name = _clean_str(data['contact_name']) or None
     if 'contact_email' in data:
-        a.contact_email = (data['contact_email'] or '').strip() or None
+        a.contact_email = _clean_str(data['contact_email']) or None
     if 'student_id' in data:
-        a.student_id = int(data['student_id']) if data['student_id'] else None
+        a.student_id = _opt_int(data['student_id'])
     if 'status' in data:
-        a.status = (data['status'] or 'submitted').strip()
+        a.status = _clean_str(data['status']) or 'submitted'
     if 'order_index' in data:
         try:
             a.order_index = int(data['order_index'])
@@ -4694,7 +6208,7 @@ def my_recital():
     numbers = r.numbers.order_by(RecitalNumber.order_index).all()
     program, my_count = [], 0
     for n in numbers:
-        mine = [{'student_name': c.student.full_name, 'part': c.part}
+        mine = [{'student_name': c.student.full_name if c.student else None, 'part': c.part}
                 for c in n.cast.all() if c.student_id in student_ids]
         if mine:
             my_count += 1

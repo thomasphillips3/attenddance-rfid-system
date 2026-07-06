@@ -41,6 +41,7 @@
 {% block extra_js %}
 <script>
 function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;m.className='mb-4 p-3 rounded-xl text-sm font-medium '+(ok?'bg-ok/10 text-ok':'bg-danger/10 text-danger');m.classList.remove('hidden');setTimeout(()=>m.classList.add('hidden'),3500);}
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function fmt(iso){return iso?new Date(iso).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'—';}
 
 let isOpen=false;
@@ -70,7 +71,7 @@ async function loadReport(){
     const s=document.getElementById('r-start').value, e=document.getElementById('r-end').value;
     const d=await (await fetch(`/api/timeclock/report?start=${s}&end=${e}`)).json();
     const tb=document.getElementById('report');
-    tb.innerHTML=(d.report||[]).map(r=>`<tr class="border-b border-line last:border-0"><td class="px-5 py-2 text-ink-2">${r.name}</td><td class="px-5 py-2 text-right tabular-nums text-ink-2">${r.shifts}</td><td class="px-5 py-2 text-right font-bold tabular-nums text-ink">${r.hours}</td></tr>`).join('')
+    tb.innerHTML=(d.report||[]).map(r=>`<tr class="border-b border-line last:border-0"><td class="px-5 py-2 text-ink-2">${esc(r.name)}</td><td class="px-5 py-2 text-right tabular-nums text-ink-2">${r.shifts}</td><td class="px-5 py-2 text-right font-bold tabular-nums text-ink">${r.hours}</td></tr>`).join('')
         + `<tr class="font-bold text-ink"><td class="px-5 py-2">Total</td><td></td><td class="px-5 py-2 text-right tabular-nums">${d.total_hours||0} hrs</td></tr>`;
 }
 loadMe();

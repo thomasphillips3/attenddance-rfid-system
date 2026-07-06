@@ -33,6 +33,38 @@
         </table>
     </div>
 </div>
+
+{% set lbl = "block text-sm font-medium text-ink-2 mb-1" %}
+{% set fld = "block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
+<!-- Record donation modal -->
+<div id="donation-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="closeDonationModal()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="font-display text-2xl text-ink">Record a donation</h3>
+                <button onclick="closeDonationModal()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div><label class="{{ lbl }}" for="don-name">Donor name</label><input id="don-name" class="{{ fld }}"></div>
+                <div><label class="{{ lbl }}" for="don-email">Donor email <span class="text-ink-3 font-normal">(for the giving statement)</span></label><input id="don-email" type="email" class="{{ fld }}"></div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="{{ lbl }}" for="don-amount">Amount ($) *</label><input id="don-amount" type="number" step="0.01" min="0.01" class="{{ fld }}"></div>
+                    <div><label class="{{ lbl }}" for="don-method">Method</label>
+                        <select id="don-method" class="{{ fld }}">
+                            <option value="">—</option><option>cash</option><option>check</option>
+                            <option>zelle</option><option>cashapp</option><option>square</option><option>other</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+                <button onclick="closeDonationModal()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="submitDonation()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Record</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -58,13 +90,24 @@ async function load(){
             <button onclick="delDon(${d.id})" class="text-xs text-danger hover:underline">Delete</button>
         </td></tr>`).join('');
 }
-async function recordDonation(){
-    const donor_name=prompt('Donor name:')||'';
-    const donor_email=prompt('Donor email (for giving statement):')||'';
-    const amount=prompt('Amount ($):');if(!amount)return;
-    const method=prompt('Method (cash, check, zelle, cashapp, square, other):')||'';
-    const r=await fetch('/api/donations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({donor_name,donor_email,amount,method})});
-    const d=await r.json();msg(r.ok?'Recorded':d.error,r.ok);if(r.ok)load();
+function recordDonation(){
+    for(const i of ['don-name','don-email','don-amount']) document.getElementById(i).value='';
+    document.getElementById('don-method').value='';
+    document.getElementById('donation-modal').classList.remove('hidden');
+    document.getElementById('don-name').focus();
+}
+function closeDonationModal(){document.getElementById('donation-modal').classList.add('hidden');}
+async function submitDonation(){
+    const amount=document.getElementById('don-amount').value;
+    if(!amount||Number(amount)<=0){msg('Enter a donation amount',false);return;}
+    const r=await fetch('/api/donations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        donor_name:document.getElementById('don-name').value.trim(),
+        donor_email:document.getElementById('don-email').value.trim(),
+        amount,
+        method:document.getElementById('don-method').value})});
+    const d=await r.json();
+    if(r.ok)closeDonationModal();
+    msg(r.ok?'Recorded':d.error,r.ok);if(r.ok)load();
 }
 async function confirmDon(id){const r=await fetch(`/api/donations/${id}/confirm`,{method:'POST'});if(r.ok)load();}
 async function delDon(id){if(!confirm('Delete this donation?'))return;const r=await fetch(`/api/donations/${id}`,{method:'DELETE'});if(r.ok)load();}

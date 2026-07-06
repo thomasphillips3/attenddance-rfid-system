@@ -36,6 +36,33 @@
 const STUDENTS = [{% for s in students %}{id:{{ s.id }}, name:"{{ s.full_name|e }}"},{% endfor %}];
 const CLASSES = [{% for c in classes %}{id:{{ c.id }}, name:"{{ c.name|e }}"},{% endfor %}];
 </script>
+
+{% set clbl = "block text-sm font-medium text-ink-2 mb-1" %}
+{% set cfld = "block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
+<!-- New costume modal -->
+<div id="costume-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="closeCostumeModal()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="font-display text-2xl text-ink">New costume</h3>
+                <button onclick="closeCostumeModal()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div><label class="{{ clbl }}" for="cos-name">Costume name *</label><input id="cos-name" class="{{ cfld }}" placeholder="e.g. Ballet — Red Tutu"></div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="{{ clbl }}" for="cos-fee">Fee ($)</label><input id="cos-fee" type="number" step="0.01" min="0" value="0" class="{{ cfld }}"></div>
+                    <div><label class="{{ clbl }}" for="cos-vendor">Vendor</label><input id="cos-vendor" class="{{ cfld }}"></div>
+                </div>
+                <div><label class="{{ clbl }}" for="cos-class">Link to a class</label><select id="cos-class" class="{{ cfld }}"><option value="">— (none)</option></select></div>
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+                <button onclick="closeCostumeModal()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="submitCostume()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Create costume</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -94,17 +121,27 @@ async function loadCostumeRoster(cid){
                 <td class="py-1 pr-3 px-5"><input value="${esc(x.size||'')}" onchange="setSize(${x.id},this.value,${cid})" class="bg-surface border border-line-2 rounded-xl px-2 py-0.5 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" placeholder="size"></td>
                 <td class="py-1 text-center">${x.charged?'<span class="text-ok">✓</span>':'<span class="text-ink-3">—</span>'}</td>
                 <td class="py-1 text-center"><input type="checkbox" ${x.paid?'checked':''} onchange="setPaid(${x.id},this.checked,${cid})"></td>
-                <td class="py-1 text-right pr-5"><button onclick="removeCostumeAssign(${x.id},${cid})" class="text-danger hover:underline">&times;</button></td>
+                <td class="py-1 text-right pr-5"><button aria-label="Remove costume assignment" onclick="removeCostumeAssign(${x.id},${cid})" class="text-danger hover:underline">&times;</button></td>
             </tr>`;
         }).join('')}</tbody></table></div>`;
 }
-async function createCostume(){
-    const name=prompt('Costume name (e.g. Ballet — Red Tutu):');if(!name)return;
-    const fee=prompt('Costume fee ($):','0')||'0';
-    const vendor=prompt('Vendor (optional):')||'';
-    let class_id='';
-    if(CLASSES.length){const list=CLASSES.map((c,i)=>`${i+1}. ${c.name}`).join('\n');const pick=prompt(`Link to a class? Enter number (blank = none):\n${list}`);if(pick&&CLASSES[parseInt(pick)-1])class_id=CLASSES[parseInt(pick)-1].id;}
-    const r=await jpost('/api/costumes',{name,fee,vendor,class_id});
+function createCostume(){
+    document.getElementById('cos-name').value='';
+    document.getElementById('cos-fee').value='0';
+    document.getElementById('cos-vendor').value='';
+    document.getElementById('cos-class').innerHTML='<option value="">— (none)</option>'+CLASSES.map(c=>`<option value="${c.id}">${(c.name||'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]))}</option>`).join('');
+    document.getElementById('costume-modal').classList.remove('hidden');
+    document.getElementById('cos-name').focus();
+}
+function closeCostumeModal(){document.getElementById('costume-modal').classList.add('hidden');}
+async function submitCostume(){
+    const name=document.getElementById('cos-name').value.trim();
+    if(!name){msg('A costume name is required',false);return;}
+    const r=await jpost('/api/costumes',{name,
+        fee:document.getElementById('cos-fee').value||'0',
+        vendor:document.getElementById('cos-vendor').value.trim(),
+        class_id:document.getElementById('cos-class').value});
+    if(r.ok)closeCostumeModal();
     msg(r.ok?'Costume created':'Error',r.ok);if(r.ok)loadCostumes();
 }
 async function deleteCostume(id,name){if(!confirm(`Archive "${name}"?`))return;const r=await fetch(`/api/costumes/${id}`,{method:'DELETE'});if(r.ok)loadCostumes();}
@@ -145,7 +182,7 @@ async function loadTypes(pid){
     const data=await (await fetch(`/api/performances/${pid}/ticket-types`)).json();
     const types=data.ticket_types||[];
     el.innerHTML=types.length?types.map(t=>`<span class="inline-flex items-center bg-surface-2 text-ink-2 rounded-full px-3 py-1 mr-2 mb-1 text-xs font-bold">${esc(t.name)} — $${t.price}
-        <button onclick="delType(${t.id},${pid})" class="ml-2 text-danger hover:underline">&times;</button></span>`).join(''):'<span class="text-ink-3">No tiers yet.</span>';
+        <button aria-label="Delete ticket type" onclick="delType(${t.id},${pid})" class="ml-2 text-danger hover:underline">&times;</button></span>`).join(''):'<span class="text-ink-3">No tiers yet.</span>';
     // also fill the "record sale" form
     window['_types_'+pid]=types;
     renderSaleForm(pid);
@@ -177,7 +214,7 @@ async function loadOrders(pid){
         <td class="py-1 pr-3 text-ink-3">${esc(o.buyer)}</td>
         <td class="py-1 pr-3 text-right">$${o.amount}</td>
         <td class="py-1 pr-3 text-center"><button onclick="togglePaid(${o.id},${pid})" class="px-2.5 py-1 rounded-full text-xs font-bold ${o.paid?'bg-ok/10 text-ok':'bg-warn/10 text-warn'}">${o.paid?'Paid':'Unpaid'}</button></td>
-        <td class="py-1 text-right"><button onclick="delOrder(${o.id},${pid})" class="text-danger hover:underline">&times;</button></td>
+        <td class="py-1 text-right"><button aria-label="Delete order" onclick="delOrder(${o.id},${pid})" class="text-danger hover:underline">&times;</button></td>
     </tr>`).join('')}</tbody></table></div>`:'<span class="text-ink-3">No sales yet.</span>';
     el.innerHTML=saleForm+rows;
 }

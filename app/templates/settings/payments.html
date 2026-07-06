@@ -128,7 +128,7 @@
                 <p class="text-xs text-ink-3">In Square Dashboard → Webhooks, add this URL and subscribe to <code>invoice.payment_made</code>. Then paste the signature key below so paid invoices auto-record.</p>
                 <div class="flex items-center gap-2">
                     <input type="text" id="webhook-url" readonly class="flex-1 block w-full border border-line bg-surface-2 rounded-xl px-3 py-2 text-xs font-mono text-ink-2">
-                    <button type="button" onclick="copyWebhook()" class="rounded-xl border border-line-2 text-ink-2 px-2 py-2 text-xs hover:bg-surface-2"><i class="fas fa-copy"></i></button>
+                    <button aria-label="Copy webhook URL" type="button" onclick="copyWebhook()" class="rounded-xl border border-line-2 text-ink-2 px-2 py-2 text-xs hover:bg-surface-2"><i class="fas fa-copy"></i></button>
                 </div>
                 <label class="{{ lbl }}">Webhook Signature Key</label>
                 <input type="password" id="square-webhook-key" autocomplete="off" class="block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
@@ -194,6 +194,17 @@
     </div>
 </div>
 
+<!-- Data & Backup -->
+<div class="bg-surface border border-line rounded-2xl shadow-soft mb-6 overflow-hidden">
+    <div class="px-6 py-4 border-b border-line"><span class="font-display text-xl text-ink">Data &amp; Backup</span><span class="text-xs text-ink-3 ml-3">Your safety net — download everything</span></div>
+    <div class="px-6 py-4 flex items-center justify-between gap-4">
+        <p class="text-sm text-ink-2 max-w-xl">Download a complete backup of <strong>all</strong> studio data — families, students, the full ledger, recitals, everything — as a single database file. Keep a copy somewhere safe (your computer, Google Drive). If anything ever happens to the server, this is your recovery.</p>
+        <a href="/api/admin/backup" class="inline-flex items-center shrink-0 px-5 py-2 rounded-xl bg-ink text-white text-sm font-bold hover:bg-ink/90 shadow-sm">
+            <i class="fas fa-download mr-2"></i>Download backup
+        </a>
+    </div>
+</div>
+
 <div class="flex justify-end">
     <button onclick="saveSettings()" class="inline-flex items-center px-6 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">
         <i class="fas fa-save mr-2"></i>Save Settings
@@ -217,7 +228,7 @@ function renderQR(dataOrPath) {
     const prev = document.getElementById('qr-preview');
     const removeBtn = document.getElementById('qr-remove');
     if (dataOrPath) {
-        prev.innerHTML = `<img src="${dataOrPath}" class="w-full h-full object-contain">`;
+        prev.innerHTML = `<img src="${dataOrPath}" alt="Zelle QR code" class="w-full h-full object-contain">`;
         removeBtn.classList.remove('hidden');
     } else {
         prev.innerHTML = '<span class="text-ink-3 text-xs text-center px-2">No QR uploaded</span>';

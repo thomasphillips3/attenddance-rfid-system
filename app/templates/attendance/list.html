@@ -106,9 +106,11 @@ async function loadHistory() {
 
 async function openCheckinModal() {
     document.getElementById('checkin-modal').classList.remove('hidden');
-    const [sRes, cRes] = await Promise.all([fetch('/api/students?per_page=100'), fetch('/api/classes')]);
-    const sData = await sRes.json(), cData = await cRes.json();
-    document.getElementById('checkin-student').innerHTML = '<option value="">Select student...</option>' + sData.students.map(s => `<option value="${s.id}">${esc(s.full_name)}</option>`).join('');
+    // fetchAllStudents (base.html) pages to the full roster — a page-1-only fetch
+    // would leave students past the first 100 unselectable for manual check-in.
+    const [students, cRes] = await Promise.all([fetchAllStudents(), fetch('/api/classes')]);
+    const cData = await cRes.json();
+    document.getElementById('checkin-student').innerHTML = '<option value="">Select student...</option>' + students.map(s => `<option value="${s.id}">${esc(s.full_name)}</option>`).join('');
     document.getElementById('checkin-class').innerHTML = '<option value="">Select class...</option>' + cData.classes.map(c => `<option value="${c.id}">${esc(c.name)} (${esc(c.day_name)} ${esc(c.start_time)})</option>`).join('');
 }
 
@@ -120,8 +122,8 @@ async function doCheckin(e) {
     try {
         const res = await fetch('/api/attendance/checkin', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
         const data = await res.json();
-        if (res.ok) { closeCheckinModal(); loadToday(); loadHistory(); alert(data.message); } else { alert(data.error || 'Check-in failed'); }
-    } catch (err) { alert('Network error'); }
+        if (res.ok) { closeCheckinModal(); loadToday(); loadHistory(); toast(data.message, true); } else { toast(data.error || 'Check-in failed', false); }
+    } catch (err) { toast('Network error', false); }
 }
 
 loadToday();

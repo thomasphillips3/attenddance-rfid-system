@@ -20,7 +20,9 @@
             <div>
                 <label class="{{ LABEL }}">Send To *</label>
                 <select id="msg-type" required onchange="updateRecipientFilter()" class="{{ INPUT }}">
+                    {% if current_user.is_admin %}{# whole-studio blasts are admin-only #}
                     <option value="all">All Parents</option>
+                    {% endif %}
                     <option value="class">Parents in a Class</option>
                     <option value="individual">Individual Student's Parent</option>
                 </select>
@@ -82,6 +84,7 @@
                 <tr><td colspan="5" class="px-5 py-4 text-center text-ink-3">Loading...</td></tr>
             </tbody>
         </table>
+        <div id="history-pagination" class="flex items-center justify-between gap-3 px-5 py-3 border-t border-line"></div>
     </div>
 </div>
 {% endblock %}
@@ -107,6 +110,9 @@ function updateRecipientFilter() {
         select.innerHTML = students.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
     }
 }
+// Initialize for the default selection — teachers have no "All Parents" option,
+// so their default is "class" and the filter must populate without a change event.
+updateRecipientFilter();
 
 async function sendMessage(e) {
     e.preventDefault();
@@ -127,12 +133,12 @@ async function sendMessage(e) {
                 document.getElementById('email-list-box').value = data.recipient_emails.join(', ');
                 document.getElementById('email-modal').classList.remove('hidden');
             } else {
-                alert(data.message);
+                toast(data.message, true);
             }
             document.getElementById('compose-form').reset();
             loadHistory();
-        } else { alert(data.error || 'Error sending message'); }
-    } catch (err) { alert('Network error'); }
+        } else { toast(data.error || 'Error sending message', false); }
+    } catch (err) { toast('Network error', false); }
     btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane mr-2"></i>Send';
 }
 
@@ -140,17 +146,34 @@ function closeEmailModal() { document.getElementById('email-modal').classList.ad
 function copyEmails() {
     const box = document.getElementById('email-list-box');
     box.select(); document.execCommand('copy');
-    alert('Emails copied!');
+    toast('Emails copied!', false);
 }
 
-async function loadHistory() {
+let historyPage = 1;
+async function loadHistory(page) {
+    if (page) historyPage = page;
     try {
-        const res = await fetch('/api/messages');
+        const res = await fetch('/api/messages?page=' + historyPage);
         const data = await res.json();
         renderHistory(data.messages);
+        renderHistoryPagination(data.pagination);
     } catch (err) {
         document.getElementById('history-table').innerHTML = '<tr><td colspan="5" class="px-5 py-4 text-center text-danger">Failed to load</td></tr>';
     }
+}
+function renderHistoryPagination(p) {
+    const el = document.getElementById('history-pagination');
+    if (!el) return;
+    if (!p || p.pages <= 1) { el.innerHTML = ''; return; }
+    const start = (p.page - 1) * p.per_page + 1;
+    const end = Math.min(p.page * p.per_page, p.total);
+    const btn = 'px-3 py-1.5 rounded-lg border border-line-2 text-sm font-bold text-ink-2 hover:border-primary-300 disabled:opacity-40 disabled:cursor-not-allowed';
+    el.innerHTML = `<span class="text-sm text-ink-3">Showing ${start}–${end} of ${p.total}</span>
+        <div class="flex items-center gap-2">
+            <button class="${btn}" ${p.page <= 1 ? 'disabled' : ''} onclick="loadHistory(${p.page - 1})">Prev</button>
+            <span class="px-1 text-sm text-ink-2">Page ${p.page} of ${p.pages}</span>
+            <button class="${btn}" ${p.page >= p.pages ? 'disabled' : ''} onclick="loadHistory(${p.page + 1})">Next</button>
+        </div>`;
 }
 function renderHistory(msgs) {
     const tbody = document.getElementById('history-table');

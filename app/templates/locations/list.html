@@ -111,8 +111,8 @@ function renderLocations(locations) {
                         </div>
                     </div>
                     <div class="flex space-x-2">
-                        <button data-id="${loc.id}" class="edit-btn text-primary-600 hover:text-primary-800" title="Edit"><i class="fas fa-edit"></i></button>
-                        <button data-id="${loc.id}" data-name="${esc(loc.name)}" class="delete-btn text-danger hover:opacity-70" title="Deactivate"><i class="fas fa-trash"></i></button>
+                        <button aria-label="Edit location" data-id="${loc.id}" class="edit-btn text-primary-600 hover:text-primary-800" title="Edit"><i class="fas fa-edit"></i></button>
+                        <button aria-label="Deactivate location" data-id="${loc.id}" data-name="${esc(loc.name)}" class="delete-btn text-danger hover:opacity-70" title="Deactivate"><i class="fas fa-trash"></i></button>
                     </div>
                 </div>
                 <div class="mt-4 space-y-1">
@@ -185,10 +185,10 @@ async function saveLocation(e) {
             loadLocations();
         } else {
             const d = await res.json();
-            alert(d.error || 'Error saving location');
+            toast(d.error || 'Error saving location', false);
         }
     } catch (err) {
-        alert('Network error');
+        toast('Network error', false);
     }
 }
 
@@ -197,8 +197,8 @@ async function deactivateLocation(id, name) {
     try {
         const res = await fetch(`/api/locations/${id}`, { method: 'DELETE' });
         if (res.ok) loadLocations();
-        else alert((await res.json()).error || 'Error');
-    } catch (err) { alert('Network error'); }
+        else toast((await res.json()).error || 'Error', false);
+    } catch (err) { toast('Network error', false); }
 }
 
 loadLocations();

@@ -17,9 +17,11 @@
         {% else %}
         <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-danger/10 text-danger">Inactive</span>
         {% endif %}
+        {% if current_user.is_admin %}{# withdraw/reactivate is a roster mutation — admin-only #}
         <button onclick="toggleActive()" id="toggle-btn" class="inline-flex items-center px-3 py-1.5 rounded-xl border border-line-2 text-ink-2 text-sm font-bold hover:bg-surface-2">
             {% if student.is_active %}<i class="fas fa-pause mr-1"></i>Deactivate{% else %}<i class="fas fa-play mr-1"></i>Reactivate{% endif %}
         </button>
+        {% endif %}
     </div>
 </div>
 
@@ -90,6 +92,7 @@
             </div>
 
             <div class="space-y-6">
+                {% if current_user.is_admin %}{# billing is admin-only — teachers see the profile, not the money #}
                 <div class="bg-surface border border-line rounded-2xl shadow-soft p-6">
                     <h2 class="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">Account</h2>
                     <div class="text-center mb-3">
@@ -109,6 +112,42 @@
                         <a href="{{ url_for('main.student_ledger', student_id=student.id) }}" class="text-sm text-primary-600 hover:text-primary-700">View Full Ledger</a>
                     </div>
                 </div>
+
+                <div class="bg-surface border border-line rounded-2xl shadow-soft p-6">
+                    <h2 class="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">Portal Access</h2>
+                    {% if portal_parents %}
+                    <div class="space-y-3">
+                        {% for p in portal_parents %}
+                        <div class="text-sm border border-line rounded-xl p-3">
+                            <div class="flex items-center justify-between gap-2">
+                                <div>
+                                    <p class="font-bold text-ink">{{ p.full_name }}</p>
+                                    <p class="text-xs text-ink-3">{{ p.username }}{% if p.email %} &middot; {{ p.email }}{% endif %}</p>
+                                </div>
+                                {% if p.is_active %}
+                                <button onclick="resetLink({{ p.id }})" class="shrink-0 px-3 py-1.5 rounded-lg border border-line-2 text-xs font-bold text-ink-2 hover:border-primary-300 hover:text-primary-700">Reset password link</button>
+                                {% else %}
+                                <span class="shrink-0 px-2.5 py-1 rounded-full text-xs font-bold bg-danger/10 text-danger">Deactivated</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-sm text-ink-3">No parent account linked yet.</p>
+                    {% endif %}
+                    <button onclick="inviteParent()" class="mt-3 w-full inline-flex justify-center items-center gap-2 px-3 py-2 border border-dashed border-line-2 rounded-xl text-sm text-ink-2 hover:border-primary-400 hover:text-primary-600">
+                        <i class="fas fa-user-plus"></i>Generate invite code
+                    </button>
+                    <div id="portal-link-box" class="mt-3 hidden">
+                        <label for="portal-link" class="block text-xs font-bold text-ink-2 uppercase tracking-wider mb-1">Share this link (expires in 1 hour)</label>
+                        <div class="flex gap-2">
+                            <input id="portal-link" readonly onfocus="this.select()" class="flex-1 border border-line-2 rounded-lg px-2 py-1.5 text-xs bg-surface-2">
+                            <button onclick="copyPortalLink()" class="px-3 py-1.5 rounded-lg bg-primary-500 text-white text-xs font-bold hover:bg-primary-600">Copy</button>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
 
                 <div class="bg-surface border border-line rounded-2xl shadow-soft p-6">
                     <h2 class="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">Sizes</h2>
@@ -157,8 +196,43 @@ async function toggleActive() {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ is_active: !isActive }),
         });
-        if (res.ok) { location.reload(); } else { alert('Error updating status'); }
-    } catch (err) { alert('Network error'); }
+        if (res.ok) { location.reload(); } else { toast('Error updating status', false); }
+    } catch (err) { toast('Network error', false); }
+}
+
+function showPortalLink(url, label) {
+    const box = document.getElementById('portal-link-box');
+    document.querySelector('#portal-link-box label').textContent = label;
+    document.getElementById('portal-link').value = url;
+    box.classList.remove('hidden');
+}
+async function resetLink(userId) {
+    try {
+        const res = await fetch(`/api/parents/${userId}/reset-link`, { method: 'POST' });
+        const d = await res.json();
+        if (res.ok) {
+            showPortalLink(d.reset_url, 'Password-reset link — text it to the parent (expires in 1 hour)');
+            toast('Reset link generated', true);
+        } else { toast(d.error || 'Error', false); }
+    } catch (err) { toast('Network error', false); }
+}
+async function inviteParent() {
+    try {
+        const res = await fetch('/api/students/{{ student.id }}/invite-parent', { method: 'POST' });
+        const d = await res.json();
+        if (res.ok) {
+            showPortalLink(location.origin + d.register_url, 'Invite link — the parent uses it to create their account');
+            toast('Invite code generated', true);
+        } else { toast(d.error || 'Error', false); }
+    } catch (err) { toast('Network error', false); }
+}
+function copyPortalLink() {
+    const inp = document.getElementById('portal-link');
+    inp.select();
+    (navigator.clipboard ? navigator.clipboard.writeText(inp.value)
+                         : Promise.reject()).then(
+        () => toast('Copied', true),
+        () => { document.execCommand('copy'); toast('Copied', true); });
 }
 </script>
 {% endblock %}

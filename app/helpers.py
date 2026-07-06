@@ -1,8 +1,60 @@
 """Shared helpers for AttenDANCE — balance calculation, ledger building, serialization."""
 
+from datetime import date
+
 from sqlalchemy import func
 from app import db
 from app.models import Transaction
+
+
+def build_aging(txns: list, as_of: date | None = None) -> dict:
+    """Accounts-receivable aging for one entity from its transactions.
+
+    Applies payments FIFO against the oldest charges (standard AR method), then
+    buckets each charge's unpaid remainder by how old that charge is:
+      current (0-30d), d31_60, d61_90, d90_plus.
+
+    Expects txns for a single student/family. Order-independent (sorts here).
+    Returns {'current','d31_60','d61_90','d90_plus','total'} as floats (rounded).
+    """
+    as_of = as_of or date.today()
+    ordered = sorted(txns, key=lambda t: (t.transaction_date, t.created_at or t.transaction_date))
+    charges = []  # oldest first: {'date', 'remaining'}
+    payment_pool = 0.0
+    for t in ordered:
+        amt = float(t.amount)
+        if t.type == 'charge':
+            charges.append({'date': t.transaction_date, 'remaining': amt})
+        else:
+            payment_pool += amt
+
+    # Pay down oldest charges first.
+    for c in charges:
+        if payment_pool <= 0:
+            break
+        pay = min(c['remaining'], payment_pool)
+        c['remaining'] = round(c['remaining'] - pay, 2)
+        payment_pool = round(payment_pool - pay, 2)
+
+    buckets = {'current': 0.0, 'd31_60': 0.0, 'd61_90': 0.0, 'd90_plus': 0.0}
+    for c in charges:
+        rem = c['remaining']
+        if rem <= 0:
+            continue
+        age = (as_of - c['date']).days
+        if age <= 30:
+            buckets['current'] += rem
+        elif age <= 60:
+            buckets['d31_60'] += rem
+        elif age <= 90:
+            buckets['d61_90'] += rem
+        else:
+            buckets['d90_plus'] += rem
+
+    for k in buckets:
+        buckets[k] = round(buckets[k], 2)
+    buckets['total'] = round(sum(buckets.values()), 2)
+    return buckets
 
 
 def calc_balance(student_id: int) -> dict:
@@ -203,13 +255,13 @@ def student_to_dict(student) -> dict:
         'family_name': student.family.name if student.family else None,
         'rfid_uid': student.rfid_uid,
         'has_rfid': student.has_rfid(),
-        'rfid_assigned_at': student.rfid_assigned_at.isoformat() if student.rfid_assigned_at else None,
+        'rfid_assigned_at': _utc_iso(student.rfid_assigned_at),  # UTC metadata -> 'Z' for correct local display
         'is_active': student.is_active,
         'enrollment_date': student.enrollment_date.isoformat(),
         'notes': student.notes,
         'medical_notes': student.medical_notes,
-        'created_at': student.created_at.isoformat(),
-        'updated_at': student.updated_at.isoformat(),
+        'created_at': _utc_iso(student.created_at),
+        'updated_at': _utc_iso(student.updated_at),
     }
 
 
@@ -225,26 +277,55 @@ def class_to_dict(dance_class) -> dict:
         'start_time': dance_class.start_time.strftime('%H:%M'),
         'end_time': dance_class.end_time.strftime('%H:%M'),
         'instructor_id': dance_class.instructor_id,
-        'instructor_name': dance_class.instructor.full_name,
+        'instructor_name': dance_class.instructor.full_name if dance_class.instructor else None,
         'max_students': dance_class.max_students,
         'enrolled_count': dance_class.enrolled_students_count,
         'level': dance_class.level,
         'age_group': dance_class.age_group,
         'is_active': dance_class.is_active,
-        'created_at': dance_class.created_at.isoformat(),
-        'updated_at': dance_class.updated_at.isoformat(),
+        'created_at': _utc_iso(dance_class.created_at),
+        'updated_at': _utc_iso(dance_class.updated_at),
     }
+
+
+def _clean_str(value, maxlen=50_000):
+    """Coerce a JSON value to a trimmed string; None/non-scalar -> ''. `maxlen`
+    defaults to a generous 50 KB backstop against multi-MB storage abuse (SQLite
+    ignores VARCHAR(n) limits); no legitimate field approaches it."""
+    if value is None or isinstance(value, (list, dict)):
+        return ''
+    s = str(value).strip()
+    return s[:maxlen] if maxlen else s
+
+
+def _utc_iso(dt):
+    """ISO-8601 for a naive UTC datetime, marked with 'Z' so the browser's
+    new Date() converts it to local time instead of misreading it as local
+    (which shifts a displayed time by the whole UTC offset)."""
+    return (dt.isoformat() + 'Z') if dt else None
+
+
+def _local_iso(dt):
+    """ISO-8601 for a naive *studio-local* datetime (no 'Z'). Attendance
+    check-in times are stored in the studio's timezone (the server runs there),
+    so they must NOT be tagged 'Z' — that would make the browser treat the local
+    wall-clock as UTC and shift it by the whole offset. Without an offset,
+    new Date() parses it in the viewer's zone and shows the stored wall-clock
+    time as-is (7:05 PM stays 7:05 PM)."""
+    return dt.isoformat() if dt else None
 
 
 def attendance_to_dict(attendance) -> dict:
     return {
         'id': attendance.id,
         'student_id': attendance.student_id,
-        'student_name': attendance.student.full_name,
+        'student_name': attendance.student.full_name if attendance.student else None,
         'class_id': attendance.class_id,
-        'class_name': attendance.dance_class.name,
-        'check_in_time': attendance.check_in_time.isoformat(),
-        'check_out_time': attendance.check_out_time.isoformat() if attendance.check_out_time else None,
+        'class_name': attendance.dance_class.name if attendance.dance_class else None,
+        # Attendance times are studio-local (see check-in handlers) — emit them
+        # without a 'Z' so the log page renders the real wall-clock, not a shift.
+        'check_in_time': _local_iso(attendance.check_in_time),
+        'check_out_time': _local_iso(attendance.check_out_time),
         'check_in_method': attendance.check_in_method,
         'notes': attendance.notes,
         'is_present': attendance.is_present,
@@ -257,7 +338,7 @@ def transaction_to_dict(t) -> dict:
     return {
         'id': t.id,
         'student_id': t.student_id,
-        'student_name': t.student.full_name,
+        'student_name': t.student.full_name if t.student else None,
         'type': t.type,
         'amount': str(t.amount),
         'category': t.category,
@@ -265,7 +346,7 @@ def transaction_to_dict(t) -> dict:
         'description': t.description,
         'transaction_date': t.transaction_date.isoformat(),
         'created_by': t.creator.full_name if t.creator else None,
-        'created_at': t.created_at.isoformat(),
+        'created_at': _utc_iso(t.created_at),
     }
 
 
@@ -273,13 +354,13 @@ def recurring_to_dict(rc) -> dict:
     return {
         'id': rc.id,
         'class_id': rc.class_id,
-        'class_name': rc.dance_class.name,
+        'class_name': rc.dance_class.name if rc.dance_class else None,
         'amount': str(rc.amount),
         'category': rc.category,
         'description': rc.description,
         'day_of_month': rc.day_of_month,
         'is_active': rc.is_active,
-        'created_at': rc.created_at.isoformat(),
+        'created_at': _utc_iso(rc.created_at),
     }
 
 
@@ -296,20 +377,42 @@ STUDENT_STRING_FIELDS = [
 
 
 def apply_student_fields(student, data: dict) -> None:
-    """Apply data dict fields to a Student instance. Strips strings, converts empties to None."""
+    """Apply data dict fields to a Student instance. Coerces to trimmed strings;
+    optional fields empty -> None, but the NOT NULL name fields are only updated to
+    a non-empty value (never blanked), and a bad date_of_birth is ignored."""
     from datetime import datetime
 
+    required = {'first_name', 'last_name'}  # NOT NULL columns
     for field in STUDENT_STRING_FIELDS:
         if field in data:
-            val = data[field]
-            setattr(student, field, val.strip() or None if val else None)
+            val = _clean_str(data[field])
+            if field in required:
+                if val:
+                    setattr(student, field, val)
+            else:
+                setattr(student, field, val or None)
 
     if 'date_of_birth' in data:
         dob = data['date_of_birth']
-        student.date_of_birth = datetime.strptime(dob, '%Y-%m-%d').date() if dob else None
+        try:
+            student.date_of_birth = datetime.strptime(dob, '%Y-%m-%d').date() if dob else None
+        except (TypeError, ValueError):
+            pass  # keep the existing DOB on a malformed value
 
     if 'family_id' in data:
-        student.family_id = int(data['family_id']) if data['family_id'] else None
+        from app.models import Family
+        raw = data['family_id']
+        if not raw:
+            student.family_id = None  # explicit un-assign
+        else:
+            try:
+                fid = int(raw)
+            except (TypeError, ValueError):
+                fid = None
+            # Only re-assign to a family that actually exists — never 500 on a bad
+            # value or orphan the student to a nonexistent family id.
+            if fid and Family.query.get(fid):
+                student.family_id = fid
 
     if 'is_active' in data:
         student.is_active = bool(data['is_active'])

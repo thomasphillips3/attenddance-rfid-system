@@ -28,6 +28,13 @@ class Config:
     SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
+
+    # "Remember me" persistent-login cookie is a long-lived credential — give it
+    # the same hardening as the session cookie. SECURE is flipped on in prod.
+    REMEMBER_COOKIE_HTTPONLY = True
+    REMEMBER_COOKIE_SAMESITE = 'Lax'
+    REMEMBER_COOKIE_SECURE = False  # -> True in ProductionConfig
+    REMEMBER_COOKIE_DURATION = timedelta(days=14)
     
     # JWT settings
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or SECRET_KEY
@@ -75,7 +82,8 @@ class ProductionConfig(Config):
     DEBUG = False
     TESTING = False
     SESSION_COOKIE_SECURE = True
-    
+    REMEMBER_COOKIE_SECURE = True  # persistent-login cookie only over HTTPS
+
 class TestingConfig(Config):
     """Testing configuration"""
     TESTING = True

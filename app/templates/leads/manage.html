@@ -6,7 +6,7 @@
         <h1 class="font-display text-3xl text-ink leading-tight mt-1">Leads &amp; Trials</h1>
         <p class="mt-1 text-sm text-ink-3">Track prospective families from first contact to enrolled</p>
     </div>
-    <button onclick="createLead()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-2"></i>New Lead</button>
+    <button onclick="openLeadModal()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm"><i class="fas fa-plus mr-2"></i>New Lead</button>
 </div>
 <div id="msg" class="hidden mb-4 p-3 rounded-xl text-sm font-medium"></div>
 <div class="mb-4">
@@ -27,6 +27,39 @@
             </tr></thead>
             <tbody id="tbl"><tr><td colspan="5" class="px-5 py-6 text-center text-ink-3">Loading…</td></tr></tbody>
         </table>
+    </div>
+</div>
+
+<!-- New lead modal -->
+{% set lbl = "block text-sm font-medium text-ink-2 mb-1" %}
+{% set inp = "block w-full bg-surface border border-line-2 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400" %}
+<div id="lead-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-ink/40" onclick="closeLeadModal()"></div>
+        <div class="relative bg-surface rounded-2xl shadow-pop max-w-md w-full p-6">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="font-display text-2xl text-ink">New lead</h3>
+                <button onclick="closeLeadModal()" aria-label="Close" class="text-ink-3 hover:text-ink"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div><label class="{{ lbl }}" for="lead-name">Name *</label><input id="lead-name" class="{{ inp }}" placeholder="Parent or dancer name"></div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="{{ lbl }}" for="lead-email">Email</label><input id="lead-email" type="email" class="{{ inp }}"></div>
+                    <div><label class="{{ lbl }}" for="lead-phone">Phone</label><input id="lead-phone" class="{{ inp }}"></div>
+                </div>
+                <div><label class="{{ lbl }}" for="lead-interest">Interested in</label><input id="lead-interest" class="{{ inp }}" placeholder="class / style / age"></div>
+                <div><label class="{{ lbl }}" for="lead-source">Source</label>
+                    <select id="lead-source" class="{{ inp }}">
+                        <option value="">—</option><option>Instagram</option><option>Referral</option>
+                        <option>Walk-in</option><option>Website</option><option>Facebook</option><option>Other</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+                <button onclick="closeLeadModal()" class="px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">Cancel</button>
+                <button onclick="submitLead()" class="px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">Add lead</button>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -56,13 +89,22 @@ async function load(){
             <button onclick="del(${l.id})" class="text-xs text-danger hover:underline">Delete</button>
         </td></tr>`).join('');
 }
-async function createLead(){
-    const name=prompt('Lead name:');if(!name)return;
-    const email=prompt('Email (optional):')||'';
-    const phone=prompt('Phone (optional):')||'';
-    const interest=prompt('Interested in (class/style/age, optional):')||'';
-    const source=prompt('Source (instagram, referral, walk-in...):')||'';
-    const r=await fetch('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,phone,interest,source})});
+function openLeadModal(){
+    for(const id of ['lead-name','lead-email','lead-phone','lead-interest','lead-source']) document.getElementById(id).value='';
+    document.getElementById('lead-modal').classList.remove('hidden');
+    document.getElementById('lead-name').focus();
+}
+function closeLeadModal(){document.getElementById('lead-modal').classList.add('hidden');}
+async function submitLead(){
+    const name=document.getElementById('lead-name').value.trim();
+    if(!name){msg('A name is required',false);return;}
+    const body={name,
+        email:document.getElementById('lead-email').value.trim(),
+        phone:document.getElementById('lead-phone').value.trim(),
+        interest:document.getElementById('lead-interest').value.trim(),
+        source:document.getElementById('lead-source').value};
+    const r=await fetch('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(r.ok)closeLeadModal();
     msg(r.ok?'Lead added':'Error',r.ok);if(r.ok)load();
 }
 async function setStatus(id,status){const r=await fetch(`/api/leads/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});if(r.ok)load();}

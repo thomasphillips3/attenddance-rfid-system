@@ -7,9 +7,16 @@
         <h1 class="font-display text-3xl text-ink leading-tight mt-1">Students</h1>
         <p class="mt-1 text-sm text-ink-2">Manage your dance studio's students.</p>
     </div>
-    <button onclick="openAddModal()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">
-        <i class="fas fa-user-plus"></i>Add Student
-    </button>
+    <div class="flex flex-wrap gap-2">
+        <a href="/api/reports/students.csv" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-line text-ink-2 text-sm font-bold hover:bg-surface-2">
+            <i class="fas fa-file-csv" aria-hidden="true"></i>Export CSV
+        </a>
+        {% if current_user.is_admin %}{# roster mutations are admin-only #}
+        <button onclick="openAddModal()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500 text-white text-sm font-bold hover:bg-primary-600 shadow-sm">
+            <i class="fas fa-user-plus"></i>Add Student
+        </button>
+        {% endif %}
+    </div>
 </div>
 
 <div class="relative mb-5 max-w-md">
@@ -121,6 +128,7 @@
 
 {% block extra_js %}
 <script>
+const IS_ADMIN = {{ 'true' if current_user.is_admin else 'false' }};
 function esc(str) {
     const d = document.createElement('div');
     d.textContent = str;
@@ -131,9 +139,10 @@ let allStudents = [];
 
 async function loadStudents() {
     try {
-        const res = await fetch('/api/students?per_page=100');
-        const data = await res.json();
-        allStudents = data.students;
+        // fetchAllStudents (base.html) pages the API to the COMPLETE roster — the
+        // search box below filters this list client-side, so loading only page 1
+        // would hide (and make unsearchable) every student past the first 100.
+        allStudents = await fetchAllStudents();
         renderStudents(allStudents);
     } catch (err) {
         document.getElementById('students-table').innerHTML =
@@ -170,8 +179,8 @@ function renderStudents(students) {
                     : '<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-danger/10 text-danger">Inactive</span>'}
             </td>
             <td class="px-5 py-3.5 whitespace-nowrap text-right">
-                <button data-student-id="${s.id}" class="edit-btn text-primary-600 hover:text-primary-800 mr-3"><i class="fas fa-pen"></i></button>
-                <button data-student-id="${s.id}" data-student-name="${esc(s.full_name)}" class="delete-btn text-danger hover:opacity-70"><i class="fas fa-trash"></i></button>
+                ${IS_ADMIN ? `<button aria-label="Edit student" data-student-id="${s.id}" class="edit-btn text-primary-600 hover:text-primary-800 mr-3"><i class="fas fa-pen"></i></button>
+                <button aria-label="Delete student" data-student-id="${s.id}" data-student-name="${esc(s.full_name)}" class="delete-btn text-danger hover:opacity-70"><i class="fas fa-trash"></i></button>` : ''}
             </td>
         </tr>
     `).join('');
@@ -276,8 +285,8 @@ async function saveStudent(e) {
     const url = id ? `/api/students/${id}` : '/api/students';
     try {
         const res = await fetch(url, { method: id ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-        if (res.ok) { closeModal(); loadStudents(); } else { const d = await res.json(); alert(d.error || 'Error saving student'); }
-    } catch (err) { alert('Network error'); }
+        if (res.ok) { closeModal(); loadStudents(); } else { const d = await res.json(); toast(d.error || 'Error saving student', false); }
+    } catch (err) { toast('Network error', false); }
 }
 
 async function deleteStudent(id, name) {

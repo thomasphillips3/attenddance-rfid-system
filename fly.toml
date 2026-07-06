@@ -6,7 +6,10 @@ primary_region = 'lax'
 [env]
   FLASK_ENV = 'production'
   DATABASE_URL = 'sqlite:////data/attendance.db'
-  SECRET_KEY = 'fly-demo-key-change-for-real-prod'
+  # SECRET_KEY is intentionally NOT set here — [env] values are committed and
+  # public. It must be a Fly *secret* so it stays out of git:
+  #   fly secrets set SECRET_KEY=$(python3 -c 'import secrets;print(secrets.token_hex(32))')
+  # The app refuses to boot in production without a strong one (see app/__init__.py).
 
 [http_service]
   internal_port = 8080
