@@ -926,7 +926,7 @@ def rfid_status():
         'total_scans': stats['total_scans'],
         'successful_checkins': stats['successful_checkins'],
         'failed_scans': stats['failed_scans'],
-        'last_scan_time': stats['last_scan_time'].isoformat() if stats['last_scan_time'] else None,
+        'last_scan_time': _utc_iso(stats['last_scan_time']),  # UTC -> 'Z' for correct local display
         'last_scan_uid': stats['last_scan_uid'],
     })
 
@@ -1840,7 +1840,7 @@ def get_student_rules_status(student_id):
             'rule_id': r.id, 'text': r.text, 'display_order': r.display_order,
             'acknowledged': ack is not None,
             'initials': ack.initials if ack else None,
-            'acknowledged_at': ack.acknowledged_at.isoformat() if ack else None,
+            'acknowledged_at': _utc_iso(ack.acknowledged_at) if ack else None,
         })
 
     active_rule_ids = {r.id for r in rules}
@@ -4802,7 +4802,7 @@ def get_student_skills(student_id):
     return jsonify({'skills': [{
         'id': s.id, 'name': s.name, 'category': s.category,
         'achieved': s.id in achieved,
-        'achieved_at': achieved[s.id].achieved_at.isoformat() if s.id in achieved else None,
+        'achieved_at': _utc_iso(achieved[s.id].achieved_at) if s.id in achieved else None,
     } for s in skills]})
 
 

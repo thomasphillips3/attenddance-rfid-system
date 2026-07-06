@@ -1506,6 +1506,11 @@ def run_rfid_assign_unique():
     record("RFID card can't be assigned to two students (prevents wrong-student check-in)",
            r1.status_code == 200 and r2.status_code == 400 and r3.status_code == 200,
            f"assignA={r1.status_code} dupB={r2.status_code} reassignA={r3.status_code}", "P2")
+    # rfid_assigned_at is UTC metadata — must be emitted with a 'Z' so the browser
+    # renders it in local time, not shifted (display-consistency sweep, iter 161).
+    ra = ((r1.get_json() or {}).get("student") or {}).get("rfid_assigned_at") or ""
+    record("UTC metadata timestamp emitted with 'Z' (rfid_assigned_at)",
+           ra.endswith("Z"), f"rfid_assigned_at={ra!r} (want trailing 'Z')", "P3")
 
 
 def run_day_of_week_convention():

@@ -255,7 +255,7 @@ def student_to_dict(student) -> dict:
         'family_name': student.family.name if student.family else None,
         'rfid_uid': student.rfid_uid,
         'has_rfid': student.has_rfid(),
-        'rfid_assigned_at': student.rfid_assigned_at.isoformat() if student.rfid_assigned_at else None,
+        'rfid_assigned_at': _utc_iso(student.rfid_assigned_at),  # UTC metadata -> 'Z' for correct local display
         'is_active': student.is_active,
         'enrollment_date': student.enrollment_date.isoformat(),
         'notes': student.notes,
