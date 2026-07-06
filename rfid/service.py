@@ -155,11 +155,15 @@ class RFIDService:
                                       error="Already checked in today", student_id=student.id)
                     return True
                 
-                # Create attendance record
+                # Create attendance record. Local time (server runs in the studio
+                # timezone) so the date matches the `date.today()` used in the
+                # duplicate check above and the unique-day index — datetime.utcnow()
+                # would date an evening scan on the next UTC day, hiding it from
+                # today's roster. Same basis as the manual/toggle check-in paths.
                 attendance = Attendance(
                     student_id=student.id,
                     class_id=current_class.id,
-                    check_in_time=datetime.utcnow(),
+                    check_in_time=datetime.now(),
                     check_in_method='rfid',
                     is_present=True
                 )

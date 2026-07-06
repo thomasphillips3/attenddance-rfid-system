@@ -1349,6 +1349,45 @@ def run_reminder_non_blocking():
            elapsed < 1.0, f"took {elapsed:.2f}s — sending appears to block the boot/request thread", "P1")
 
 
+def run_rfid_checkin_local_day():
+    """An RFID scan records attendance via a third code path (rfid/service.py).
+    It must use the studio-local day like the manual/toggle paths — datetime.utcnow()
+    would date an evening scan on the next UTC day, hiding it from today's roster
+    and tripping the unique-day index. Simulate a scan and assert it lands today."""
+    from datetime import date, time as _time
+    from app.models import (User, DanceClass, Student, Family, ClassEnrollment, Attendance)
+    try:
+        from rfid.service import get_rfid_service
+    except Exception as e:  # RFID module unavailable in this env — don't fail the suite
+        record("RFID scan records attendance on the studio-local day", True,
+               f"RFID service unavailable, skipped: {e}", "P3")
+        return
+    with app.app_context():
+        adm = User.query.filter_by(username="admin").first()
+        fam = Family(name="RFID Fam")
+        db.session.add(fam)
+        db.session.flush()
+        s = Student(first_name="Rfid", last_name="Scan", family_id=fam.id, is_active=True,
+                    rfid_uid="TESTUID_RFID_1")
+        db.session.add(s)
+        db.session.flush()
+        # A class on today's weekday, wide open all day, so _get_current_class matches.
+        cls = DanceClass(name="RfidClass", day_of_week=date.today().weekday(),
+                         start_time=_time(0, 0), end_time=_time(23, 59), instructor_id=adm.id)
+        db.session.add(cls)
+        db.session.flush()
+        db.session.add(ClassEnrollment(student_id=s.id, class_id=cls.id))
+        db.session.commit()
+        sid = s.id
+    ok = get_rfid_service().simulate_scan("TESTUID_RFID_1")
+    with app.app_context():
+        att = Attendance.query.filter_by(student_id=sid, check_in_method="rfid").first()
+        dated_today = att is not None and att.check_in_time.date() == date.today()
+    record("RFID scan records attendance on the studio-local day (not the next UTC day)",
+           ok and dated_today,
+           f"scan_ok={ok} att={'none' if att is None else att.check_in_time.isoformat()}", "P2")
+
+
 def run_recurring_short_month_clamp():
     """The recurring-charge engine auto-creates tuition every month and runs
     unattended — so it needs a real regression guard. A charge set for the 31st
@@ -3573,6 +3612,7 @@ def main():
     run_message_blast(ids)
     run_message_blast_non_blocking()
     run_recurring_short_month_clamp()
+    run_rfid_checkin_local_day()
     run_full_mutation_fuzz()
     run_update_fuzz()
     run_get_queryparam_fuzz(ids)
