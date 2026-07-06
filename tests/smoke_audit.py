@@ -2550,6 +2550,51 @@ def run_statements(ids):
                "100.00" in h and "500.00" not in h, "year filter wrong — tax document error", "P1")
 
 
+def run_revenue_math():
+    """The revenue report is the owner's financial dashboard — the numbers, not
+    just the shape, must be right. It's a global aggregate, so verify with
+    deltas: capture the report, post a known $100 charge + $60 payment for a
+    fresh student, and assert this month's bucket, the collected totals, and
+    outstanding all move by exactly the right amounts."""
+    from app.models import Student, Family
+
+    def snap():
+        r = c.get("/api/reports/revenue").get_json() or {}
+        cm = (r.get("monthly") or [{}])[-1]  # this month = last bucket (oldest-first)
+        t = r.get("totals") or {}
+        return {
+            'charged': cm.get('charged', 0), 'collected': cm.get('collected', 0),
+            'cm_total': t.get('collected_this_month', 0), 'cy': t.get('collected_this_year', 0),
+            'all': t.get('collected_all_time', 0), 'out': t.get('outstanding', 0),
+        }
+
+    with app.app_context():
+        fam = Family(name="Rev Fam")
+        db.session.add(fam)
+        db.session.flush()
+        s = Student(first_name="Rev", last_name="Enue", family_id=fam.id, is_active=True)
+        db.session.add(s)
+        db.session.commit()
+        sid = s.id
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        before = snap()
+        c.post("/api/transactions", json={"student_id": sid, "type": "charge", "amount": 100, "category": "tuition"})
+        c.post("/api/transactions", json={"student_id": sid, "type": "payment", "amount": 60, "category": "tuition", "payment_method": "cash"})
+        after = snap()
+    checks = {
+        "this-month charged +100": round(after['charged'] - before['charged'], 2) == 100.0,
+        "this-month collected +60": round(after['collected'] - before['collected'], 2) == 60.0,
+        "collected_this_month +60": round(after['cm_total'] - before['cm_total'], 2) == 60.0,
+        "collected_this_year +60": round(after['cy'] - before['cy'], 2) == 60.0,
+        "collected_all_time +60": round(after['all'] - before['all'], 2) == 60.0,
+        "outstanding +40 (100 charge - 60 paid)": round(after['out'] - before['out'], 2) == 40.0,
+    }
+    bad = [k for k, ok in checks.items() if not ok]
+    record("Revenue report math moves exactly right on a known charge+payment",
+           not bad, f"wrong: {bad} | before={before} after={after}", "P1")
+
+
 def run_statement_math():
     """A year-end student statement is a tax document — the numbers must be
     right, not just render. Verify `_statement_rows`: prior-year activity rolls
@@ -3880,6 +3925,7 @@ def main():
     run_csv_exports(ids)
     run_statements(ids)
     run_statement_math()
+    run_revenue_math()
     run_xss_guard()
     run_cashtag_sanitize()
     run_qr_upload_safety()
