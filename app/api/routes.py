@@ -265,6 +265,11 @@ def _parse_txn_date(raw):
 # staff-only. This is default-deny / fail-closed: a newly added write endpoint
 # is automatically parent-forbidden until explicitly allowlisted here. The
 # allowlisted endpoints still perform their own per-student ownership checks.
+# Public-registration volume caps (circuit breakers on the one
+# unauthenticated write surface). Module-level so tests can patch them.
+_MAX_PENDING_PER_EMAIL = 3
+_MAX_PENDING_REGISTRATIONS = 500
+
 _PARENT_WRITE_ALLOWED = {
     'api.api_logout',
     'api.claim_payment',
@@ -4610,6 +4615,21 @@ def submit_registration():
         return jsonify({'error': 'Parent name and email are required'}), 400
     if '@' not in parent_email or '.' not in parent_email.split('@')[-1]:
         return jsonify({'error': 'Please enter a valid email address'}), 400
+    # Volume circuit breakers for the one unauthenticated write surface (the
+    # remote IP isn't usable behind the proxy, so throttle on what we have):
+    # a parent re-submitting is fine a couple of times, but unbounded submits
+    # would bury the admin queue; the global cap stops a bot from making the
+    # queue unusable / bloating the DB. Both are friendly-fail — the studio's
+    # contact info is the fallback path.
+    if Registration.query.filter(Registration.status == 'pending',
+                                 func.lower(Registration.parent_email) == parent_email.lower()
+                                 ).count() >= _MAX_PENDING_PER_EMAIL:
+        return jsonify({'error': 'You already have a registration waiting for review — '
+                                 'the studio will reach out soon.'}), 429
+    if Registration.query.filter_by(status='pending').count() >= _MAX_PENDING_REGISTRATIONS:
+        logger.warning("Registration circuit breaker tripped: pending queue at cap")
+        return jsonify({'error': 'Registration is temporarily unavailable — '
+                                 'please contact the studio directly.'}), 429
     raw_students = data.get('students')
     if not isinstance(raw_students, list):
         raw_students = []

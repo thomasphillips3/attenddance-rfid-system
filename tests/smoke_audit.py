@@ -2723,6 +2723,45 @@ def run_approval_links_sibling_to_portal():
            f"linked={linked} children={kid_names} portal={portal_ok} msg={res.get('message', '')[:80]}", "P1")
 
 
+def run_registration_volume_caps():
+    """The public register endpoint is the one unauthenticated write surface.
+    Two circuit breakers: a parent can't stack more than a few PENDING
+    registrations (accidental resubmits, email-targeted spam), and a global
+    pending cap stops a bot from burying the admin queue. Both friendly-fail
+    with 429 and point at the studio."""
+    from app import api as api_module
+    from app.models import Setting
+    routes = api_module.routes
+    with app.app_context():
+        Setting.set("registration_open", "1")
+        db.session.commit()
+    payload = lambda i: {"parent_name": "Cap Test", "parent_email": "cap-test@x.com",
+                         "students": [{"first_name": f"Kid{i}"}]}
+    with app.test_client() as pub:
+        codes = [pub.post("/api/register", json=payload(i)).status_code for i in range(4)]
+    per_email_ok = codes[:3] == [201, 201, 201] and codes[3] == 429
+    record(f"Per-email pending cap: 3 accepted, 4th rejected (codes={codes})",
+           per_email_ok, f"codes={codes}", "P2")
+    # Global cap: patch the module constant down instead of inserting 500 rows.
+    prev = routes._MAX_PENDING_REGISTRATIONS
+    routes._MAX_PENDING_REGISTRATIONS = 1
+    try:
+        with app.test_client() as pub:
+            r = pub.post("/api/register", json={
+                "parent_name": "Other", "parent_email": "other-cap@x.com",
+                "students": [{"first_name": "Kid"}]})
+        record(f"Global pending cap trips at the limit -> {r.status_code}",
+               r.status_code == 429, f"got {r.status_code}", "P2")
+    finally:
+        routes._MAX_PENDING_REGISTRATIONS = prev
+    # Clean up so later registration tests see an uncluttered queue.
+    with app.app_context():
+        from app.models import Registration
+        Registration.query.filter(Registration.parent_email.in_(
+            ["cap-test@x.com", "other-cap@x.com"])).delete(synchronize_session=False)
+        db.session.commit()
+
+
 def run_registration_flow():
     """Public self-registration: gated when closed, validated, and admin
     approval actually creates a family + students. The key fall-enrollment path."""
@@ -5031,6 +5070,7 @@ def main():
     run_registration_dedupe()
     run_registration_pilot_shape_dedupe()
     run_approval_links_sibling_to_portal()
+    run_registration_volume_caps()
     run_registration_field_caps()
     run_clean_str_backstop()
     run_amount_validation(ids)
