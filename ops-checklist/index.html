@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fall Go-Live Checklist</title>
+<link rel="icon" href="assets/favicon.ico">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Atkinson+Hyperlegible:wght@400;700&display=swap');
+
+  :root {
+    --primary-50:  #faf2fd;
+    --primary-100: #f0ddf8;
+    --primary-500: #8f2db5;
+    --primary-600: #7c249f;
+    --primary-700: #6b228a;
+    --gold-300: #f3e3b8;
+    --gold-400: #d9b25e;
+    --gold-ink: #6e521a;
+    --canvas:   #f7f3ee;
+    --surface:  #ffffff;
+    --surface-2:#fbf8f4;
+    --ink:      #1f1a17;
+    --ink-2:    #5a534c;
+    --ink-3:    #8a827a;
+    --line:     #ece6dd;
+    --line-2:   #d9d2c5;
+    --ok:       #1f8a4c;
+    --ok-ink:   #0f6234;
+    --danger:   #c62f2f;
+    --font-display: 'DM Serif Display', Georgia, serif;
+    --font-body: 'Atkinson Hyperlegible', system-ui, -apple-system, sans-serif;
+    --shadow-soft: 0 1px 0 rgba(40,20,60,.03), 0 4px 16px rgba(40,20,60,.07);
+    --shadow-pop:  0 8px 28px rgba(40,20,60,.18), 0 0 0 1px rgba(40,20,60,.05);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 24px 16px 80px;
+  }
+  header.page {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+  header.page img {
+    height: 40px;
+    width: auto;
+  }
+  header.page h1 {
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    margin: 0;
+    line-height: 1.15;
+  }
+  header.page p {
+    margin: 2px 0 0;
+    font-size: 0.85rem;
+    color: var(--ink-3);
+  }
+
+  .progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    font-size: 0.85rem;
+    color: var(--ink-2);
+  }
+  .progress-bar {
+    flex: 1;
+    height: 8px;
+    background: var(--line);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .progress-bar > div {
+    height: 100%;
+    background: var(--primary-500);
+    border-radius: 999px;
+    transition: width .3s ease;
+  }
+
+  .item-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: var(--shadow-soft);
+    margin-bottom: 12px;
+    overflow: hidden;
+    transition: border-color .2s ease;
+  }
+  .item-card.done { border-color: rgba(31,138,76,.35); }
+
+  .item-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+  }
+  .item-checkbox {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    margin-top: 1px;
+    accent-color: var(--primary-500);
+    cursor: pointer;
+  }
+  .item-title {
+    flex: 1;
+    font-weight: 700;
+    font-size: 0.98rem;
+    line-height: 1.35;
+    padding-top: 1px;
+  }
+  .item-card.done .item-title {
+    color: var(--ink-2);
+  }
+  .view-toggle {
+    display: inline-flex;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px;
+    margin-bottom: 16px;
+  }
+  .view-btn {
+    border: none;
+    background: none;
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: var(--ink-2);
+    padding: 7px 16px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .view-btn.active {
+    background: var(--primary-500);
+    color: #fff;
+  }
+
+  .item-done-meta {
+    padding: 0 16px 10px 52px;
+    margin-top: -8px;
+  }
+  .item-done-meta .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    background: rgba(31,138,76,.1);
+    color: var(--ok-ink);
+  }
+
+  .item-note {
+    padding: 0 16px 16px 52px;
+    font-size: 0.88rem;
+    line-height: 1.5;
+    color: var(--ink-2);
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+  }
+
+  .empty, .loading {
+    text-align: center;
+    color: var(--ink-3);
+    padding: 40px 0;
+    font-size: 0.9rem;
+  }
+
+  /* Who-am-I overlay */
+  #whoami-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(31,26,23,.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 50;
+  }
+  #whoami-overlay.hidden { display: none; }
+  .whoami-card {
+    background: var(--surface);
+    border-radius: 20px;
+    box-shadow: var(--shadow-pop);
+    padding: 28px 24px;
+    max-width: 360px;
+    width: 100%;
+    text-align: center;
+  }
+  .whoami-card h2 {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    margin: 0 0 6px;
+  }
+  .whoami-card p {
+    font-size: 0.85rem;
+    color: var(--ink-3);
+    margin: 0 0 20px;
+  }
+  .whoami-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-weight: 700;
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 0.95rem;
+    background: var(--primary-500);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    min-height: 48px;
+  }
+  .btn-primary:hover { background: var(--primary-600); }
+
+  #whoami-footer {
+    text-align: center;
+    margin-top: 28px;
+    font-size: 0.78rem;
+    color: var(--ink-3);
+  }
+  #whoami-footer button {
+    background: none;
+    border: none;
+    color: var(--primary-600);
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0;
+    font-size: inherit;
+  }
+
+  /* Toast */
+  #toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    box-shadow: var(--shadow-pop);
+    z-index: 60;
+    max-width: 90vw;
+    text-align: center;
+    display: none;
+  }
+  #toast.show { display: block; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="page">
+    <img src="assets/lsodance-logo.png" alt="LSO Dance">
+    <div>
+      <h1>Fall Go-Live Checklist</h1>
+      <p>Getting AttenDANCE ready for the fall session</p>
+    </div>
+  </header>
+
+  <div class="view-toggle" role="group" aria-label="View detail level">
+    <button type="button" class="view-btn" data-mode="simple">Simple</button>
+    <button type="button" class="view-btn" data-mode="detailed">Detailed</button>
+  </div>
+
+  <div class="progress">
+    <span id="progress-label">0 of 0 done</span>
+    <div class="progress-bar"><div id="progress-fill" style="width:0%"></div></div>
+  </div>
+
+  <div id="list" class="loading">Loading…</div>
+</div>
+
+<div id="whoami-overlay" class="hidden">
+  <div class="whoami-card">
+    <h2>Who's checking in?</h2>
+    <p>So we know who did what — pick one, you won't be asked again on this device.</p>
+    <div class="whoami-buttons">
+      <button class="btn-primary" data-name="Wilkanda">I'm Wilkanda</button>
+      <button class="btn-primary" data-name="Carollette">I'm Carollette</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API_BASE = "__API_BASE__";
+const WHOAMI_KEY = "attenddance_checklist_whoami";
+
+const VIEWMODE_KEY = "attenddance_checklist_viewmode";
+
+let items = [];
+let pollTimer = null;
+let viewMode = localStorage.getItem(VIEWMODE_KEY) || "simple";
+
+function setViewMode(mode) {
+  viewMode = mode;
+  localStorage.setItem(VIEWMODE_KEY, mode);
+  document.querySelectorAll(".view-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.mode === mode);
+  });
+  render();
+}
+
+document.querySelectorAll(".view-btn").forEach(btn => {
+  btn.classList.toggle("active", btn.dataset.mode === viewMode);
+  btn.addEventListener("click", () => setViewMode(btn.dataset.mode));
+});
+
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s == null ? "" : String(s);
+  return d.innerHTML;
+}
+
+function getWhoAmI() {
+  return localStorage.getItem(WHOAMI_KEY);
+}
+function setWhoAmI(name) {
+  localStorage.setItem(WHOAMI_KEY, name);
+  document.getElementById("whoami-overlay").classList.add("hidden");
+}
+function showWhoAmI() {
+  document.getElementById("whoami-overlay").classList.remove("hidden");
+}
+
+document.querySelectorAll(".whoami-buttons [data-name]").forEach(btn => {
+  btn.addEventListener("click", () => setWhoAmI(btn.dataset.name));
+});
+
+function formatDate(iso) {
+  if (!iso) return "";
+  try {
+    return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(iso));
+  } catch { return ""; }
+}
+
+function render() {
+  const el = document.getElementById("list");
+  if (!items.length) {
+    el.innerHTML = '<div class="empty">No items yet.</div>';
+    updateProgress();
+    return;
+  }
+  el.className = "";
+  el.innerHTML = items.map(item => {
+    const doneMeta = item.done
+      ? `<div class="item-done-meta"><span class="pill">✓ done${item.done_by ? " by " + esc(item.done_by) : ""}${item.done_at ? " · " + esc(formatDate(item.done_at)) : ""}</span></div>`
+      : "";
+    const note = (item.note && viewMode === "detailed")
+      ? `<div class="item-note">${esc(item.note)}</div>`
+      : "";
+    return `
+      <div class="item-card ${item.done ? "done" : ""}" data-item-id="${item.item_id}">
+        <div class="item-row">
+          <input type="checkbox" class="item-checkbox" ${item.done ? "checked" : ""} aria-label="Mark '${esc(item.title)}' done">
+          <span class="item-title">${esc(item.title)}</span>
+        </div>
+        ${doneMeta}
+        ${note}
+      </div>`;
+  }).join("");
+
+  el.querySelectorAll(".item-checkbox").forEach(cb => {
+    cb.addEventListener("change", (e) => {
+      const itemId = e.target.closest(".item-card").dataset.itemId;
+      onToggle(itemId, e.target);
+    });
+  });
+
+  updateProgress();
+}
+
+function updateProgress() {
+  const done = items.filter(i => i.done).length;
+  const total = items.length;
+  document.getElementById("progress-label").textContent = `${done} of ${total} done`;
+  document.getElementById("progress-fill").style.width = total ? `${(done / total) * 100}%` : "0%";
+}
+
+async function fetchItems() {
+  try {
+    const res = await fetch(`${API_BASE}/items`);
+    if (!res.ok) throw new Error(`GET /items ${res.status}`);
+    const data = await res.json();
+    items = data.items || [];
+    render();
+  } catch (err) {
+    if (!items.length) {
+      document.getElementById("list").innerHTML = '<div class="empty">Couldn\'t load the checklist. Check your connection.</div>';
+    }
+  }
+}
+
+async function onToggle(itemId, checkboxEl) {
+  const whoami = getWhoAmI();
+  if (!whoami) {
+    checkboxEl.checked = !checkboxEl.checked;
+    showWhoAmI();
+    return;
+  }
+
+  const idx = items.findIndex(i => i.item_id === itemId);
+  if (idx === -1) return;
+  const prev = { ...items[idx] };
+  const newDone = checkboxEl.checked;
+
+  items[idx] = {
+    ...items[idx],
+    done: newDone,
+    done_by: newDone ? whoami : "",
+    done_at: newDone ? new Date().toISOString() : "",
+  };
+  render();
+
+  try {
+    const res = await fetch(`${API_BASE}/toggle`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_id: itemId, done: newDone, done_by: whoami }),
+    });
+    if (!res.ok) throw new Error(`POST /toggle ${res.status}`);
+    fetchItems();
+  } catch (err) {
+    items[idx] = prev;
+    render();
+    showToast("Could not save — check your connection and try again.");
+  }
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 4000);
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(fetchItems, 15000);
+}
+
+if (!getWhoAmI()) showWhoAmI();
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") fetchItems();
+});
+window.addEventListener("focus", fetchItems);
+
+fetchItems();
+startPolling();
+</script>
+</body>
+</html>
