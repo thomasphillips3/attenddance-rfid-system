@@ -5629,8 +5629,11 @@ def add_recital_cast(nid):
         return jsonify({'message': f'Added {added} dancers', 'number': _number_to_dict(n)}), 201
 
     if data.get('student_ids'):
+        raw_ids = data['student_ids']
+        if not isinstance(raw_ids, list):  # a non-list (e.g. int) would TypeError the loop
+            return jsonify({'error': 'student_ids must be a list'}), 400
         ids = []
-        for s in data['student_ids']:
+        for s in raw_ids:
             v, _e = _valid_id(s)
             if not _e:
                 ids.append(v)

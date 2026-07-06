@@ -1329,7 +1329,8 @@ def run_date_param_robustness():
     the id-mismatching fuzzes missed (they 404 before parsing, or only send
     numeric garbage). Covers the GET query-param path (attendance date filter)
     and the update-body path (audition/performance/recital dates)."""
-    from app.models import User, Audition, Performance, PerformanceGroup, Recital
+    from app.models import (User, Audition, Performance, PerformanceGroup, Recital,
+                            RecitalNumber)
     with app.app_context():
         grp = PerformanceGroup(name="DateFuzz Grp")
         db.session.add(grp)
@@ -1338,8 +1339,11 @@ def run_date_param_robustness():
         pf = Performance(title="DF perf", group_id=grp.id)
         rec = Recital(year=2032, title="DF rec")
         db.session.add_all([au, pf, rec])
+        db.session.flush()
+        num = RecitalNumber(recital_id=rec.id, title="DF num", order_index=1)
+        db.session.add(num)
         db.session.commit()
-        aid, pid, rid = au.id, pf.id, rec.id
+        aid, pid, rid, nid = au.id, pf.id, rec.id, num.id
     with app.test_client() as c:
         login(c, "admin", "admin123")
         codes = {
@@ -1351,9 +1355,12 @@ def run_date_param_robustness():
                 f"/api/performance/performances/{pid}", json={"performance_date": "nope"}).status_code,
             "update recital garbage date": c.put(
                 f"/api/recitals/{rid}", json={"recital_date": "nope"}).status_code,
+            # A non-list student_ids would TypeError the iteration (int isn't iterable).
+            "cast with non-list student_ids": c.post(
+                f"/api/recital-numbers/{nid}/cast", json={"student_ids": 123}).status_code,
         }
     bad = {k: v for k, v in codes.items() if v >= 500}
-    record("Garbage date on request data doesn't 5xx (strptime guarded)",
+    record("Garbage date / non-list on request data doesn't 5xx",
            not bad, f"5xx: {bad}", "P2")
 
 
