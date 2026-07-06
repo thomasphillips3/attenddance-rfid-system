@@ -230,6 +230,14 @@ def create_app(config_name=None):
                 'SECRET_KEY. Set a strong secret (>=32 chars) via '
                 "`fly secrets set SECRET_KEY=...` before deploying."
             )
+        # Fly's proxy terminates TLS, so Flask sees http:// internally and
+        # url_for(_external=True) — password-reset links texted to parents —
+        # generated http links. Trust ONE hop of X-Forwarded-Proto/-Host from
+        # fly-proxy (machines only receive traffic through it) so external URLs
+        # and request.is_secure reflect the real scheme. Production-only: dev
+        # and tests talk to the app directly and must not trust these headers.
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
     db.init_app(app)
     login_manager.init_app(app)

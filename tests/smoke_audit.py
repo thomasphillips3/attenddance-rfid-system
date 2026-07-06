@@ -523,6 +523,92 @@ def run_csrf_guard_behind_tls_proxy():
            f"same_origin={'pass' if same_ok else r.status_code} cross={r2.status_code}", "P0")
 
 
+def run_smtp_timeout():
+    """send_email must pass a socket timeout to smtplib — forgot-password sends
+    inline in the request, so a hung SMTP server would otherwise hold the worker
+    for the full 120s gunicorn timeout (and background sends would hang forever)."""
+    import smtplib
+    from app import email as email_service
+    captured = {}
+
+    class _FakeSMTP:
+        def __init__(self, server, port, timeout=None):
+            captured["timeout"] = timeout
+        def starttls(self):
+            pass
+        def login(self, u, p):
+            pass
+        def sendmail(self, f, t, m):
+            pass
+        def quit(self):
+            pass
+
+    real = smtplib.SMTP
+    smtplib.SMTP = _FakeSMTP
+    try:
+        with app.app_context():
+            prev = app.config.get("MAIL_SERVER")
+            app.config["MAIL_SERVER"] = "smtp.test.local"
+            try:
+                email_service.send_email("x@y.com", "s", "b")
+            finally:
+                app.config["MAIL_SERVER"] = prev
+    finally:
+        smtplib.SMTP = real
+    record(f"SMTP connections carry a timeout (got {captured.get('timeout')})",
+           isinstance(captured.get("timeout"), (int, float)) and 0 < captured["timeout"] <= 60,
+           f"timeout={captured.get('timeout')} — a hung SMTP blocks the worker", "P2")
+
+
+def run_proxyfix_https_links():
+    """Behind Fly's TLS-terminating proxy, external URLs (password-reset links
+    texted to parents) must generate as https://. A production-configured app
+    trusts one hop of X-Forwarded-Proto; the testing app must NOT (it talks to
+    clients directly)."""
+    import os
+    import tempfile
+    from app import create_app
+    from config.config import config as _cfgmap
+    dbf = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    dbf.close()
+    # ProductionConfig reads env at import time, so patch the class directly.
+    ProdCfg = _cfgmap["production"]
+    prev_cfg = {"SECRET_KEY": ProdCfg.SECRET_KEY,
+                "SQLALCHEMY_DATABASE_URI": ProdCfg.SQLALCHEMY_DATABASE_URI}
+    ProdCfg.SECRET_KEY = "x" * 64
+    ProdCfg.SQLALCHEMY_DATABASE_URI = f"sqlite:///{dbf.name}"
+    try:
+        prod_app = create_app("production")
+        with prod_app.test_client() as c:
+            c.post("/auth/login", data={"username": "admin", "password": "admin123"},
+                   headers={"Origin": "https://localhost"},
+                   environ_overrides={"HTTP_X_FORWARDED_PROTO": "https"})
+            # Seed a parent in the prod app's own DB, then mint a reset link.
+            with prod_app.app_context():
+                from app import db as _db
+                from app.models import User
+                p = User(username="pf_parent", email="pf@x.com", role="parent",
+                         first_name="P", last_name="F", is_active=True)
+                p.set_password("pw")
+                _db.session.add(p)
+                _db.session.commit()
+                pid = p.id
+            r = c.post(f"/api/parents/{pid}/reset-link",
+                       headers={"Origin": "https://localhost"},
+                       environ_overrides={"HTTP_X_FORWARDED_PROTO": "https"})
+            url = (r.get_json() or {}).get("reset_url", "")
+        record(f"Production reset links are https behind the proxy ({url[:28]}…)",
+               r.status_code == 200 and url.startswith("https://"),
+               f"status={r.status_code} url={url[:60]}", "P2")
+    finally:
+        for k, v in prev_cfg.items():
+            setattr(ProdCfg, k, v)
+        try:
+            os.unlink(dbf.name)
+        except OSError:
+            pass
+
+
 def run_no_pii_in_logs():
     """Static guard: application log lines must not carry PII. Fly retains logs
     with weaker access control than the DB, and this system holds minors' data —
@@ -4877,6 +4963,8 @@ def main():
     run_demo_parent_prod_lockout()
     run_csrf_guard_behind_tls_proxy()
     run_no_pii_in_logs()
+    run_smtp_timeout()
+    run_proxyfix_https_links()
     run_teacher_authz(ids)
     run_admin_parent_reset_link(ids)
     run_privilege_escalation(ids)

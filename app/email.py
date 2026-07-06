@@ -51,7 +51,10 @@ def send_email(to, subject: str, body: str) -> int:
     reply_to = current_app.config.get("MAIL_REPLY_TO")
     sender = username or "noreply@attenddance.local"
 
-    smtp = smtplib.SMTP(mail_server, port)
+    # Timeout is load-bearing: forgot-password sends inline in the request, so a
+    # hung SMTP server would otherwise hold the worker for the full 120s gunicorn
+    # timeout (and background send threads would hang forever).
+    smtp = smtplib.SMTP(mail_server, port, timeout=20)
     try:
         if current_app.config.get("MAIL_USE_TLS", True):
             smtp.starttls()
