@@ -2382,6 +2382,42 @@ def run_registration_field_caps():
            f"status={r.status_code} parent_name={pn}(<=120) first_name={fn}(<=80) allergies={al}(<=500)", "P2")
 
 
+def run_registration_dedupe():
+    """Families register twice (June, then again in August). Approving both must
+    NOT create a second family or duplicate the dancer + split their ledger:
+    approval matches an existing active family by parent email, skips dancers
+    already in it (reported), and still adds genuinely new siblings."""
+    from app.models import Setting, Family, Student
+    with app.app_context():
+        Setting.set("registration_open", "1")
+        db.session.commit()
+    email = "dedupe-fam@x.com"
+    with app.test_client() as pub:
+        pub.post("/api/register", json={
+            "parent_name": "Dana Dedupe", "parent_email": email,
+            "students": [{"first_name": "Mia", "last_name": "Dedupe"}]})
+        pub.post("/api/register", json={
+            "parent_name": "Dana Dedupe", "parent_email": email.upper(),  # case differs
+            "students": [{"first_name": "Mia", "last_name": "Dedupe"},
+                         {"first_name": "Zoe", "last_name": "Dedupe"}]})
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        regs = (c.get("/api/registrations?status=pending").get_json() or {}).get("registrations", [])
+        rids = [r["id"] for r in regs if (r.get("parent_email") or "").lower() == email]
+        results = [c.post(f"/api/registrations/{rid}/approve").get_json() or {} for rid in sorted(rids)]
+    with app.app_context():
+        n_fam = sum(1 for f in Family.query.all()
+                    if (f.primary_email or "").lower() == email)
+        n_mia = Student.query.filter_by(first_name="Mia", last_name="Dedupe").count()
+        n_zoe = Student.query.filter_by(first_name="Zoe", last_name="Dedupe").count()
+    second = results[1] if len(results) > 1 else {}
+    record("Double registration -> one family, no duplicate dancer, new sibling added",
+           n_fam == 1 and n_mia == 1 and n_zoe == 1
+           and second.get("matched_existing_family") is True
+           and "Mia Dedupe" in (second.get("duplicate_skipped") or []),
+           f"families={n_fam} mia={n_mia} zoe={n_zoe} second={second}", "P1")
+
+
 def run_registration_flow():
     """Public self-registration: gated when closed, validated, and admin
     approval actually creates a family + students. The key fall-enrollment path."""
@@ -4683,6 +4719,7 @@ def main():
     run_open_redirect_guard()
     run_login_by_email()
     run_registration_flow()
+    run_registration_dedupe()
     run_registration_field_caps()
     run_clean_str_backstop()
     run_amount_validation(ids)

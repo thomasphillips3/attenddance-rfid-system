@@ -4716,10 +4716,22 @@ def approve_registration(rid):
     if not students:
         return jsonify({'error': 'No dancers on this registration'}), 400
 
-    fam = Family(name=f'{reg.parent_name} Family', primary_email=reg.parent_email,
-                 primary_phone=reg.parent_phone)
-    db.session.add(fam)
-    db.session.flush()
+    # Reuse an existing family with this parent email instead of creating a
+    # duplicate. Families register twice (June and again in August, or a
+    # double-submit days apart); approving both used to create two families
+    # with the same children duplicated and the ledger split between them.
+    fam = None
+    if reg.parent_email:
+        fam = (Family.query
+               .filter(Family.is_active.is_(True),
+                       func.lower(Family.primary_email) == reg.parent_email.lower())
+               .first())
+    matched_existing = fam is not None
+    if not fam:
+        fam = Family(name=f'{reg.parent_name} Family', primary_email=reg.parent_email,
+                     primary_phone=reg.parent_phone)
+        db.session.add(fam)
+        db.session.flush()
 
     class_ids = [int(x) for x in (reg.class_ids or '').split(',') if x.isdigit()]
     # Only enroll in classes that still exist — a class deleted between submit and
@@ -4738,9 +4750,21 @@ def approve_registration(rid):
         class_ids = [cid for cid in class_ids if cid in caps]
     created = []
     full_skips = []
+    dup_skips = []
+    # Existing dancers in the (possibly reused) family, for duplicate detection.
+    existing_names = {
+        (st.first_name.strip().lower(), (st.last_name or '').strip().lower())
+        for st in Student.query.filter_by(family_id=fam.id).all()
+    } if matched_existing else set()
     for s in students:
         fn = (s.get('first_name') or '').strip()
         if not fn:
+            continue
+        ln = (s.get('last_name') or reg.parent_name.split()[-1]).strip()
+        if (fn.lower(), ln.lower()) in existing_names:
+            # Same child re-registered (double submission) — don't duplicate the
+            # dancer and their ledger; report so the admin knows it was skipped.
+            dup_skips.append(f'{fn} {ln}')
             continue
         dob = None
         if s.get('dob'):
@@ -4749,7 +4773,7 @@ def approve_registration(rid):
             except ValueError:
                 dob = None
         student = Student(
-            first_name=fn, last_name=(s.get('last_name') or reg.parent_name.split()[-1]).strip(),
+            first_name=fn, last_name=ln,
             family_id=fam.id, parent_email=reg.parent_email, parent_phone=reg.parent_phone,
             date_of_birth=dob, allergies=(s.get('allergies') or '').strip() or None,
         )
@@ -4766,6 +4790,7 @@ def approve_registration(rid):
             if cap:
                 cap['count'] += 1
         created.append(student.full_name)
+        existing_names.add((fn.lower(), ln.lower()))  # dedupe within one payload too
 
     # Atomically claim the registration — two concurrent approvals (double-click)
     # both pass the status check above and would otherwise each create a Family
@@ -4785,10 +4810,16 @@ def approve_registration(rid):
                     f'Approved {reg.parent_name}: {", ".join(created)}')
     db.session.commit()
     msg = f'Created {len(created)} dancer(s) under {fam.name}'
+    if matched_existing:
+        msg += ' (matched the existing family by parent email — no duplicate family created)'
+    if dup_skips:
+        msg += (f' — {len(dup_skips)} dancer(s) already in the family, skipped: '
+                f'{", ".join(dup_skips)}')
     if full_skips:
         msg += (f' — {len(full_skips)} enrollment(s) skipped (class full): '
                 f'{"; ".join(full_skips)}. Raise the capacity or use the waitlist.')
-    return jsonify({'message': msg, 'students': created, 'full_skipped': full_skips})
+    return jsonify({'message': msg, 'students': created, 'full_skipped': full_skips,
+                    'duplicate_skipped': dup_skips, 'matched_existing_family': matched_existing})
 
 
 @bp.route('/registrations/<int:rid>/reject', methods=['POST'])
