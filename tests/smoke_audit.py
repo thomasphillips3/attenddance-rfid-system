@@ -356,6 +356,23 @@ def run_teacher_authz(ids):
                    r.status_code in (401, 403), f"got {r.status_code} — teacher reached admin data", "P1")
 
 
+def run_login_no_demo_creds_in_prod():
+    """The login page shows demo credentials (admin123 / parent123) for dev
+    convenience, gated behind DEBUG. In production (DEBUG=False) that box MUST be
+    hidden — otherwise working admin + parent passwords are printed on the PUBLIC
+    login page for anyone to use. The GO-LIVE runbook promises this hides."""
+    prev = app.config.get("DEBUG")
+    app.config["DEBUG"] = False
+    try:
+        with app.test_client() as c:
+            body = c.get("/auth/login").get_data(as_text=True)
+    finally:
+        app.config["DEBUG"] = prev
+    record("Production login page does NOT leak demo credentials",
+           "admin123" not in body and "parent123" not in body,
+           "demo credentials rendered on the prod login page — credential exposure", "P1")
+
+
 def run_security_headers():
     """Site-wide hardening headers must be present on every response
     (clickjacking, MIME-sniffing, referrer leak). HSTS is asserted ONLY when
@@ -3955,6 +3972,7 @@ def main():
     run_idor(ids)
     run_csrf()
     run_security_headers()
+    run_login_no_demo_creds_in_prod()
     run_teacher_authz(ids)
     run_privilege_escalation(ids)
     run_waiver_signing(ids)

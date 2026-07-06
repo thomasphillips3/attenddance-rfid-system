@@ -109,5 +109,3 @@ with a "copy these emails" fallback until SMTP is set). Turn them on as ready.
   feature build — decision-ready scope in [AUTOPAY-SCOPE.md](AUTOPAY-SCOPE.md)
   (~3–4 days, recommend building it as the first post-launch project). Greenlight
   it when you want it.
-- A handful of spring-only staff screens (recital, waivers, skills) still use
-  simple browser prompts for data entry — cosmetic, not used in fall.
