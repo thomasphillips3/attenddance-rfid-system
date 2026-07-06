@@ -1388,6 +1388,39 @@ def run_rfid_checkin_local_day():
            f"scan_ok={ok} att={'none' if att is None else att.check_in_time.isoformat()}", "P2")
 
 
+def run_rfid_reuses_app():
+    """The RFID reader polls in a loop, one _process_card_scan per card tap. It
+    must reuse a single Flask app — building one per scan (as it did) re-ran
+    migrations, re-seeded, and spawned a reminder daemon thread on every tap, a
+    slow leak over a day of scanning. Count create_app across two scans on a
+    fresh service; expect exactly one (cached thereafter)."""
+    try:
+        import app as _appmod
+        from rfid.service import RFIDService
+    except Exception as e:
+        record("RFID reader reuses one app across scans", True,
+               f"RFID service unavailable, skipped: {e}", "P3")
+        return
+    calls = [0]
+    orig = _appmod.create_app
+
+    def counting(*a, **k):
+        calls[0] += 1
+        return orig(*a, **k)
+
+    _appmod.create_app = counting
+    try:
+        svc = RFIDService()
+        # Bogus UIDs — no student match, but each scan still routes through
+        # _get_app (and _log_rfid_scan), which is what we're counting.
+        svc.simulate_scan("NOSUCH_UID_A")
+        svc.simulate_scan("NOSUCH_UID_B")
+    finally:
+        _appmod.create_app = orig
+    record("RFID reader reuses one app across scans (create_app called once, not per tap)",
+           calls[0] == 1, f"create_app called {calls[0]}x for 2 scans (want 1)", "P2")
+
+
 def run_recurring_short_month_clamp():
     """The recurring-charge engine auto-creates tuition every month and runs
     unattended — so it needs a real regression guard. A charge set for the 31st
@@ -3613,6 +3646,7 @@ def main():
     run_message_blast_non_blocking()
     run_recurring_short_month_clamp()
     run_rfid_checkin_local_day()
+    run_rfid_reuses_app()
     run_full_mutation_fuzz()
     run_update_fuzz()
     run_get_queryparam_fuzz(ids)

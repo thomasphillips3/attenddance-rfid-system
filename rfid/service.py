@@ -22,6 +22,7 @@ class RFIDService:
     def __init__(self):
         """Initialize RFID service"""
         self.reader = None
+        self._app = None
         self.running = False
         self.scan_interval = 0.5  # seconds between scans
         self.last_scan_uid = None
@@ -64,6 +65,17 @@ class RFIDService:
         """Stop the RFID listening service"""
         logger.info("Stopping RFID service...")
         self.running = False
+
+    def _get_app(self):
+        """Reuse ONE Flask app across scans. create_app() runs migrations, seeds
+        the admin, and kicks off startup jobs (recurring charges, reminder
+        threads) — calling it per card tap (as this did) re-ran all of that on
+        every scan and spawned a daemon thread each time, a slow resource leak
+        over a day of scanning. Build it once, lazily, and reuse it."""
+        if self._app is None:
+            from app import create_app
+            self._app = create_app()
+        return self._app
     
     def _scan_for_cards(self):
         """Scan for RFID cards and process them"""
@@ -115,10 +127,9 @@ class RFIDService:
             True if successful, False otherwise
         """
         try:
-            # Create Flask application context
-            from app import create_app
-            app = create_app()
-            
+            # Reuse the cached app (see _get_app) instead of building one per scan.
+            app = self._get_app()
+
             with app.app_context():
                 # Log the scan
                 self._log_rfid_scan(uid, "processing")
@@ -250,9 +261,8 @@ class RFIDService:
                       error: str = None, student_id: int = None):
         """Log RFID scan to database"""
         try:
-            from app import create_app
-            app = create_app()
-            
+            app = self._get_app()
+
             with app.app_context():
                 log_entry = RFIDLog(
                     rfid_uid=uid,
