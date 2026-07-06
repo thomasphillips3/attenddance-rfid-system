@@ -839,6 +839,46 @@ def run_password_reset():
         db.session.commit()
 
 
+def run_rule_mutation_admin_only():
+    """Studio rules are admin-managed policy (like waivers/skills/costumes, all
+    _admin_only). A teacher can VIEW the rules page but must not create/edit/delete
+    rules — every sibling policy-mutation enforces this and the nav hides Rules
+    from teachers. Verify teacher GET ok, teacher writes 403, admin write 201."""
+    from app.models import User, Rule
+    with app.app_context():
+        if not User.query.filter_by(username="teacher_t").first():
+            t = User(username="teacher_t", email="tt@x.com", role="teacher",
+                     first_name="Tea", last_name="Cher", is_active=True, is_admin=False)
+            t.set_password("pw")
+            db.session.add(t)
+            db.session.commit()
+    with app.test_client() as c:
+        login(c, "teacher_t", "pw")
+        gr = c.get("/api/rules")
+        cr = c.post("/api/rules", json={"text": "Teacher-made rule"})
+        # need an existing rule id to test PUT/DELETE
+    with app.app_context():
+        rid = None
+        r = Rule.query.filter_by(is_active=True).first()
+        if r is None:
+            with app.test_client() as c:
+                login(c, "admin", "admin123")
+                c.post("/api/rules", json={"text": "Seed rule"})
+            r = Rule.query.filter_by(is_active=True).first()
+        rid = r.id if r else None
+    with app.test_client() as c:
+        login(c, "teacher_t", "pw")
+        pu = c.put(f"/api/rules/{rid}", json={"text": "hacked"})
+        de = c.delete(f"/api/rules/{rid}")
+    with app.test_client() as c:
+        login(c, "admin", "admin123")
+        ar = c.post("/api/rules", json={"text": "Admin rule"})
+    record("Teacher can view rules but cannot create/edit/delete them (admin-only policy)",
+           gr.status_code == 200 and cr.status_code == 403 and pu.status_code == 403
+           and de.status_code == 403 and ar.status_code == 201,
+           f"get={gr.status_code} create={cr.status_code} put={pu.status_code} del={de.status_code} admin={ar.status_code}", "P2")
+
+
 def run_forgot_password_no_enumeration():
     """Anti-enumeration: with email configured, forgot-password must return the
     SAME generic reply whether or not the account exists — otherwise an attacker
@@ -3931,6 +3971,7 @@ def main():
     run_deactivation_revokes_session()
     run_password_reset()
     run_forgot_password_no_enumeration()
+    run_rule_mutation_admin_only()
     run_login_throttle()
     run_open_redirect_guard()
     run_login_by_email()

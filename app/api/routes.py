@@ -1787,6 +1787,11 @@ def get_rules():
 @bp.route('/rules', methods=['POST'])
 @login_required
 def create_rule():
+    # Studio policy is admin-managed, like waivers/skills/costumes (all _admin_only).
+    # Teachers can view the rules page but must not add/edit/remove rules.
+    err = _admin_only()
+    if err:
+        return err
     data = request.get_json()
     if not data or not data.get('text'):
         return jsonify({'error': 'text is required'}), 400
@@ -1800,6 +1805,9 @@ def create_rule():
 @bp.route('/rules/<int:rule_id>', methods=['PUT'])
 @login_required
 def update_rule(rule_id):
+    err = _admin_only()
+    if err:
+        return err
     r = Rule.query.get_or_404(rule_id)
     data = request.get_json()
     if data.get('text'):
@@ -1813,6 +1821,9 @@ def update_rule(rule_id):
 @bp.route('/rules/<int:rule_id>', methods=['DELETE'])
 @login_required
 def delete_rule(rule_id):
+    err = _admin_only()
+    if err:
+        return err
     r = Rule.query.get_or_404(rule_id)
     r.is_active = False
     db.session.commit()
