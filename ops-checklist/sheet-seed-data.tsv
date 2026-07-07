@@ -4,6 +4,6 @@ item_id	sort_order	title	note	done	done_at	updated_at
 03	3	Open registration	Enrollment page → flip 'Registration open,' then share the link (attenddance.fly.dev/register). Returning families use the same link — system matches by email, no duplicates, auto re-enrolls existing dancers.	FALSE
 04	4	Approve registrations as they come in	Enrollment page shows a badge when new ones arrive. Approving creates the family + enrolls the kids. Flags 'Returning' on matches to an existing family.	FALSE
 05	5	Set up parent portal access	On a dancer's page → 'Portal Access' card. Generate invite codes for new parents. Locked-out parent? Make them a reset link right there — texts to them, expires in an hour.	FALSE
-06	6	First week: check-in on tablet	Take Attendance page, tablet or laptop — teachers have access. RFID readers do NOT work with this system — don't plug in the old Pi setup. Card-tap is buildable later if wanted.	FALSE
+06	6	First week: check-in on tablet	Take Attendance page, tablet or laptop — teachers have access. Tap each dancer present; it saves as you go.	FALSE
 07	7	First billing cycle	Tuition posts automatically on each class's due date. Mid-month joiners are NOT auto-charged that partial month — post it manually from the Payments page.	FALSE
-08	8	Send Thomas the Gmail app password	Unlocks auto-sending receipts/reminders/blasts. Last thing blocking email.	FALSE
+08	8	Get the Gmail app password to Thomas securely	Unlocks auto-sending receipts/reminders/blasts — last thing blocking email. Share it through a secure channel (a password manager or a call), not plain text/email, and delete the message once it's set.	FALSE

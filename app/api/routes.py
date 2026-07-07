@@ -6350,7 +6350,7 @@ def my_data_export():
             'performance_title': (t.ticket_type.performance.title
                                    if t.ticket_type and t.ticket_type.performance else None),
             'quantity': t.quantity,
-            'amount': f'{float(t.amount):.2f}',
+            'amount': f'{t.amount:.2f}' if t.amount is not None else None,
             'paid': t.paid,
             'created_at': _utc_iso(t.created_at),
         } for t in TicketOrder.query.filter_by(parent_id=current_user.id).all()]
@@ -6371,9 +6371,15 @@ def my_data_export():
         db.session.rollback()
 
     resp = jsonify(export)
+    # Sanitize the username before putting it in a header: strip anything that
+    # isn't alphanumeric/-/_ so a crafted username can't inject a quote or CRLF
+    # into Content-Disposition (header splitting).
+    safe_username = ''.join(c for c in current_user.username if c.isalnum() or c in '-_') or 'account'
     resp.headers['Content-Disposition'] = (
-        f'attachment; filename="my-data-{current_user.username}-{date.today().isoformat()}.json"'
+        f'attachment; filename="my-data-{safe_username}-{date.today().isoformat()}.json"'
     )
+    # This is a full PII bundle — never let a proxy or browser cache it.
+    resp.headers['Cache-Control'] = 'no-store'
     return resp
 
 

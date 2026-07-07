@@ -16,11 +16,13 @@ function _sheet() {
 }
 
 function _cors(output) {
-  // Apps Script Web Apps don't handle OPTIONS preflight, so the frontend
-  // deliberately avoids sending requests that would trigger one (no custom
-  // Content-Type header). No CORS headers are needed as a result — but adding
-  // Access-Control-Allow-Origin here is harmless and future-proofs against a
-  // frontend change that does need one.
+  // Pass-through seam. Apps Script Web Apps don't handle OPTIONS preflight, so
+  // the frontend deliberately avoids sending requests that would trigger one
+  // (no custom Content-Type header), which means no CORS headers are needed
+  // today. This wrapper returns the output unchanged — it's just a single
+  // choke point to add Access-Control-Allow-Origin later if a frontend change
+  // ever needs it. (ContentService can't set arbitrary response headers, so
+  // any real CORS support would require switching to a different response type.)
   return output;
 }
 

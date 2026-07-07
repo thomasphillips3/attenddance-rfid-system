@@ -8,15 +8,16 @@ BUCKET="attenddance-checklist"
 REGION="us-east-1"
 PROFILE="attenddance-checklist-deploy"
 
-# Set once, after deploying the Apps Script Web App (see README.md) — the
-# URL ending in /exec. Left as a placeholder so this script fails loudly
-# instead of shipping a broken page if you forget to set it.
-APPS_SCRIPT_URL="https://script.google.com/macros/s/AKfycbzLEIPL6hnEkghLoCvY-3S5kRJOZqW6KTesvlBLs0ZWmhDhkWYnJYvF8WUkgXwf3L4VRA/exec"
+# The Apps Script Web App /exec URL (see README.md). Override per-deploy with
+# an env var so the specific deployment target isn't hardcoded into the repo:
+#   APPS_SCRIPT_URL="https://script.google.com/.../exec" ./deploy.sh
+# Falls back to the current studio deployment if unset.
+APPS_SCRIPT_URL="${APPS_SCRIPT_URL:-https://script.google.com/macros/s/AKfycbzLEIPL6hnEkghLoCvY-3S5kRJOZqW6KTesvlBLs0ZWmhDhkWYnJYvF8WUkgXwf3L4VRA/exec}"
 
 cd "$(dirname "$0")"
 
-if [ "$APPS_SCRIPT_URL" = "__SET_ME__" ]; then
-  echo "Set APPS_SCRIPT_URL at the top of deploy.sh to your Apps Script /exec URL first." >&2
+if [ -z "$APPS_SCRIPT_URL" ]; then
+  echo "Set APPS_SCRIPT_URL (env var or in deploy.sh) to your Apps Script /exec URL first." >&2
   exit 1
 fi
 
