@@ -51,6 +51,12 @@ def index():
     return redirect(url_for('auth.login'))
 
 
+@bp.route('/privacy')
+def privacy_policy():
+    """Public privacy notice — no login required, per COPPA/state notice rules."""
+    return render_template('privacy.html')
+
+
 @bp.route('/dashboard')
 @staff_required
 def dashboard():

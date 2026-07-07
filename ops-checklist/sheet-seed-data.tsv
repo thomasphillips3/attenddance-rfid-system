@@ -1,0 +1,9 @@
+item_id	sort_order	title	note	done	done_at	updated_at
+01	1	Close out summer classes	Classes page → Cancel Class on anything summer-only. Auto-stops recurring tuition charges + clears the waitlist. Leave anything running into fall alone.	FALSE
+02	2	Build the fall schedule	Classes page → Add Class for each fall class (day/time/instructor/max size — caps are enforced). Then Payments page → one recurring charge per class (amount, category 'tuition', day it bills). Safe to set up early — won't charge anyone until the first real due date after creation.	FALSE
+03	3	Open registration	Enrollment page → flip 'Registration open,' then share the link (attenddance.fly.dev/register). Returning families use the same link — system matches by email, no duplicates, auto re-enrolls existing dancers.	FALSE
+04	4	Approve registrations as they come in	Enrollment page shows a badge when new ones arrive. Approving creates the family + enrolls the kids. Flags 'Returning' on matches to an existing family.	FALSE
+05	5	Set up parent portal access	On a dancer's page → 'Portal Access' card. Generate invite codes for new parents. Locked-out parent? Make them a reset link right there — texts to them, expires in an hour.	FALSE
+06	6	First week: check-in on tablet	Take Attendance page, tablet or laptop — teachers have access. Tap each dancer present; it saves as you go.	FALSE
+07	7	First billing cycle	Tuition posts automatically on each class's due date. Mid-month joiners are NOT auto-charged that partial month — post it manually from the Payments page.	FALSE
+08	8	Get the Gmail app password to Thomas securely	Unlocks auto-sending receipts/reminders/blasts — last thing blocking email. Share it through a secure channel (a password manager or a call), not plain text/email, and delete the message once it's set.	FALSE

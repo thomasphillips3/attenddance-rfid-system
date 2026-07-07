@@ -279,6 +279,7 @@ _PARENT_WRITE_ALLOWED = {
     'api.create_makeup',
     'api.create_donation',
     'api.acknowledge_rule',
+    'api.request_data_deletion',
 }
 
 
@@ -6224,4 +6225,202 @@ def my_recital():
         },
         'program': program,
         'my_number_count': my_count,
+    })
+
+
+# ── Personal data export / deletion request ─────────────────────────
+# "Download My Data" (COPPA + state privacy access/portability rights). A
+# parent's own account plus every record tied to their linked children; staff
+# get their own account plus their own time-clock punches. No target-id param
+# (always "your own"), so this needs no IDOR guard beyond @login_required.
+
+@bp.route('/my-data', methods=['GET'])
+@login_required
+def my_data_export():
+    from app.models import RFIDLog
+
+    export = {
+        'export_generated_at': _utc_iso(datetime.utcnow()),
+        'studio': STUDIO_NAME,
+        'account': {
+            'id': current_user.id,
+            'username': current_user.username,
+            'email': current_user.email,
+            'first_name': current_user.first_name,
+            'last_name': current_user.last_name,
+            'phone': current_user.phone,
+            'role': current_user.role,
+            'created_at': _utc_iso(current_user.created_at),
+            'last_login': _utc_iso(current_user.last_login),
+        },
+    }
+
+    if current_user.is_parent:
+        child_blocks = []
+        for child in current_user.get_children():
+            rule_acks = RuleAcknowledgment.query.filter_by(
+                student_id=child.id, parent_id=current_user.id).all()
+            rfid_logs = (RFIDLog.query.filter_by(student_id=child.id)
+                         .order_by(RFIDLog.scan_time).all())
+            child_blocks.append({
+                **student_to_dict(child),
+                'attendance': [attendance_to_dict(a) for a in
+                               child.attendances.order_by(Attendance.check_in_time).all()],
+                'class_enrollments': [{
+                    'class_name': e.dance_class.name if e.dance_class else None,
+                    'enrolled_date': e.enrolled_date.isoformat(),
+                    'is_active': e.is_active,
+                } for e in child.class_enrollments.all()],
+                'transactions': [transaction_to_dict(t) for t in
+                                  child.transactions.order_by(Transaction.transaction_date).all()],
+                'payment_plans': [_plan_to_dict(p) for p in
+                                   PaymentPlan.query.filter_by(student_id=child.id).all()],
+                'rule_acknowledgments': [{
+                    'rule_text': a.rule.text if a.rule else None,
+                    'initials': a.initials,
+                    'acknowledged_at': _utc_iso(a.acknowledged_at),
+                } for a in rule_acks],
+                'waiver_signatures': [{
+                    'template_title': w.template.title if w.template else None,
+                    'consent': w.consent,
+                    'signed_name': w.signed_name,
+                    'signed_at': _utc_iso(w.signed_at),
+                } for w in WaiverSignature.query.filter_by(student_id=child.id).all()],
+                'company_memberships': [{
+                    'group_name': m.group.name if m.group else None,
+                    'role': m.role,
+                    'joined_date': m.joined_date.isoformat(),
+                    'is_active': m.is_active,
+                } for m in CompanyMembership.query.filter_by(student_id=child.id).all()],
+                'audition_signups': [{
+                    'audition_title': a.audition.title if a.audition else None,
+                    'status': a.status,
+                    'notes': a.notes,
+                    'created_at': _utc_iso(a.created_at),
+                } for a in AuditionSignup.query.filter_by(student_id=child.id).all()],
+                'performance_assignments': [{
+                    'performance_title': p.performance.title if p.performance else None,
+                    'performance_date': (p.performance.performance_date.isoformat()
+                                          if p.performance and p.performance.performance_date else None),
+                    'notes': p.notes,
+                } for p in PerformanceAssignment.query.filter_by(student_id=child.id).all()],
+                'costume_assignments': [{
+                    'costume_name': c.costume.name if c.costume else None,
+                    'size': c.size,
+                    'paid': c.paid,
+                    'notes': c.notes,
+                } for c in CostumeAssignment.query.filter_by(student_id=child.id).all()],
+                'skill_achievements': [{
+                    'skill_name': s.skill.name if s.skill else None,
+                    'achieved_at': _utc_iso(s.achieved_at),
+                    'note': s.note,
+                } for s in StudentSkill.query.filter_by(student_id=child.id).all()],
+                'makeup_requests': [_makeup_to_dict(m) for m in
+                                     MakeupClass.query.filter_by(student_id=child.id).all()],
+                'waitlist_entries': [{
+                    'class_name': w.dance_class.name if w.dance_class else None,
+                    'status': w.status,
+                    'created_at': _utc_iso(w.created_at),
+                } for w in WaitlistEntry.query.filter_by(student_id=child.id).all()],
+                'recital_cast': [{
+                    'recital_year': c.number.recital.year if c.number and c.number.recital else None,
+                    'recital_title': c.number.recital.title if c.number and c.number.recital else None,
+                    'number_title': c.number.title if c.number else None,
+                    'part': c.part,
+                } for c in RecitalCast.query.filter_by(student_id=child.id).all()],
+                'recital_awards': [{
+                    'recital_year': a.recital.year if a.recital else None,
+                    'title': a.title,
+                    'category': a.category,
+                    'description': a.description,
+                } for a in RecitalAward.query.filter_by(student_id=child.id).all()],
+                'rfid_scan_log': [{
+                    'scan_time': _utc_iso(r.scan_time),
+                    'action_taken': r.action_taken,
+                    'success': r.success,
+                } for r in rfid_logs],
+            })
+        export['children'] = child_blocks
+        export['pending_payments'] = [_pending_to_dict(p) for p in
+            PendingPayment.query.filter_by(parent_id=current_user.id).all()]
+        export['donations'] = [_donation_to_dict(d) for d in
+            Donation.query.filter_by(parent_id=current_user.id).all()]
+        export['ticket_orders'] = [{
+            'ticket_type': t.ticket_type.name if t.ticket_type else None,
+            'performance_title': (t.ticket_type.performance.title
+                                   if t.ticket_type and t.ticket_type.performance else None),
+            'quantity': t.quantity,
+            'amount': f'{t.amount:.2f}' if t.amount is not None else None,
+            'paid': t.paid,
+            'created_at': _utc_iso(t.created_at),
+        } for t in TicketOrder.query.filter_by(parent_id=current_user.id).all()]
+    else:
+        export['time_clock_entries'] = [{
+            'clock_in': _utc_iso(e.clock_in),
+            'clock_out': _utc_iso(e.clock_out),
+            'hours': e.hours,
+            'note': e.note,
+        } for e in TimeClockEntry.query.filter_by(user_id=current_user.id)
+                    .order_by(TimeClockEntry.clock_in).all()]
+
+    try:
+        AuditLog.record(current_user.id, 'data_export_downloaded',
+                        f'{"parent" if current_user.is_parent else "staff"} downloaded personal data export')
+        db.session.commit()
+    except Exception:  # audit is best-effort; never block the export
+        db.session.rollback()
+
+    resp = jsonify(export)
+    # Sanitize the username before putting it in a header: strip anything that
+    # isn't alphanumeric/-/_ so a crafted username can't inject a quote or CRLF
+    # into Content-Disposition (header splitting).
+    safe_username = ''.join(c for c in current_user.username if c.isalnum() or c in '-_') or 'account'
+    resp.headers['Content-Disposition'] = (
+        f'attachment; filename="my-data-{safe_username}-{date.today().isoformat()}.json"'
+    )
+    # This is a full PII bundle — never let a proxy or browser cache it.
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
+@bp.route('/my-data/delete-request', methods=['POST'])
+@login_required
+def request_data_deletion():
+    """A parent asks the studio to delete their/their dancer's data. We don't
+    auto-erase: some records (billing, tax/accounting) must be kept regardless
+    of the request, and deciding what's safe to remove needs a human — so this
+    notifies the studio and logs the request rather than deleting anything."""
+    if not current_user.is_parent:
+        return jsonify({'error': 'Parent access required'}), 403
+
+    from app import email as email_service
+
+    data = request.get_json(silent=True) or {}
+    note = _clean_str(data.get('note'), maxlen=2000)
+    children = ', '.join(c.full_name for c in current_user.get_children()) or '(no linked dancers)'
+
+    detail = f'Requested by {current_user.full_name} <{current_user.email}> for: {children}'
+    if note:
+        detail += f' — note: {note}'
+    AuditLog.record(current_user.id, 'data_deletion_requested', detail)
+    db.session.commit()
+
+    emailed = False
+    if email_service.is_configured():
+        reply_to = current_app.config.get('MAIL_REPLY_TO')
+        if reply_to:
+            body = (f"{current_user.full_name} ({current_user.email}) requested deletion of their "
+                    f"account/data for: {children}.\n\n"
+                    + (f"Their note: {note}\n\n" if note else '')
+                    + "Please follow up directly to confirm what can be removed (financial/legal "
+                      "records may need to be kept) and complete the request.")
+            try:
+                email_service.send_email(reply_to, "Data deletion request — LaShelle's School of Dance", body)
+                emailed = True
+            except Exception:
+                logger.exception("Deletion-request notification email failed")
+
+    return jsonify({
+        'message': ("Your request was sent to the studio — they'll follow up with you." if emailed
+                    else "Your request was recorded. The studio will follow up with you directly."),
     })

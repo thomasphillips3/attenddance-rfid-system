@@ -8,6 +8,14 @@
         "run.py"
       ],
       "autoPort": true
+    },
+    {
+      "name": "ops-checklist-preview",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m", "http.server", "8091", "--directory", "ops-checklist"
+      ],
+      "port": 8091
     }
   ]
 }
