@@ -7,7 +7,7 @@
             <div><span class="text-sm font-medium text-ink-3">Name:</span> <span class="text-ink">{{ user.full_name }}</span></div>
             <div><span class="text-sm font-medium text-ink-3">Username:</span> <span class="text-ink">{{ user.username }}</span></div>
             <div><span class="text-sm font-medium text-ink-3">Email:</span> <span class="text-ink">{{ user.email }}</span></div>
-            <div><span class="text-sm font-medium text-ink-3">Role:</span> <span class="text-ink">{{ 'Admin' if user.is_admin else 'Teacher' }}</span></div>
+            <div><span class="text-sm font-medium text-ink-3">Role:</span> <span class="text-ink">{{ 'Admin' if user.is_admin else ('Parent' if user.is_parent else 'Teacher') }}</span></div>
             <div><span class="text-sm font-medium text-ink-3">Last Login:</span> <span class="text-ink">{{ user.last_login.strftime('%b %d, %Y %I:%M %p') if user.last_login else 'Never' }}</span></div>
         </div>
         <div class="mt-6">
@@ -16,5 +16,50 @@
             </a>
         </div>
     </div>
+
+    <div class="bg-surface border border-line rounded-2xl shadow-soft p-6 mt-6">
+        <h2 class="font-display text-xl text-ink mb-1">Your Data &amp; Privacy</h2>
+        <p class="text-sm text-ink-2 mb-4">
+            {% if user.is_parent %}
+            Download everything we hold on your account and your dancer(s), or ask us to delete it. See our
+            {% else %}
+            Download everything we hold on your account. See our
+            {% endif %}
+            <a href="{{ url_for('main.privacy_policy') }}" class="text-primary-600 hover:underline">Privacy Policy</a> for details.
+        </p>
+        <div class="flex flex-wrap gap-3">
+            <a href="{{ url_for('api.my_data_export') }}" class="inline-flex items-center px-4 py-2 rounded-xl bg-primary-500 text-white hover:bg-primary-600 text-sm font-bold shadow-sm">
+                <i class="fas fa-download mr-2"></i>Download My Data
+            </a>
+            {% if user.is_parent %}
+            <button type="button" onclick="requestDeletion()" class="inline-flex items-center px-4 py-2 rounded-xl bg-surface border border-line text-danger hover:bg-danger/10 text-sm font-bold">
+                <i class="fas fa-trash-can mr-2"></i>Request Account Deletion
+            </button>
+            {% endif %}
+        </div>
+        <p id="deletion-msg" class="hidden mt-3 text-sm"></p>
+    </div>
 </div>
+{% if user.is_parent %}
+<script>
+async function requestDeletion(){
+    if (!confirm("This sends a deletion request to the studio for your account and dancer(s). They'll follow up with you directly (some billing records may need to be kept). Continue?")) return;
+    const note = prompt('Anything you want the studio to know? (optional)') || '';
+    try {
+        const res = await fetch('/api/my-data/delete-request', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({note}),
+        });
+        const d = await res.json();
+        const el = document.getElementById('deletion-msg');
+        el.textContent = d.message || (res.ok ? 'Request sent.' : 'Something went wrong.');
+        el.className = 'mt-3 text-sm ' + (res.ok ? 'text-ok' : 'text-danger');
+    } catch {
+        const el = document.getElementById('deletion-msg');
+        el.textContent = 'Network error. Please try again.';
+        el.className = 'mt-3 text-sm text-danger';
+    }
+}
+</script>
+{% endif %}
 {% endblock %}

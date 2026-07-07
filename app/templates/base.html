@@ -253,7 +253,7 @@
             </main>
             <footer class="border-t border-line">
                 <div class="mx-auto max-w-[1080px] py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center text-xs text-ink-3">
-                    <span>&copy; 2026 LSO Dance v{{ config.APP_VERSION }} · Built for LaShelle's School of Dance</span>
+                    <span>&copy; 2026 LSO Dance v{{ config.APP_VERSION }} · Built for LaShelle's School of Dance · <a href="{{ url_for('main.privacy_policy') }}" class="hover:text-ink-2 hover:underline">Privacy Policy</a></span>
                     <span id="current-time"></span>
                 </div>
             </footer>
@@ -264,7 +264,7 @@
     </main>
     <footer class="border-t border-line">
         <div class="mx-auto max-w-4xl py-4 px-4 flex justify-between items-center text-xs text-ink-3">
-            <span>&copy; 2026 LSO Dance · LaShelle's School of Dance</span>
+            <span>&copy; 2026 LSO Dance · LaShelle's School of Dance · <a href="{{ url_for('main.privacy_policy') }}" class="hover:text-ink-2 hover:underline">Privacy Policy</a></span>
             <span id="current-time"></span>
         </div>
     </footer>

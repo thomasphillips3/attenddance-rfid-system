@@ -103,11 +103,20 @@ def run_idor(ids):
             ("GET", f"/api/students/{aid}", "own child PII"),
             ("GET", f"/api/students/{aid}/ledger", "own child ledger"),
             ("GET", "/api/my-payments", "own payments"),
+            ("GET", "/api/my-data", "own data export"),
         ]:
             resp = c.open(path, method=method)
             ok = resp.status_code == 200
             record(f"Parent CAN access {desc} [{method} {path}] -> {resp.status_code}",
                    ok, f"got {resp.status_code}, expected 200", "P1")
+
+        # The data export must contain ONLY the requesting parent's own child —
+        # this is the exact bundle a parent downloads, so a leak here is a
+        # full-PII IDOR (allergies, DOB, medical notes) for an unrelated family.
+        export = c.get("/api/my-data").get_json() or {}
+        child_names = {ch.get("full_name") for ch in export.get("children", [])}
+        record("Data export contains own child, not other family's",
+               child_names == {"Ava Alpha"}, f"got children={child_names}", "P0")
 
         probes = [
             ("GET",    f"/api/students/{bid}",                 "read other child's PII"),
@@ -198,6 +207,7 @@ def run_idor(ids):
         allowed_writes = [
             ("POST", "/api/payments/claim", "report a payment"),
             ("POST", "/api/donations", "make a donation"),
+            ("POST", "/api/my-data/delete-request", "request data deletion"),
         ]
         for method, path, desc in allowed_writes:
             resp = c.open(path, method=method, json={})
