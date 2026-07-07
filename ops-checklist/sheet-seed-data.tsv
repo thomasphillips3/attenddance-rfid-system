@@ -1,5 +1,5 @@
 item_id	sort_order	title	note	done	done_at	updated_at
-01	1	Close out summer classes	Classes page → Cancel Class on anything summer-only. Auto-stops recurring tuition charges + clears the waitlist. Leave anything running into fall alone.	FALSE
+01	1	Remove test data	Delete any demo/test students, classes, and transactions left over from setup so the studio starts on a clean slate. Students + Classes pages → remove anything that isn't a real fall enrollment.	FALSE
 02	2	Build the fall schedule	Classes page → Add Class for each fall class (day/time/instructor/max size — caps are enforced). Then Payments page → one recurring charge per class (amount, category 'tuition', day it bills). Safe to set up early — won't charge anyone until the first real due date after creation.	FALSE
 03	3	Open registration	Enrollment page → flip 'Registration open,' then share the link (attenddance.fly.dev/register). Returning families use the same link — system matches by email, no duplicates, auto re-enrolls existing dancers.	FALSE
 04	4	Approve registrations as they come in	Enrollment page shows a badge when new ones arrive. Approving creates the family + enrolls the kids. Flags 'Returning' on matches to an existing family.	FALSE

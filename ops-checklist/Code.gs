@@ -11,8 +11,67 @@
 
 const SHEET_NAME = 'Checklist';
 
+// Canonical seed TSV, published to S3 by deploy.sh. syncContent() reads item
+// copy from here so sheet-seed-data.tsv stays the single source of truth.
+const SEED_URL = 'https://attenddance-checklist.s3.amazonaws.com/seed.tsv';
+
 function _sheet() {
   return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+}
+
+/**
+ * One-off maintenance — run from the Apps Script editor after editing
+ * sheet-seed-data.tsv and re-running ./deploy.sh. Re-syncs every row's
+ * sort_order / title / note from the published seed TSV WITHOUT touching
+ * done / done_at, so nobody's check-off progress is lost. Appends any brand
+ * new item_id; never deletes rows (remove those by hand if you ever need to).
+ */
+function syncContent() {
+  const tsv = UrlFetchApp.fetch(SEED_URL, { muteHttpExceptions: true }).getContentText();
+  const lines = tsv.split(/\r?\n/).filter(l => l.trim() !== '');
+  const seedHeaders = lines[0].split('\t');
+  const sIdx = seedHeaders.indexOf('item_id');
+  const sortIdx = seedHeaders.indexOf('sort_order');
+  const titleIdx = seedHeaders.indexOf('title');
+  const noteIdx = seedHeaders.indexOf('note');
+
+  const canonical = {};
+  const order = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = lines[i].split('\t');
+    const id = String(cells[sIdx]);
+    canonical[id] = { sort_order: cells[sortIdx], title: cells[titleIdx], note: cells[noteIdx] };
+    order.push(id);
+  }
+
+  const sheet = _sheet();
+  const rows = sheet.getDataRange().getValues();
+  const h = rows[0];
+  const idCol = h.indexOf('item_id');
+  const sortCol = h.indexOf('sort_order');
+  const titleCol = h.indexOf('title');
+  const noteCol = h.indexOf('note');
+
+  const seen = {};
+  for (let r = 1; r < rows.length; r++) {
+    const id = String(rows[r][idCol]);
+    if (canonical[id]) {
+      sheet.getRange(r + 1, sortCol + 1).setValue(canonical[id].sort_order);
+      sheet.getRange(r + 1, titleCol + 1).setValue(canonical[id].title);
+      sheet.getRange(r + 1, noteCol + 1).setValue(canonical[id].note);
+      seen[id] = true;
+    }
+  }
+  order.forEach(id => {
+    if (!seen[id]) {
+      const row = [];
+      row[idCol] = id;
+      row[sortCol] = canonical[id].sort_order;
+      row[titleCol] = canonical[id].title;
+      row[noteCol] = canonical[id].note;
+      sheet.appendRow(row);
+    }
+  });
 }
 
 function _cors(output) {

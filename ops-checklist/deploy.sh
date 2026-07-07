@@ -42,6 +42,11 @@ echo "== 2/2 Render + upload frontend =="
 sed "s|__API_BASE__|${APPS_SCRIPT_URL}|g" index.html > /tmp/attenddance-checklist-index.html
 aws s3 cp /tmp/attenddance-checklist-index.html "s3://$BUCKET/index.html" --profile "$PROFILE" \
   --content-type "text/html" >/dev/null
+# Publish the canonical seed TSV too, so Code.gs's syncContent() can pull item
+# copy from here — keeps sheet-seed-data.tsv the single source of truth for
+# titles/notes without re-pasting the whole sheet (which would wipe check-offs).
+aws s3 cp sheet-seed-data.tsv "s3://$BUCKET/seed.tsv" --profile "$PROFILE" \
+  --content-type "text/tab-separated-values" >/dev/null
 aws s3 sync assets/ "s3://$BUCKET/assets/" --profile "$PROFILE" --delete >/dev/null
 rm -f /tmp/attenddance-checklist-index.html
 echo "  uploaded"
