@@ -19,59 +19,83 @@ function _sheet() {
   return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
 }
 
+// Normalize an item_id for matching. Google Sheets silently coerces a
+// leading-zero string like "01" to the number 1 on paste, so the seed's "01"
+// and the sheet's 1 must compare equal. Strip leading zeros on both sides.
+function _normId(v) {
+  return String(v).trim().replace(/^0+(?=\d)/, '');
+}
+
 /**
- * One-off maintenance — run from the Apps Script editor after editing
- * sheet-seed-data.tsv and re-running ./deploy.sh. Re-syncs every row's
- * sort_order / title / note from the published seed TSV WITHOUT touching
- * done / done_at, so nobody's check-off progress is lost. Appends any brand
- * new item_id; never deletes rows (remove those by hand if you ever need to).
+ * Maintenance — run from the Apps Script editor after editing
+ * sheet-seed-data.tsv and re-running ./deploy.sh. Rebuilds the whole data
+ * region from the published seed TSV: one row per seed item, in seed order,
+ * with the canonical title/note/sort_order. Preserves done / done_at per
+ * item (matched by normalized id, so check-offs survive), and is fully
+ * idempotent + self-healing — it collapses any duplicate rows and drops rows
+ * whose item_id is no longer in the seed. Safe to run repeatedly.
  */
 function syncContent() {
   const tsv = UrlFetchApp.fetch(SEED_URL, { muteHttpExceptions: true }).getContentText();
   const lines = tsv.split(/\r?\n/).filter(l => l.trim() !== '');
-  const seedHeaders = lines[0].split('\t');
-  const sIdx = seedHeaders.indexOf('item_id');
-  const sortIdx = seedHeaders.indexOf('sort_order');
-  const titleIdx = seedHeaders.indexOf('title');
-  const noteIdx = seedHeaders.indexOf('note');
+  const sh = lines[0].split('\t');
+  const sId = sh.indexOf('item_id');
+  const sSort = sh.indexOf('sort_order');
+  const sTitle = sh.indexOf('title');
+  const sNote = sh.indexOf('note');
 
-  const canonical = {};
-  const order = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cells = lines[i].split('\t');
-    const id = String(cells[sIdx]);
-    canonical[id] = { sort_order: cells[sortIdx], title: cells[titleIdx], note: cells[noteIdx] };
-    order.push(id);
-  }
+  const seed = lines.slice(1).map(line => {
+    const c = line.split('\t');
+    return { id: c[sId], sort_order: c[sSort], title: c[sTitle], note: c[sNote] };
+  });
 
   const sheet = _sheet();
-  const rows = sheet.getDataRange().getValues();
+  const range = sheet.getDataRange();
+  const rows = range.getValues();
   const h = rows[0];
+  const width = h.length;
   const idCol = h.indexOf('item_id');
   const sortCol = h.indexOf('sort_order');
   const titleCol = h.indexOf('title');
   const noteCol = h.indexOf('note');
+  const doneCol = h.indexOf('done');
+  const doneAtCol = h.indexOf('done_at');
+  const updCol = h.indexOf('updated_at');
 
-  const seen = {};
+  // Capture existing done-state per normalized id (a TRUE anywhere wins, so a
+  // duplicate pair doesn't lose a check-off).
+  const state = {};
   for (let r = 1; r < rows.length; r++) {
-    const id = String(rows[r][idCol]);
-    if (canonical[id]) {
-      sheet.getRange(r + 1, sortCol + 1).setValue(canonical[id].sort_order);
-      sheet.getRange(r + 1, titleCol + 1).setValue(canonical[id].title);
-      sheet.getRange(r + 1, noteCol + 1).setValue(canonical[id].note);
-      seen[id] = true;
+    const id = _normId(rows[r][idCol]);
+    if (!id) continue;
+    const done = rows[r][doneCol] === true ||
+                 String(rows[r][doneCol]).toUpperCase() === 'TRUE';
+    if (!state[id] || (done && !state[id].done)) {
+      state[id] = {
+        done: done,
+        done_at: done ? rows[r][doneAtCol] : '',
+        updated_at: rows[r][updCol] || '',
+      };
     }
   }
-  order.forEach(id => {
-    if (!seen[id]) {
-      const row = [];
-      row[idCol] = id;
-      row[sortCol] = canonical[id].sort_order;
-      row[titleCol] = canonical[id].title;
-      row[noteCol] = canonical[id].note;
-      sheet.appendRow(row);
-    }
+
+  // Rebuild the data block fresh, header + one row per seed item.
+  const out = [h];
+  seed.forEach(item => {
+    const s = state[_normId(item.id)] || { done: false, done_at: '', updated_at: '' };
+    const row = new Array(width).fill('');
+    row[idCol] = item.id;
+    row[sortCol] = item.sort_order;
+    row[titleCol] = item.title;
+    row[noteCol] = item.note;
+    row[doneCol] = s.done;
+    row[doneAtCol] = s.done_at || '';
+    row[updCol] = s.updated_at || '';
+    out.push(row);
   });
+
+  range.clearContent();
+  sheet.getRange(1, 1, out.length, width).setValues(out);
 }
 
 function _cors(output) {
