@@ -2505,7 +2505,7 @@ PAYMENT_SETTINGS_KEYS = [
     'payments_cashapp_enabled', 'payments_cashapp_tag',
     'payments_square_enabled', 'payments_square_access_token',
     'payments_square_location_id', 'payments_square_environment',
-    'payments_square_webhook_signature_key',
+    'payments_square_webhook_signature_key', 'payments_square_link',
     # SMS / Twilio
     'sms_enabled', 'sms_twilio_sid', 'sms_twilio_token', 'sms_from_number',
     # Automated reminders
@@ -2543,6 +2543,34 @@ def _mask_secret(plaintext: str) -> str:
     return '••••'
 
 
+# Hosts a Square-hosted checkout link may live on. The saved link renders into an
+# href on the parent portal, so it is host-allowlisted rather than merely
+# "starts with https" — an open redirect or a look-alike payment page here would
+# send parents' card details somewhere else (defense-in-depth against an
+# admin-account compromise, same reasoning as the Cash App cashtag scrub).
+SQUARE_LINK_HOSTS = {'square.link', 'checkout.square.site', 'squareup.com'}
+SQUARE_LINK_SUFFIXES = ('.square.site', '.squareup.com')
+
+
+def _valid_square_link(value):
+    """('normalized url', None) on success, (None, error message) on failure.
+    Empty input is valid and clears the setting."""
+    from urllib.parse import urlparse
+    val = (value or '').strip()
+    if not val:
+        return '', None
+    if len(val) > 500:
+        return None, 'Square link is too long'
+    parsed = urlparse(val)
+    if parsed.scheme != 'https':
+        return None, 'Square link must start with https://'
+    host = (parsed.hostname or '').lower()
+    if host not in SQUARE_LINK_HOSTS and not host.endswith(SQUARE_LINK_SUFFIXES):
+        return None, ('Square link must be a Square checkout URL '
+                      '(square.link, checkout.square.site, or squareup.com)')
+    return val, None
+
+
 @bp.route('/settings/payments', methods=['GET'])
 @login_required
 def get_payment_settings():
@@ -2577,11 +2605,22 @@ def update_payment_settings():
         return jsonify({'error': 'No data provided'}), 400
 
     from app.crypto import encrypt
+
+    # Validate BEFORE writing anything: Setting.set commits per key, so bailing
+    # out mid-loop would leave the rest of the form half-saved.
+    square_link = None
+    if 'payments_square_link' in data:
+        square_link, lerr = _valid_square_link(data['payments_square_link'])
+        if lerr:
+            return jsonify({'error': lerr}), 400
+
     changed = []
     for key in PAYMENT_SETTINGS_KEYS:
         if key not in data:
             continue
         val = (data[key] or '').strip()
+        if key == 'payments_square_link':
+            val = square_link
         if key in SECRET_SETTINGS_KEYS:
             # Skip masked placeholders — means "leave unchanged"
             if not val or '••••' in val:
@@ -2702,9 +2741,14 @@ def get_payment_options():
             'url': f'https://cash.app/${tag}' if tag else '',
         })
     if Setting.get_bool('payments_square_enabled'):
+        # Re-validate on the way out, not just on write: this URL goes straight
+        # into an href on the parent portal, and a value that bypassed the PUT
+        # (direct DB edit, restored backup) must not reach parents.
+        link, lerr = _valid_square_link(Setting.get('payments_square_link', ''))
         options.append({
             'type': 'square',
             'configured': square_service.is_configured(),
+            'link': '' if lerr else link,
         })
     return jsonify({'payment_options': options})
 

@@ -96,6 +96,11 @@
     </div>
     <div class="px-6 py-4 space-y-4">
         <div>
+            <label class="{{ lbl }}">Payment Link</label>
+            <input type="text" id="square-link" placeholder="https://square.link/u/..." class="{{ inpmono }}">
+            <p class="mt-1 text-xs text-ink-3">Your Square checkout link. Parents get a "Pay by card" button on their portal. This works on its own - the token and location below are only needed for emailed invoices.</p>
+        </div>
+        <div>
             <label class="{{ lbl }}">Access Token</label>
             <input type="password" id="square-token" autocomplete="off" class="{{ inpmono }}">
             <div class="mt-1 flex items-center justify-between">
@@ -247,6 +252,7 @@ async function loadSettings() {
         document.getElementById('cashapp-enabled').checked = s.payments_cashapp_enabled === '1';
         document.getElementById('cashapp-tag').value = (s.payments_cashapp_tag || '').replace(/^\$/, '');
         document.getElementById('square-enabled').checked = s.payments_square_enabled === '1';
+        document.getElementById('square-link').value = s.payments_square_link || '';
         document.getElementById('square-location').value = s.payments_square_location_id || '';
         document.getElementById('square-env').value = s.payments_square_environment || 'sandbox';
 
@@ -298,6 +304,7 @@ async function saveSettings() {
         payments_cashapp_enabled: document.getElementById('cashapp-enabled').checked ? '1' : '0',
         payments_cashapp_tag: tag.replace(/^\$/, ''),
         payments_square_enabled: document.getElementById('square-enabled').checked ? '1' : '0',
+        payments_square_link: document.getElementById('square-link').value.trim(),
         payments_square_location_id: document.getElementById('square-location').value.trim(),
         payments_square_environment: document.getElementById('square-env').value,
     };

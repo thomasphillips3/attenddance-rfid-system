@@ -301,12 +301,22 @@ function renderMethods() {
                 </div>`;
             cHtml += `<button onclick="submitClaim('cashapp')" class="px-3 py-2 bg-ok text-white rounded-xl text-sm font-bold hover:opacity-90">I sent it with Cash App</button>`;
         }
-        if (opt.type === 'square' && opt.configured) {
+        if (opt.type === 'square' && (opt.link || opt.configured)) {
+            // The hosted checkout link can't carry an amount, so the parent types
+            // it on Square's page — say so rather than implying it's prefilled.
             mHtml += `
                 <div class="border border-info/30 rounded-xl p-3 bg-info/10">
-                    <div class="font-bold text-info text-sm"><i class="fas fa-credit-card mr-1"></i>Square (card)</div>
-                    <p class="text-xs text-info mt-1">Ask the studio to email you a Square invoice — you can pay it online by card.</p>
+                    <div class="font-bold text-info text-sm mb-2"><i class="fas fa-credit-card mr-1"></i>Card / Square</div>
+                    ${opt.link ? `
+                    <a href="${esc(opt.link)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center px-3 py-2 bg-info text-white rounded-xl text-sm font-bold hover:opacity-90">
+                        Pay by card${amt ? ' — $' + amt.toFixed(2) : ''}
+                    </a>
+                    <p class="text-xs text-info mt-2">Opens Square's secure checkout${amt ? `. Enter $${amt.toFixed(2)} there` : ''}, then tap "I paid by card" below.</p>`
+                    : '<p class="text-xs text-info">Ask the studio to email you a Square invoice — you can pay it online by card.</p>'}
                 </div>`;
+            if (opt.link) {
+                cHtml += `<button onclick="submitClaim('square')" class="px-3 py-2 bg-info text-white rounded-xl text-sm font-bold hover:opacity-90">I paid by card</button>`;
+            }
         }
     });
 
