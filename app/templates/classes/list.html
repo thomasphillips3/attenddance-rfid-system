@@ -150,7 +150,7 @@ function renderClasses(classes) {
                 </div>
                 <div class="space-y-1.5 text-sm text-ink-2">
                     <p><i class="fas fa-calendar-day mr-2 text-ink-3 fa-fw"></i>${esc(cls.day_name)}</p>
-                    <p><i class="fas fa-clock mr-2 text-ink-3 fa-fw"></i>${esc(cls.start_time)} – ${esc(cls.end_time)}</p>
+                    <p><i class="fas fa-clock mr-2 text-ink-3 fa-fw"></i>${esc(to12(cls.start_time))} – ${esc(to12(cls.end_time))}</p>
                     ${cls.location_name ? `<p><i class="fas fa-location-dot mr-2 text-ink-3 fa-fw"></i>${esc(cls.location_name)}</p>` : ''}
                     <p><i class="fas fa-user mr-2 text-ink-3 fa-fw"></i>${esc(cls.instructor_name)}</p>
                     <p><i class="fas fa-users mr-2 text-ink-3 fa-fw"></i>${cls.enrolled_count}/${cls.max_students} students</p>

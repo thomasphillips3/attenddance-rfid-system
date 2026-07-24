@@ -77,6 +77,9 @@
 <script>
 let studentIdx = 0;
 function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// This page is standalone (doesn't extend base.html), so it carries its own
+// copy of the 24h "HH:MM" -> 12h formatter.
+function to12(hhmm){ if(!hhmm) return ''; const [h,m]=String(hhmm).split(':').map(Number); if(isNaN(h)||isNaN(m)) return hhmm; return `${h%12||12}:${String(m).padStart(2,'0')} ${h>=12?'PM':'AM'}`; }
 
 function addStudent(){
     studentIdx++;
@@ -107,7 +110,7 @@ async function init(){
         if ((info.classes||[]).length){
             cl.innerHTML = info.classes.map(c=>`<label class="flex items-center ${c.full?'opacity-50':''}">
                 <input type="checkbox" class="c-box mr-2" value="${c.id}" ${c.full?'disabled':''}>
-                ${esc(c.name)} <span class="text-ink-3 ml-1">(${esc(c.day_name)} ${esc(c.start_time)})${c.full?' — full':''}</span></label>`).join('');
+                ${esc(c.name)} <span class="text-ink-3 ml-1">(${esc(c.day_name)} ${esc(to12(c.start_time))})${c.full?' — full':''}</span></label>`).join('');
         } else { document.getElementById('class-section').classList.add('hidden'); }
         addStudent();
     } catch { document.getElementById('closed').classList.remove('hidden'); }

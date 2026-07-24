@@ -111,7 +111,7 @@ async function openCheckinModal() {
     const [students, cRes] = await Promise.all([fetchAllStudents(), fetch('/api/classes')]);
     const cData = await cRes.json();
     document.getElementById('checkin-student').innerHTML = '<option value="">Select student...</option>' + students.map(s => `<option value="${s.id}">${esc(s.full_name)}</option>`).join('');
-    document.getElementById('checkin-class').innerHTML = '<option value="">Select class...</option>' + cData.classes.map(c => `<option value="${c.id}">${esc(c.name)} (${esc(c.day_name)} ${esc(c.start_time)})</option>`).join('');
+    document.getElementById('checkin-class').innerHTML = '<option value="">Select class...</option>' + cData.classes.map(c => `<option value="${c.id}">${esc(c.name)} (${esc(c.day_name)} ${esc(to12(c.start_time))})</option>`).join('');
 }
 
 function closeCheckinModal() { document.getElementById('checkin-modal').classList.add('hidden'); }

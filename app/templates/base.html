@@ -283,6 +283,16 @@
                 navigator.serviceWorker.register('/static/sw.js').catch(function () {});
             });
         }
+        // The API returns class times as 24-hour "HH:MM" (that's what
+        // <input type="time"> and the POST parser need). Display is always
+        // 12-hour, so every JS-rendered time goes through this.
+        window.to12 = function (hhmm) {
+            if (!hhmm) return '';
+            var p = String(hhmm).split(':');
+            var h = Number(p[0]), m = Number(p[1]);
+            if (isNaN(h) || isNaN(m)) return hhmm;
+            return (h % 12 || 12) + ':' + String(m).padStart(2, '0') + ' ' + (h >= 12 ? 'PM' : 'AM');
+        };
         (function () {
             var el = document.getElementById('current-time');
             if (!el) return;

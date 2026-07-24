@@ -17,7 +17,6 @@
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const COLORS = ['bg-primary-50 border-primary-200','bg-rose-50 border-rose-200','bg-amber-50 border-amber-200','bg-emerald-50 border-emerald-200','bg-sky-50 border-sky-200','bg-violet-50 border-violet-200'];
 function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function to12(hhmm){ if(!hhmm) return ''; const [h,m]=hhmm.split(':').map(Number); const ap=h>=12?'PM':'AM'; const h12=h%12||12; return `${h12}:${String(m).padStart(2,'0')} ${ap}`; }
 
 async function load(){
     const grid=document.getElementById('grid');
